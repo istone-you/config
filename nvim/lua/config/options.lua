@@ -2,6 +2,19 @@ vim.g.mapleader = " "
 
 vim.cmd.colorscheme('retrobox')
 
+vim.api.nvim_set_hl(0, 'Normal',      { bg = 'NONE' })
+vim.api.nvim_set_hl(0, 'NormalFloat', { bg = 'NONE' })
+vim.api.nvim_set_hl(0, 'NormalNC',    { bg = 'NONE' })
+
+-- カラースキームを変えても透過を維持
+vim.api.nvim_create_autocmd('ColorScheme', {
+  callback = function()
+    vim.api.nvim_set_hl(0, 'Normal',      { bg = 'NONE' })
+    vim.api.nvim_set_hl(0, 'NormalFloat', { bg = 'NONE' })
+    vim.api.nvim_set_hl(0, 'NormalNC',    { bg = 'NONE' })
+  end,
+})
+
 vim.opt.showtabline = 2
 
 vim.keymap.set('n', '<Tab>',   '<cmd>bnext<cr>',  { desc = 'Next buffer' })
