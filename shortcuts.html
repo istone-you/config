@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>キーボードショートカット一覧</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #1a1b26;
+      color: #c0caf5;
+      line-height: 1.6;
+      padding: 2rem 1rem;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 2rem;
+      color: #7aa2f7;
+      margin-bottom: 2rem;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Tab nav ── */
+    .tab-nav {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .tab-btn {
+      padding: 0.55rem 1.6rem;
+      border-radius: 8px;
+      border: 1px solid #292e42;
+      background: #24283b;
+      color: #565f89;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: all 0.15s;
+      user-select: none;
+    }
+
+    .tab-btn:hover { border-color: #414868; color: #a9b1d6; }
+
+    .tab-btn.active {
+      background: #2d3250;
+      border-color: #7aa2f7;
+      color: #7aa2f7;
+      font-weight: 600;
+    }
+
+    /* ── Search ── */
+    .search-wrap {
+      max-width: 1400px;
+      margin: 0 auto 1.5rem;
+    }
+
+    #search {
+      width: 100%;
+      padding: 0.65rem 1rem;
+      background: #24283b;
+      border: 1px solid #414868;
+      border-radius: 8px;
+      color: #c0caf5;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    #search::placeholder { color: #565f89; }
+    #search:focus { border-color: #7aa2f7; }
+
+    /* ── Tab panels ── */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Grid ── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 1.5rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .section {
+      background: #24283b;
+      border: 1px solid #292e42;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .section-header {
+      padding: 0.75rem 1rem;
+      font-weight: 700;
+      font-size: 0.85rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .section-header.mode-normal   { background: #2d3250; color: #7aa2f7; }
+    .section-header.mode-insert   { background: #2d3b2d; color: #9ece6a; }
+    .section-header.mode-visual   { background: #3b2d3b; color: #bb9af7; }
+    .section-header.mode-command  { background: #3b302d; color: #ff9e64; }
+    .section-header.mode-search   { background: #2d3a3b; color: #2ac3de; }
+    .section-header.mode-window   { background: #3b3a2d; color: #e0af68; }
+    .section-header.mode-buffer   { background: #2d3b3b; color: #73daca; }
+    .section-header.mode-text     { background: #3b2d36; color: #f7768e; }
+    .section-header.mode-macro    { background: #2d2d3b; color: #9d7cd8; }
+    .section-header.mode-misc     { background: #2d2d2d; color: #a9b1d6; }
+    .section-header.mode-yazi     { background: #2d3b30; color: #73daca; }
+    .section-header.mode-git      { background: #3b2d28; color: #ff9e64; }
+
+    table { width: 100%; border-collapse: collapse; }
+    tr:nth-child(even) { background: #1f2335; }
+    tr:hover { background: #2a2f45; }
+
+    td {
+      padding: 0.45rem 1rem;
+      font-size: 0.875rem;
+      vertical-align: middle;
+    }
+
+    td:first-child { width: 42%; white-space: nowrap; }
+
+    kbd {
+      display: inline-block;
+      background: #1a1b26;
+      border: 1px solid #414868;
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      padding: 0.1em 0.45em;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 0.8rem;
+      color: #e0af68;
+      white-space: nowrap;
+    }
+
+    .desc { color: #9aa5ce; }
+    .section-divider { color: #565f89; font-size: 0.8rem; padding-top: 0.6rem; }
+
+    .hidden { display: none !important; }
+    tr.no-match { display: none; }
+
+    footer {
+      text-align: center;
+      margin-top: 3rem;
+      color: #414868;
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+
+<h1>キーボードショートカット一覧</h1>
+
+<div class="tab-nav">
+  <button class="tab-btn active" data-tab="neovim">Neovim</button>
+  <button class="tab-btn" data-tab="yazi">yazi</button>
+  <button class="tab-btn" data-tab="lazygit">lazygit</button>
+</div>
+
+<div class="search-wrap">
+  <input type="text" id="search" placeholder="ショートカットや説明で絞り込む…" autocomplete="off">
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     NEOVIM
+════════════════════════════════════════════════ -->
+<div class="tab-panel active" id="tab-neovim">
+<div class="grid">
+
+  <div class="section" data-section>
+    <div class="section-header mode-normal">🧭 移動（ノーマルモード）</div>
+    <table>
+      <tr><td><kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd></td><td class="desc">左・下・上・右</td></tr>
+      <tr><td><kbd>w</kbd> / <kbd>W</kbd></td><td class="desc">次の単語の先頭へ</td></tr>
+      <tr><td><kbd>b</kbd> / <kbd>B</kbd></td><td class="desc">前の単語の先頭へ</td></tr>
+      <tr><td><kbd>e</kbd> / <kbd>E</kbd></td><td class="desc">次の単語の末尾へ</td></tr>
+      <tr><td><kbd>ge</kbd> / <kbd>gE</kbd></td><td class="desc">前の単語の末尾へ</td></tr>
+      <tr><td><kbd>0</kbd></td><td class="desc">行の先頭（列0）へ</td></tr>
+      <tr><td><kbd>^</kbd></td><td class="desc">行の最初の非空白文字へ</td></tr>
+      <tr><td><kbd>$</kbd></td><td class="desc">行末へ</td></tr>
+      <tr><td><kbd>gg</kbd></td><td class="desc">ファイル先頭へ</td></tr>
+      <tr><td><kbd>G</kbd></td><td class="desc">ファイル末尾へ</td></tr>
+      <tr><td><kbd>{N}G</kbd></td><td class="desc">N行目へジャンプ</td></tr>
+      <tr><td><kbd>%</kbd></td><td class="desc">対応する括弧へ</td></tr>
+      <tr><td><kbd>Ctrl-d</kbd></td><td class="desc">半画面下へスクロール</td></tr>
+      <tr><td><kbd>Ctrl-u</kbd></td><td class="desc">半画面上へスクロール</td></tr>
+      <tr><td><kbd>Ctrl-f</kbd></td><td class="desc">1画面下へスクロール</td></tr>
+      <tr><td><kbd>Ctrl-b</kbd></td><td class="desc">1画面上へスクロール</td></tr>
+      <tr><td><kbd>zz</kbd></td><td class="desc">現在行を画面中央に</td></tr>
+      <tr><td><kbd>zt</kbd></td><td class="desc">現在行を画面上部に</td></tr>
+      <tr><td><kbd>zb</kbd></td><td class="desc">現在行を画面下部に</td></tr>
+      <tr><td><kbd>H</kbd> / <kbd>M</kbd> / <kbd>L</kbd></td><td class="desc">画面上部・中央・下部へ</td></tr>
+      <tr><td><kbd>'.</kbd></td><td class="desc">最後の変更行へ</td></tr>
+      <tr><td><kbd>``</kbd></td><td class="desc">直前のカーソル位置へ</td></tr>
+      <tr><td><kbd>gi</kbd></td><td class="desc">最後にインサートした位置へ</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-normal">✏️ 編集（ノーマルモード）</div>
+    <table>
+      <tr><td><kbd>x</kbd></td><td class="desc">カーソル下の文字を削除</td></tr>
+      <tr><td><kbd>X</kbd></td><td class="desc">カーソル前の文字を削除</td></tr>
+      <tr><td><kbd>dd</kbd></td><td class="desc">行を削除（カット）</td></tr>
+      <tr><td><kbd>D</kbd></td><td class="desc">カーソルから行末まで削除</td></tr>
+      <tr><td><kbd>yy</kbd> / <kbd>Y</kbd></td><td class="desc">行をコピー（ヤンク）</td></tr>
+      <tr><td><kbd>p</kbd></td><td class="desc">カーソル後にペースト</td></tr>
+      <tr><td><kbd>P</kbd></td><td class="desc">カーソル前にペースト</td></tr>
+      <tr><td><kbd>u</kbd></td><td class="desc">アンドゥ</td></tr>
+      <tr><td><kbd>Ctrl-r</kbd></td><td class="desc">リドゥ</td></tr>
+      <tr><td><kbd>.</kbd></td><td class="desc">直前の変更を繰り返す</td></tr>
+      <tr><td><kbd>r{c}</kbd></td><td class="desc">1文字を{c}に置換</td></tr>
+      <tr><td><kbd>R</kbd></td><td class="desc">置換モードへ</td></tr>
+      <tr><td><kbd>~</kbd></td><td class="desc">大文字/小文字を切り替え</td></tr>
+      <tr><td><kbd>gu{motion}</kbd></td><td class="desc">小文字に変換</td></tr>
+      <tr><td><kbd>gU{motion}</kbd></td><td class="desc">大文字に変換</td></tr>
+      <tr><td><kbd>J</kbd></td><td class="desc">次の行を現在行に結合</td></tr>
+      <tr><td><kbd>cc</kbd></td><td class="desc">行を削除してインサートへ</td></tr>
+      <tr><td><kbd>C</kbd></td><td class="desc">行末まで削除してインサートへ</td></tr>
+      <tr><td><kbd>s</kbd></td><td class="desc">1文字削除してインサートへ</td></tr>
+      <tr><td><kbd>S</kbd></td><td class="desc">行削除してインサートへ</td></tr>
+      <tr><td><kbd>&gt;&gt;</kbd> / <kbd>&lt;&lt;</kbd></td><td class="desc">インデントを増やす/減らす</td></tr>
+      <tr><td><kbd>==</kbd></td><td class="desc">行を自動インデント</td></tr>
+      <tr><td><kbd>gcc</kbd></td><td class="desc">現在行をコメントトグル</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-insert">📝 インサートモード</div>
+    <table>
+      <tr><td><kbd>i</kbd></td><td class="desc">カーソル前からインサート</td></tr>
+      <tr><td><kbd>I</kbd></td><td class="desc">行先頭からインサート</td></tr>
+      <tr><td><kbd>a</kbd></td><td class="desc">カーソル後からインサート</td></tr>
+      <tr><td><kbd>A</kbd></td><td class="desc">行末からインサート</td></tr>
+      <tr><td><kbd>o</kbd></td><td class="desc">下に新規行を作りインサート</td></tr>
+      <tr><td><kbd>O</kbd></td><td class="desc">上に新規行を作りインサート</td></tr>
+      <tr><td><kbd>Esc</kbd> / <kbd>Ctrl-[</kbd></td><td class="desc">ノーマルモードへ戻る</td></tr>
+      <tr><td><kbd>Ctrl-w</kbd></td><td class="desc">直前の単語を削除</td></tr>
+      <tr><td><kbd>Ctrl-u</kbd></td><td class="desc">行先頭まで削除</td></tr>
+      <tr><td><kbd>Ctrl-t</kbd></td><td class="desc">インデントを増やす</td></tr>
+      <tr><td><kbd>Ctrl-d</kbd></td><td class="desc">インデントを減らす</td></tr>
+      <tr><td><kbd>Ctrl-n</kbd> / <kbd>Ctrl-p</kbd></td><td class="desc">補完候補を次/前へ</td></tr>
+      <tr><td><kbd>Ctrl-r{reg}</kbd></td><td class="desc">レジスタの内容を挿入</td></tr>
+      <tr><td><kbd>Ctrl-o{cmd}</kbd></td><td class="desc">ノーマルコマンドを1回実行</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-visual">🔷 ビジュアルモード</div>
+    <table>
+      <tr><td><kbd>v</kbd></td><td class="desc">文字単位のビジュアルモード</td></tr>
+      <tr><td><kbd>V</kbd></td><td class="desc">行単位のビジュアルモード</td></tr>
+      <tr><td><kbd>Ctrl-v</kbd></td><td class="desc">矩形ビジュアルモード</td></tr>
+      <tr><td><kbd>gv</kbd></td><td class="desc">前回の選択を再選択</td></tr>
+      <tr><td><kbd>o</kbd></td><td class="desc">選択範囲の反対端へ移動</td></tr>
+      <tr><td><kbd>d</kbd> / <kbd>x</kbd></td><td class="desc">選択範囲を削除</td></tr>
+      <tr><td><kbd>y</kbd></td><td class="desc">選択範囲をコピー</td></tr>
+      <tr><td><kbd>c</kbd></td><td class="desc">選択範囲を削除してインサート</td></tr>
+      <tr><td><kbd>p</kbd></td><td class="desc">選択範囲をペーストで置換</td></tr>
+      <tr><td><kbd>&gt;</kbd> / <kbd>&lt;</kbd></td><td class="desc">インデントを増やす/減らす</td></tr>
+      <tr><td><kbd>~</kbd></td><td class="desc">大文字/小文字を切り替え</td></tr>
+      <tr><td><kbd>u</kbd> / <kbd>U</kbd></td><td class="desc">小文字/大文字に変換</td></tr>
+      <tr><td><kbd>I</kbd></td><td class="desc">矩形選択の各行先頭にインサート</td></tr>
+      <tr><td><kbd>A</kbd></td><td class="desc">矩形選択の各行末尾にインサート</td></tr>
+      <tr><td><kbd>gc</kbd></td><td class="desc">選択範囲をコメントトグル</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-text">📦 テキストオブジェクト</div>
+    <table>
+      <tr><td><kbd>iw</kbd> / <kbd>aw</kbd></td><td class="desc">単語の内側 / 外側</td></tr>
+      <tr><td><kbd>iW</kbd> / <kbd>aW</kbd></td><td class="desc">WORD の内側 / 外側</td></tr>
+      <tr><td><kbd>is</kbd> / <kbd>as</kbd></td><td class="desc">文の内側 / 外側</td></tr>
+      <tr><td><kbd>ip</kbd> / <kbd>ap</kbd></td><td class="desc">段落の内側 / 外側</td></tr>
+      <tr><td><kbd>i(</kbd> / <kbd>a(</kbd></td><td class="desc">() の内側 / 外側</td></tr>
+      <tr><td><kbd>i[</kbd> / <kbd>a[</kbd></td><td class="desc">[] の内側 / 外側</td></tr>
+      <tr><td><kbd>i{</kbd> / <kbd>a{</kbd></td><td class="desc">{} の内側 / 外側</td></tr>
+      <tr><td><kbd>i&lt;</kbd> / <kbd>a&lt;</kbd></td><td class="desc">&lt;&gt; の内側 / 外側</td></tr>
+      <tr><td><kbd>i"</kbd> / <kbd>a"</kbd></td><td class="desc">"" の内側 / 外側</td></tr>
+      <tr><td><kbd>i'</kbd> / <kbd>a'</kbd></td><td class="desc">'' の内側 / 外側</td></tr>
+      <tr><td><kbd>i`</kbd> / <kbd>a`</kbd></td><td class="desc">`` の内側 / 外側</td></tr>
+      <tr><td><kbd>it</kbd> / <kbd>at</kbd></td><td class="desc">HTML/XMLタグの内側 / 外側</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-search">🔍 検索</div>
+    <table>
+      <tr><td><kbd>/pattern</kbd></td><td class="desc">前方検索</td></tr>
+      <tr><td><kbd>?pattern</kbd></td><td class="desc">後方検索</td></tr>
+      <tr><td><kbd>n</kbd></td><td class="desc">次のマッチへ</td></tr>
+      <tr><td><kbd>N</kbd></td><td class="desc">前のマッチへ</td></tr>
+      <tr><td><kbd>*</kbd></td><td class="desc">カーソル下の単語を前方検索</td></tr>
+      <tr><td><kbd>#</kbd></td><td class="desc">カーソル下の単語を後方検索</td></tr>
+      <tr><td><kbd>g*</kbd> / <kbd>g#</kbd></td><td class="desc">* / # の部分一致版</td></tr>
+      <tr><td><kbd>:noh</kbd></td><td class="desc">ハイライトを消去</td></tr>
+      <tr><td><kbd>f{c}</kbd></td><td class="desc">行内を{c}で前方検索</td></tr>
+      <tr><td><kbd>F{c}</kbd></td><td class="desc">行内を{c}で後方検索</td></tr>
+      <tr><td><kbd>t{c}</kbd></td><td class="desc">{c}の1文字前へ移動</td></tr>
+      <tr><td><kbd>T{c}</kbd></td><td class="desc">{c}の1文字後ろへ移動</td></tr>
+      <tr><td><kbd>;</kbd></td><td class="desc">f/t の検索を繰り返す</td></tr>
+      <tr><td><kbd>,</kbd></td><td class="desc">f/t の検索を逆方向に繰り返す</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-window">🪟 ウィンドウ操作</div>
+    <table>
+      <tr><td><kbd>Ctrl-w s</kbd></td><td class="desc">水平分割</td></tr>
+      <tr><td><kbd>Ctrl-w v</kbd></td><td class="desc">垂直分割</td></tr>
+      <tr><td><kbd>Ctrl-w w</kbd></td><td class="desc">次のウィンドウへ</td></tr>
+      <tr><td><kbd>Ctrl-w h/j/k/l</kbd></td><td class="desc">左/下/上/右のウィンドウへ</td></tr>
+      <tr><td><kbd>Ctrl-w H/J/K/L</kbd></td><td class="desc">ウィンドウを移動</td></tr>
+      <tr><td><kbd>Ctrl-w q</kbd></td><td class="desc">ウィンドウを閉じる</td></tr>
+      <tr><td><kbd>Ctrl-w o</kbd></td><td class="desc">他のウィンドウをすべて閉じる</td></tr>
+      <tr><td><kbd>Ctrl-w =</kbd></td><td class="desc">すべてのウィンドウを均等に</td></tr>
+      <tr><td><kbd>Ctrl-w +/-</kbd></td><td class="desc">高さを増やす/減らす</td></tr>
+      <tr><td><kbd>Ctrl-w &gt;/&lt;</kbd></td><td class="desc">幅を増やす/減らす</td></tr>
+      <tr><td><kbd>Ctrl-w r</kbd></td><td class="desc">ウィンドウを回転</td></tr>
+      <tr><td><kbd>Ctrl-w T</kbd></td><td class="desc">ウィンドウを新規タブに移動</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-buffer">📑 タブ・バッファ操作</div>
+    <table>
+      <tr><td><kbd>:tabnew</kbd></td><td class="desc">新規タブを開く</td></tr>
+      <tr><td><kbd>:tabc</kbd></td><td class="desc">現在のタブを閉じる</td></tr>
+      <tr><td><kbd>gt</kbd> / <kbd>gT</kbd></td><td class="desc">次/前のタブへ</td></tr>
+      <tr><td><kbd>{N}gt</kbd></td><td class="desc">N番目のタブへ</td></tr>
+      <tr><td><kbd>:bn</kbd> / <kbd>:bp</kbd></td><td class="desc">次/前のバッファへ</td></tr>
+      <tr><td><kbd>:bd</kbd></td><td class="desc">バッファを削除</td></tr>
+      <tr><td><kbd>:ls</kbd></td><td class="desc">バッファ一覧を表示</td></tr>
+      <tr><td><kbd>Ctrl-^</kbd></td><td class="desc">直前のバッファへ切り替え</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-command">💻 コマンドラインモード</div>
+    <table>
+      <tr><td><kbd>:</kbd></td><td class="desc">コマンドラインモードへ</td></tr>
+      <tr><td><kbd>:w</kbd></td><td class="desc">保存</td></tr>
+      <tr><td><kbd>:w!</kbd></td><td class="desc">強制保存</td></tr>
+      <tr><td><kbd>:q</kbd></td><td class="desc">終了</td></tr>
+      <tr><td><kbd>:q!</kbd></td><td class="desc">強制終了</td></tr>
+      <tr><td><kbd>:wq</kbd> / <kbd>:x</kbd></td><td class="desc">保存して終了</td></tr>
+      <tr><td><kbd>:e {file}</kbd></td><td class="desc">ファイルを開く</td></tr>
+      <tr><td><kbd>:e!</kbd></td><td class="desc">ファイルを再読み込み</td></tr>
+      <tr><td><kbd>:%s/old/new/g</kbd></td><td class="desc">ファイル全体で置換</td></tr>
+      <tr><td><kbd>:%s/old/new/gc</kbd></td><td class="desc">確認しながら置換</td></tr>
+      <tr><td><kbd>:! {cmd}</kbd></td><td class="desc">シェルコマンドを実行</td></tr>
+      <tr><td><kbd>Ctrl-p</kbd> / <kbd>Ctrl-n</kbd></td><td class="desc">コマンド履歴を前/次へ</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-search">📌 マーク・ジャンプリスト</div>
+    <table>
+      <tr><td><kbd>m{a-z}</kbd></td><td class="desc">ローカルマークをセット</td></tr>
+      <tr><td><kbd>m{A-Z}</kbd></td><td class="desc">グローバルマークをセット</td></tr>
+      <tr><td><kbd>'{mark}</kbd></td><td class="desc">マークの行先頭へジャンプ</td></tr>
+      <tr><td><kbd>`{mark}</kbd></td><td class="desc">マークの正確な位置へジャンプ</td></tr>
+      <tr><td><kbd>Ctrl-o</kbd></td><td class="desc">ジャンプリストを前へ</td></tr>
+      <tr><td><kbd>Ctrl-i</kbd></td><td class="desc">ジャンプリストを次へ</td></tr>
+      <tr><td><kbd>g;</kbd> / <kbd>g,</kbd></td><td class="desc">変更リストを前/次へ</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-macro">⚙️ マクロ・レジスタ</div>
+    <table>
+      <tr><td><kbd>q{a-z}</kbd></td><td class="desc">マクロの記録を開始</td></tr>
+      <tr><td><kbd>q</kbd></td><td class="desc">マクロの記録を終了</td></tr>
+      <tr><td><kbd>@{a-z}</kbd></td><td class="desc">マクロを実行</td></tr>
+      <tr><td><kbd>@@</kbd></td><td class="desc">直前のマクロを再実行</td></tr>
+      <tr><td><kbd>{N}@{a-z}</kbd></td><td class="desc">マクロをN回実行</td></tr>
+      <tr><td><kbd>"{reg}y</kbd></td><td class="desc">指定レジスタにヤンク</td></tr>
+      <tr><td><kbd>"{reg}p</kbd></td><td class="desc">指定レジスタからペースト</td></tr>
+      <tr><td><kbd>"+y</kbd></td><td class="desc">クリップボードにコピー</td></tr>
+      <tr><td><kbd>"+p</kbd></td><td class="desc">クリップボードからペースト</td></tr>
+      <tr><td><kbd>:reg</kbd></td><td class="desc">レジスタ一覧を表示</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-misc">🗂️ 折りたたみ</div>
+    <table>
+      <tr><td><kbd>zf{motion}</kbd></td><td class="desc">フォールドを作成</td></tr>
+      <tr><td><kbd>zo</kbd> / <kbd>zO</kbd></td><td class="desc">フォールドを開く / すべて開く</td></tr>
+      <tr><td><kbd>zc</kbd> / <kbd>zC</kbd></td><td class="desc">フォールドを閉じる / すべて閉じる</td></tr>
+      <tr><td><kbd>za</kbd></td><td class="desc">フォールドのトグル</td></tr>
+      <tr><td><kbd>zR</kbd></td><td class="desc">すべてのフォールドを開く</td></tr>
+      <tr><td><kbd>zM</kbd></td><td class="desc">すべてのフォールドを閉じる</td></tr>
+      <tr><td><kbd>zj</kbd> / <kbd>zk</kbd></td><td class="desc">次/前のフォールドへ</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-misc">🛠️ その他・便利コマンド</div>
+    <table>
+      <tr><td><kbd>Ctrl-a</kbd></td><td class="desc">カーソル下の数値をインクリメント</td></tr>
+      <tr><td><kbd>Ctrl-x</kbd></td><td class="desc">カーソル下の数値をデクリメント</td></tr>
+      <tr><td><kbd>K</kbd></td><td class="desc">カーソル下の単語をmanで調べる</td></tr>
+      <tr><td><kbd>:checkhealth</kbd></td><td class="desc">Neovimの健全性チェック</td></tr>
+      <tr><td><kbd>:help {topic}</kbd></td><td class="desc">ヘルプを開く</td></tr>
+      <tr><td><kbd>ZZ</kbd></td><td class="desc">変更があれば保存して終了</td></tr>
+      <tr><td><kbd>ZQ</kbd></td><td class="desc">保存せず終了</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-buffer">🔧 カスタムキーマップ</div>
+    <table>
+      <tr><td><kbd>Space</kbd> <kbd>y</kbd></td><td class="desc">yaziを開く（カレントファイルのdir）</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>c</kbd> <kbd>w</kbd></td><td class="desc">yaziを開く（Neovimのcwd）</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>g</kbd></td><td class="desc">lazygitを開く</td></tr>
+      <tr><td><kbd>Tab</kbd></td><td class="desc">次のバッファへ</td></tr>
+      <tr><td><kbd>Shift-Tab</kbd></td><td class="desc">前のバッファへ</td></tr>
+    </table>
+  </div>
+
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     YAZI
+════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-yazi">
+<div class="grid">
+
+  <div class="section" data-section>
+    <div class="section-header mode-yazi">🧭 移動・ナビゲーション</div>
+    <table>
+      <tr><td><kbd>h</kbd> / <kbd>←</kbd></td><td class="desc">親ディレクトリへ</td></tr>
+      <tr><td><kbd>l</kbd> / <kbd>→</kbd> / <kbd>Enter</kbd></td><td class="desc">ディレクトリへ入る / ファイルを開く</td></tr>
+      <tr><td><kbd>j</kbd> / <kbd>↓</kbd></td><td class="desc">カーソルを下へ</td></tr>
+      <tr><td><kbd>k</kbd> / <kbd>↑</kbd></td><td class="desc">カーソルを上へ</td></tr>
+      <tr><td><kbd>H</kbd></td><td class="desc">リストの先頭へ</td></tr>
+      <tr><td><kbd>M</kbd></td><td class="desc">リストの中央へ</td></tr>
+      <tr><td><kbd>L</kbd></td><td class="desc">リストの末尾へ</td></tr>
+      <tr><td><kbd>gg</kbd></td><td class="desc">一番上へ</td></tr>
+      <tr><td><kbd>G</kbd></td><td class="desc">一番下へ</td></tr>
+      <tr><td><kbd>Ctrl-u</kbd></td><td class="desc">半ページ上へ</td></tr>
+      <tr><td><kbd>Ctrl-d</kbd></td><td class="desc">半ページ下へ</td></tr>
+      <tr><td><kbd>Ctrl-b</kbd></td><td class="desc">1ページ上へ</td></tr>
+      <tr><td><kbd>Ctrl-f</kbd></td><td class="desc">1ページ下へ</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-yazi">📁 ファイル操作</div>
+    <table>
+      <tr><td><kbd>o</kbd> / <kbd>Enter</kbd></td><td class="desc">ファイルを開く</td></tr>
+      <tr><td><kbd>O</kbd></td><td class="desc">アプリを選んで開く</td></tr>
+      <tr><td><kbd>a</kbd></td><td class="desc">ファイル/ディレクトリを作成（/で終わるとdir）</td></tr>
+      <tr><td><kbd>r</kbd></td><td class="desc">名前を変更</td></tr>
+      <tr><td><kbd>d</kbd></td><td class="desc">ゴミ箱へ移動</td></tr>
+      <tr><td><kbd>D</kbd></td><td class="desc">完全削除</td></tr>
+      <tr><td><kbd>c</kbd></td><td class="desc">コピー</td></tr>
+      <tr><td><kbd>x</kbd></td><td class="desc">カット</td></tr>
+      <tr><td><kbd>p</kbd></td><td class="desc">ペースト</td></tr>
+      <tr><td><kbd>P</kbd></td><td class="desc">ペースト（上書き）</td></tr>
+      <tr><td><kbd>.</kbd></td><td class="desc">隠しファイルの表示トグル</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-yazi">✅ 選択</div>
+    <table>
+      <tr><td><kbd>Space</kbd></td><td class="desc">選択/解除のトグル</td></tr>
+      <tr><td><kbd>v</kbd></td><td class="desc">ビジュアル選択モード</td></tr>
+      <tr><td><kbd>Ctrl-a</kbd></td><td class="desc">すべて選択</td></tr>
+      <tr><td><kbd>Ctrl-r</kbd></td><td class="desc">選択を反転</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td class="desc">選択をキャンセル</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-yazi">🔍 検索・フィルター</div>
+    <table>
+      <tr><td><kbd>/</kbd></td><td class="desc">ファイル名を検索</td></tr>
+      <tr><td><kbd>n</kbd></td><td class="desc">次のマッチへ</td></tr>
+      <tr><td><kbd>N</kbd></td><td class="desc">前のマッチへ</td></tr>
+      <tr><td><kbd>f</kbd></td><td class="desc">フィルター（絞り込み表示）</td></tr>
+      <tr><td><kbd>F</kbd></td><td class="desc">フィルターをクリア</td></tr>
+      <tr><td><kbd>s</kbd></td><td class="desc">fd/findで検索</td></tr>
+      <tr><td><kbd>S</kbd></td><td class="desc">ripgrepで内容検索</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-yazi">📋 パスのコピー</div>
+    <table>
+      <tr><td><kbd>y n</kbd></td><td class="desc">ファイル名をコピー</td></tr>
+      <tr><td><kbd>y p</kbd></td><td class="desc">絶対パスをコピー</td></tr>
+      <tr><td><kbd>y d</kbd></td><td class="desc">ディレクトリパスをコピー</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-yazi">📑 タブ操作</div>
+    <table>
+      <tr><td><kbd>t</kbd></td><td class="desc">新規タブを作成</td></tr>
+      <tr><td><kbd>1</kbd> 〜 <kbd>9</kbd></td><td class="desc">N番目のタブへ切り替え</td></tr>
+      <tr><td><kbd>[</kbd></td><td class="desc">前のタブへ</td></tr>
+      <tr><td><kbd>]</kbd></td><td class="desc">次のタブへ</td></tr>
+    </table>
+  </div>
+
+
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     LAZYGIT
+════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-lazygit">
+<div class="grid">
+
+  <div class="section" data-section>
+    <div class="section-header mode-git">🌍 グローバル</div>
+    <table>
+      <tr><td><kbd>?</kbd></td><td class="desc">キーバインド一覧を表示</td></tr>
+      <tr><td><kbd>q</kbd></td><td class="desc">終了</td></tr>
+      <tr><td><kbd>:</kbd></td><td class="desc">カスタムコマンドを実行</td></tr>
+      <tr><td><kbd>@</kbd></td><td class="desc">コマンドログを表示</td></tr>
+      <tr><td><kbd>+</kbd> / <kbd>_</kbd></td><td class="desc">パネルを拡大/縮小</td></tr>
+      <tr><td><kbd>x</kbd></td><td class="desc">コンテキストメニューを開く</td></tr>
+      <tr><td><kbd>Ctrl-r</kbd></td><td class="desc">最近のリポジトリへ切り替え</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-git">🧭 パネル・ナビゲーション</div>
+    <table>
+      <tr><td><kbd>h</kbd> / <kbd>l</kbd></td><td class="desc">左/右のパネルへ</td></tr>
+      <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td class="desc">リストを上/下へ</td></tr>
+      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td class="desc">前/次のタブへ</td></tr>
+      <tr><td><kbd>H</kbd> / <kbd>L</kbd></td><td class="desc">差分ビューを左/右にスクロール</td></tr>
+      <tr><td><kbd>PgUp</kbd> / <kbd>PgDn</kbd></td><td class="desc">差分を1ページ上/下へ</td></tr>
+      <tr><td><kbd>Ctrl-u</kbd> / <kbd>Ctrl-d</kbd></td><td class="desc">差分を半ページ上/下へ</td></tr>
+      <tr><td><kbd>}</kbd> / <kbd>{</kbd></td><td class="desc">差分のhunkを次/前へ</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-git">📄 ファイルパネル</div>
+    <table>
+      <tr><td><kbd>Space</kbd></td><td class="desc">ステージ/アンステージのトグル</td></tr>
+      <tr><td><kbd>a</kbd></td><td class="desc">すべてステージ/アンステージ</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td class="desc">行/hunk単位でステージ</td></tr>
+      <tr><td><kbd>c</kbd></td><td class="desc">コミット</td></tr>
+      <tr><td><kbd>w</kbd></td><td class="desc">フックなしでコミット</td></tr>
+      <tr><td><kbd>A</kbd></td><td class="desc">直前のコミットに追加（amend）</td></tr>
+      <tr><td><kbd>d</kbd></td><td class="desc">変更を破棄</td></tr>
+      <tr><td><kbd>e</kbd></td><td class="desc">ファイルを編集</td></tr>
+      <tr><td><kbd>o</kbd></td><td class="desc">ファイルを開く</td></tr>
+      <tr><td><kbd>i</kbd></td><td class="desc">.gitignore に追加</td></tr>
+      <tr><td><kbd>S</kbd></td><td class="desc">スタッシュのオプション</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-git">🌿 ブランチパネル</div>
+    <table>
+      <tr><td><kbd>Space</kbd></td><td class="desc">ブランチをチェックアウト</td></tr>
+      <tr><td><kbd>n</kbd></td><td class="desc">新規ブランチを作成</td></tr>
+      <tr><td><kbd>d</kbd></td><td class="desc">ブランチを削除</td></tr>
+      <tr><td><kbd>r</kbd></td><td class="desc">ブランチにリベース</td></tr>
+      <tr><td><kbd>M</kbd></td><td class="desc">現在のブランチにマージ</td></tr>
+      <tr><td><kbd>f</kbd></td><td class="desc">ブランチをfast-forward</td></tr>
+      <tr><td><kbd>u</kbd></td><td class="desc">上流ブランチを設定</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td class="desc">ブランチのコミット一覧を表示</td></tr>
+      <tr><td><kbd>g</kbd></td><td class="desc">リセットオプションを表示</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-git">📝 コミットパネル</div>
+    <table>
+      <tr><td><kbd>Space</kbd></td><td class="desc">コミットをチェックアウト</td></tr>
+      <tr><td><kbd>r</kbd></td><td class="desc">コミットメッセージを編集</td></tr>
+      <tr><td><kbd>R</kbd></td><td class="desc">エディタでコミットメッセージを編集</td></tr>
+      <tr><td><kbd>d</kbd></td><td class="desc">コミットをドロップ</td></tr>
+      <tr><td><kbd>e</kbd></td><td class="desc">コミットを編集（インタラクティブリベース）</td></tr>
+      <tr><td><kbd>f</kbd></td><td class="desc">直前コミットにfixup</td></tr>
+      <tr><td><kbd>s</kbd></td><td class="desc">コミットをsquash</td></tr>
+      <tr><td><kbd>Ctrl-j</kbd> / <kbd>Ctrl-k</kbd></td><td class="desc">コミットを下/上へ移動</td></tr>
+      <tr><td><kbd>T</kbd></td><td class="desc">コミットにタグを付ける</td></tr>
+      <tr><td><kbd>c</kbd></td><td class="desc">コミットSHAをコピー</td></tr>
+      <tr><td><kbd>g</kbd></td><td class="desc">リセットオプションを表示</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td class="desc">コミットのファイル一覧を表示</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-git">📦 スタッシュパネル</div>
+    <table>
+      <tr><td><kbd>Space</kbd></td><td class="desc">スタッシュを適用</td></tr>
+      <tr><td><kbd>g</kbd></td><td class="desc">スタッシュをpop（適用して削除）</td></tr>
+      <tr><td><kbd>d</kbd></td><td class="desc">スタッシュを削除</td></tr>
+      <tr><td><kbd>n</kbd></td><td class="desc">スタッシュから新規ブランチを作成</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td class="desc">スタッシュのファイル一覧を表示</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-git">🔄 リモート・プッシュ</div>
+    <table>
+      <tr><td><kbd>P</kbd></td><td class="desc">プッシュ</td></tr>
+      <tr><td><kbd>p</kbd></td><td class="desc">プル</td></tr>
+      <tr><td><kbd>f</kbd></td><td class="desc">フェッチ</td></tr>
+    </table>
+  </div>
+
+
+</div>
+</div>
+
+<footer>Keyboard Shortcuts Reference &mdash; Neovim / yazi / lazygit &mdash; 2026</footer>
+
+<script>
+  // タブ切り替え
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabPanels = document.querySelectorAll('.tab-panel');
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.tab;
+      tabBtns.forEach(b => b.classList.toggle('active', b === btn));
+      tabPanels.forEach(p => p.classList.toggle('active', p.id === 'tab-' + target));
+      document.getElementById('search').value = '';
+      document.querySelectorAll('[data-section]').forEach(s => {
+        s.classList.remove('hidden');
+        s.querySelectorAll('tr').forEach(r => r.classList.remove('no-match'));
+      });
+    });
+  });
+
+  // 検索（アクティブなタブ内のみ）
+  document.getElementById('search').addEventListener('input', function() {
+    const q = this.value.trim().toLowerCase();
+    const activePanel = document.querySelector('.tab-panel.active');
+    activePanel.querySelectorAll('[data-section]').forEach(section => {
+      let anyVisible = false;
+      section.querySelectorAll('tr').forEach(row => {
+        const match = !q || row.textContent.toLowerCase().includes(q);
+        row.classList.toggle('no-match', !match);
+        if (match) anyVisible = true;
+      });
+      section.classList.toggle('hidden', !anyVisible);
+    });
+  });
+</script>
+
+</body>
+</html>
