@@ -19,8 +19,6 @@ local icons = {
   css        = i(0xe749),
   scss       = i(0xe603),
   json       = i(0xe60b),
-  yaml       = i(0xe6d5),
-  yml        = i(0xe6d5),
   toml       = i(0xe6b2),
   md         = i(0xe73e),
   sh         = i(0xe615),
@@ -85,7 +83,7 @@ local function tabline()
   local current = vim.api.nvim_get_current_buf()
 
   local buffers = vim.tbl_filter(function(b)
-    return vim.bo[b].buflisted and vim.api.nvim_buf_is_valid(b)
+    return vim.bo[b].buflisted and vim.api.nvim_buf_is_valid(b) and vim.bo[b].buftype ~= 'terminal'
   end, vim.api.nvim_list_bufs())
 
   for _, bufnr in ipairs(buffers) do

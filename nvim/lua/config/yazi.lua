@@ -8,9 +8,7 @@ function M.open(cwd)
   local tmp = vim.fn.tempname()
   cwd = cwd or vim.fn.expand('%:p:h')
 
-  -- 左サイドに垂直分割で開く（画面幅の35%、最低80列）
-  local width = math.max(80, math.floor(vim.o.columns * 0.35))
-  vim.cmd('topleft ' .. width .. 'vnew')
+  vim.cmd('botright vnew')
   local term_buf = vim.api.nvim_get_current_buf()
   local term_win = vim.api.nvim_get_current_win()
 
