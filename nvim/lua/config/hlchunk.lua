@@ -6,7 +6,15 @@ end
 
 local function get_indent(line)
   if line:match('^%s*$') then return nil end
-  return #line:match('^(%s*)')
+  return vim.fn.strdisplaywidth(line:match('^(%s*)'))
+end
+
+local function effective_indent(lines, lnum)
+  for i = lnum, 0, -1 do
+    local ind = get_indent(lines[i + 1] or '')
+    if ind then return ind end
+  end
+  return 0
 end
 
 local function update(buf)
@@ -19,8 +27,8 @@ local function update(buf)
   local total = vim.api.nvim_buf_line_count(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, total, false)
 
-  local cur_indent = get_indent(lines[lnum + 1] or '')
-  if not cur_indent or cur_indent == 0 then return end
+  local cur_indent = effective_indent(lines, lnum)
+  if cur_indent == 0 then return end
 
   local start_lnum = nil
   for i = lnum - 1, 0, -1 do
