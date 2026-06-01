@@ -16,6 +16,8 @@ vim.api.nvim_create_autocmd('ColorScheme', {
 })
 
 vim.opt.showtabline = 2
+vim.opt.number = true
+vim.opt.relativenumber = true
 
 vim.keymap.set('n', '<Tab>',   '<cmd>bnext<cr>',  { desc = 'Next buffer' })
 vim.keymap.set('n', '<S-Tab>', '<cmd>bprev<cr>',  { desc = 'Prev buffer' })
