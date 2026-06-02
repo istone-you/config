@@ -90,7 +90,7 @@ local function update()
   local display_lines = {}
   for _, ctx in ipairs(contexts) do
     local prefix = textoff > 0
-      and string.format('%' .. num_width .. 'd ', ctx.lnum)
+      and string.format('%' .. num_width .. 'd ', (lnum + 1) - ctx.lnum)
       or ''
     table.insert(display_lines, prefix .. ctx.text)
   end
