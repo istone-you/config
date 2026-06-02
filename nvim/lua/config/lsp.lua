@@ -17,7 +17,20 @@ vim.lsp.config('ts_ls', {
   root_markers = { 'tsconfig.json', 'jsconfig.json', 'package.json', '.git' },
 })
 
-vim.lsp.enable({ 'gopls', 'ts_ls' })
+vim.lsp.config('terraformls', {
+  cmd         = { 'terraform-ls', 'serve' },
+  filetypes   = { 'terraform', 'terraform-vars' },
+  root_markers = { '.terraform', '.opentofu', '.git' },
+  settings    = {
+    ['terraform-ls'] = {
+      -- tofu が入っている場合は terraform より優先して使う
+      terraformExecPath = vim.fn.exepath('tofu') ~= '' and vim.fn.exepath('tofu')
+                          or vim.fn.exepath('terraform'),
+    },
+  },
+})
+
+vim.lsp.enable({ 'gopls', 'ts_ls', 'terraformls' })
 
 -- 診断表示の設定
 vim.diagnostic.config({
