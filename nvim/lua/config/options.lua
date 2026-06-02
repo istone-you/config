@@ -21,6 +21,16 @@ vim.opt.relativenumber = true
 
 vim.keymap.set('n', '<Tab>',   '<cmd>bnext<cr>',  { desc = 'Next buffer' })
 vim.keymap.set('n', '<S-Tab>', '<cmd>bprev<cr>',  { desc = 'Prev buffer' })
+vim.keymap.set('n', '<leader>q', function()
+  local bufs = vim.tbl_filter(function(b)
+    return vim.bo[b].buflisted and vim.api.nvim_buf_is_valid(b)
+  end, vim.api.nvim_list_bufs())
+  if #bufs > 1 then
+    local cur = vim.api.nvim_get_current_buf()
+    vim.cmd('bprev')
+    vim.cmd('bd ' .. cur)
+  end
+end, { desc = 'Close buffer' })
 
 -- 空文字だとマウス無効。以前は options が init から読まれておらず実質オフだった
 vim.opt.mouse = "nv"
