@@ -34,6 +34,7 @@ end, { desc = 'Close buffer' })
 
 -- 空文字だとマウス無効。以前は options が init から読まれておらず実質オフだった
 vim.opt.mouse = "nv"
+vim.opt.mousescroll = "ver:1,hor:6"
 
 -- コンテナ内に xclip 等がないため、ターミナル経由でホストのクリップボードへ送る（Cursor/VS Code 統合ターミナル向け）
 vim.g.clipboard = {
