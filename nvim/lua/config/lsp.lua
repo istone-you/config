@@ -11,10 +11,24 @@ vim.lsp.config('gopls', {
   },
 })
 
+local function load_local_lsp_config()
+  local path = vim.fn.stdpath('config') .. '/local.lua'
+  if vim.fn.filereadable(path) == 1 then
+    local ok, result = pcall(dofile, path)
+    if ok and type(result) == 'table' then return result end
+  end
+  return {}
+end
+
+local local_cfg = load_local_lsp_config()
+
 vim.lsp.config('ts_ls', {
   cmd         = { 'typescript-language-server', '--stdio' },
   filetypes   = { 'typescript', 'typescriptreact', 'javascript', 'javascriptreact' },
   root_markers = { 'tsconfig.json', 'jsconfig.json', 'package.json', '.git' },
+  init_options = local_cfg.tsserver_path and {
+    tsserver = { path = local_cfg.tsserver_path },
+  } or nil,
 })
 
 vim.lsp.config('tofu_ls', {
