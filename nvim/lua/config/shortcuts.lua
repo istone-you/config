@@ -141,6 +141,7 @@ DATA[1] = {
     { 'Space s s',       'Namu: シンボル検索を開く' },
     { 'Space m d',       'Markdownプレビューをトグル' },
     { 'Space G',         'GitHubパーマリンクをコピー' },
+    { 'Space P',         'パス付きコードをコピー' },
     { 'Space ?',         'このショートカット一覧を開閉' },
   }},
 }
