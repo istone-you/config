@@ -116,6 +116,7 @@
     .section-header.mode-misc     { background: #2d2d2d; color: #a9b1d6; }
     .section-header.mode-yazi     { background: #2d3b30; color: #73daca; }
     .section-header.mode-git      { background: #3b2d28; color: #ff9e64; }
+    .section-header.mode-herdr    { background: #2d2d3b; color: #cba6f7; }
 
     table { width: 100%; border-collapse: collapse; }
     tr:nth-child(even) { background: #1f2335; }
@@ -164,6 +165,7 @@
   <button class="tab-btn active" data-tab="neovim">Neovim</button>
   <button class="tab-btn" data-tab="yazi">yazi</button>
   <button class="tab-btn" data-tab="lazygit">lazygit</button>
+  <button class="tab-btn" data-tab="herdr">herdr</button>
 </div>
 
 <div class="search-wrap">
@@ -653,7 +655,74 @@
 </div>
 </div>
 
-<footer>Keyboard Shortcuts Reference &mdash; Neovim / yazi / lazygit &mdash; 2026</footer>
+<!-- ═══════════════════════════════════════════════
+     HERDR
+════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-herdr">
+<div class="grid">
+
+  <div class="section" data-section>
+    <div class="section-header mode-herdr">⚙️ 基本操作</div>
+    <table>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>?</kbd></td><td class="desc">ヘルプを表示</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>q</kbd></td><td class="desc">デタッチ（セッションを保持して離脱）</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>s</kbd></td><td class="desc">設定を開く</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>b</kbd></td><td class="desc">サイドバーの表示/非表示</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>e</kbd></td><td class="desc">スクロールバックを編集</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-herdr">📑 タブ操作</div>
+    <table>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>c</kbd></td><td class="desc">新規タブを作成</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>n</kbd></td><td class="desc">次のタブへ</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>p</kbd></td><td class="desc">前のタブへ</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>1..9</kbd></td><td class="desc">タブを切り替え</td></tr>
+      <tr><td><kbd>ctrl+shift+→</kbd> / <kbd>ctrl+shift+←</kbd></td><td class="desc">次 / 前のタブへ</td></tr>
+      <tr><td><kbd>ctrl+shift+1..9</kbd></td><td class="desc">タブを番号で切り替え</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-herdr">🪟 ペイン操作</div>
+    <table>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>v</kbd></td><td class="desc">垂直分割</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>-</kbd></td><td class="desc">水平分割</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>h/j/k/l</kbd></td><td class="desc">ペインを左/下/上/右へフォーカス</td></tr>
+      <tr><td><kbd>ctrl+alt+↑/↓/←/→</kbd></td><td class="desc">ペインを上/下/左/右へフォーカス</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>Tab</kbd></td><td class="desc">次のペインへ</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>x</kbd></td><td class="desc">ペインを閉じる</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>z</kbd></td><td class="desc">ズーム（全画面トグル）</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>r</kbd></td><td class="desc">リサイズモード</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-herdr">🗂️ ワークスペース</div>
+    <table>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>w</kbd></td><td class="desc">ワークスペース選択</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>t</kbd></td><td class="desc">ペインへ移動（goto）</td></tr>
+      <tr><td><kbd>ctrl+shift+↑</kbd> / <kbd>ctrl+shift+↓</kbd></td><td class="desc">前 / 次のワークスペースへ</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-herdr">🔧 カスタムコマンド</div>
+    <table>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>Enter</kbd></td><td class="desc">ターミナルを開く</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>g</kbd></td><td class="desc">lazygit を開く</td></tr>
+      <tr><td><kbd>ctrl+b</kbd> <kbd>y</kbd></td><td class="desc">yazi を開く</td></tr>
+      <tr><td><kbd>ctrl+alt+t</kbd></td><td class="desc">ターミナルを開く</td></tr>
+      <tr><td><kbd>ctrl+alt+g</kbd></td><td class="desc">lazygit を開く</td></tr>
+      <tr><td><kbd>ctrl+alt+y</kbd></td><td class="desc">yazi を開く</td></tr>
+    </table>
+  </div>
+
+</div>
+</div>
+
+<footer>Keyboard Shortcuts Reference &mdash; Neovim / yazi / lazygit / herdr &mdash; 2026</footer>
 
 <script>
   // タブ切り替え

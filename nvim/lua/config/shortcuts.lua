@@ -11,7 +11,7 @@ local query     = ''
 -- データ定義
 -- ══════════════════════════════════════════════
 
-local TABS = { 'Neovim', 'yazi', 'lazygit' }
+local TABS = { 'Neovim', 'yazi', 'lazygit', 'herdr' }
 
 local DATA = {}
 
@@ -236,6 +236,47 @@ DATA[3] = {
   }},
 }
 
+DATA[4] = {
+  { header = '⚙️  基本操作', color = 'ShortcutsHerdr', rows = {
+    { 'ctrl+b + ?',       'ヘルプを表示' },
+    { 'ctrl+b + q',       'デタッチ（セッションを保持して離脱）' },
+    { 'ctrl+b + s',       '設定を開く' },
+    { 'ctrl+b + b',       'サイドバーの表示/非表示' },
+    { 'ctrl+b + e',       'スクロールバックを編集' },
+  }},
+  { header = '📑 タブ操作', color = 'ShortcutsHerdr', rows = {
+    { 'ctrl+b + c',         '新規タブを作成' },
+    { 'ctrl+b + n',         '次のタブへ' },
+    { 'ctrl+b + p',         '前のタブへ' },
+    { 'ctrl+b + 1..9',      'タブを切り替え' },
+    { 'ctrl+shift + →/←',  '次 / 前のタブへ' },
+    { 'ctrl+shift + 1..9',  'タブを番号で切り替え' },
+  }},
+  { header = '🪟 ペイン操作', color = 'ShortcutsHerdr', rows = {
+    { 'ctrl+b + v',         '垂直分割' },
+    { 'ctrl+b + -',         '水平分割' },
+    { 'ctrl+b + h/j/k/l',   'ペインを左/下/上/右へフォーカス' },
+    { 'ctrl+alt + ↑/↓/←/→', 'ペインを上/下/左/右へフォーカス' },
+    { 'ctrl+b + Tab',       '次のペインへ' },
+    { 'ctrl+b + x',         'ペインを閉じる' },
+    { 'ctrl+b + z',         'ズーム（全画面トグル）' },
+    { 'ctrl+b + r',         'リサイズモード' },
+  }},
+  { header = '🗂️  ワークスペース', color = 'ShortcutsHerdr', rows = {
+    { 'ctrl+b + w',         'ワークスペース選択' },
+    { 'ctrl+b + t',         'ペインへ移動（goto）' },
+    { 'ctrl+shift + ↑/↓',   '前 / 次のワークスペースへ' },
+  }},
+  { header = '🔧 カスタムコマンド', color = 'ShortcutsHerdr', rows = {
+    { 'ctrl+b + Enter',     'ターミナルを開く' },
+    { 'ctrl+b + g',         'lazygit を開く' },
+    { 'ctrl+b + y',         'yazi を開く' },
+    { 'ctrl+alt+t',         'ターミナルを開く' },
+    { 'ctrl+alt+g',         'lazygit を開く' },
+    { 'ctrl+alt+y',         'yazi を開く' },
+  }},
+}
+
 -- ══════════════════════════════════════════════
 -- レンダリング
 -- ══════════════════════════════════════════════
@@ -366,6 +407,7 @@ local function open()
   map('1',       function() cur_tab = 1; render() end)
   map('2',       function() cur_tab = 2; render() end)
   map('3',       function() cur_tab = 3; render() end)
+  map('4',       function() cur_tab = 4; render() end)
   map('/',       function()
     vim.ui.input({ prompt = '絞り込む: ', default = query }, function(input)
       if input ~= nil then query = input; render() end
@@ -421,6 +463,7 @@ local function setup_hl()
   vim.api.nvim_set_hl(0, 'ShortcutsMisc',         { bg = '#2d2d2d', fg = '#a9b1d6', bold = true })
   vim.api.nvim_set_hl(0, 'ShortcutsYazi',         { bg = '#2d3b30', fg = '#73daca', bold = true })
   vim.api.nvim_set_hl(0, 'ShortcutsGit',          { bg = '#3b2d28', fg = '#ff9e64', bold = true })
+  vim.api.nvim_set_hl(0, 'ShortcutsHerdr',        { bg = '#2d2d3b', fg = '#cba6f7', bold = true })
 end
 
 setup_hl()

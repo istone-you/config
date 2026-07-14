@@ -1,0 +1,58 @@
+onboarding = false
+
+[keys]
+goto = "prefix+t"
+switch_tab = "ctrl+shift+1..9"
+previous_tab = "ctrl+shift+left"
+next_tab = "ctrl+shift+right"
+previous_workspace = "ctrl+shift+up"
+next_workspace = "ctrl+shift+down"
+focus_pane_up = "ctrl+alt+up"
+focus_pane_down = "ctrl+alt+down"
+focus_pane_left = "ctrl+alt+left"
+focus_pane_right = "ctrl+alt+right"
+
+[[keys.command]]
+key = "prefix+g"
+command = "lazygit"
+type = "pane"
+description = "lazygit"
+
+[[keys.command]]
+key = "prefix+y"
+command = "yazi"
+type = "pane"
+description = "yazi"
+
+[[keys.command]]
+key = "prefix+enter"
+command = "zsh"
+type = "pane"
+description = "terminal"
+
+[[keys.command]]
+key = "ctrl+alt+g"
+command = "lazygit"
+type = "pane"
+description = "lazygit"
+
+[[keys.command]]
+key = "ctrl+alt+y"
+command = "yazi"
+type = "pane"
+description = "yazi"
+
+[[keys.command]]
+key = "ctrl+alt+t"
+command = "zsh"
+type = "pane"
+description = "terminal"
+
+[worktrees]
+directory = "/app.worktree"
+
+[experimental]
+kitty_graphics = true
+
+[theme]
+name = "catppuccin"

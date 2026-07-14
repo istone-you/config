@@ -15,6 +15,7 @@ vim.api.nvim_create_autocmd('ColorScheme', {
   end,
 })
 
+vim.opt.statusline = '%F%h%m%r%=%-14.(%l,%c%V%) %P'
 vim.opt.showtabline = 2
 vim.opt.number = true
 vim.opt.relativenumber = true
