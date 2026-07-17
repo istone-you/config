@@ -1,5 +1,8 @@
 vim.g.mapleader = " "
 
+-- markview 等の guifg/guibg を端末で有効にする（これがないとインラインコード等の色が付かない）
+vim.opt.termguicolors = true
+
 vim.cmd.colorscheme('retrobox')
 
 vim.api.nvim_set_hl(0, 'Normal',      { bg = 'NONE' })

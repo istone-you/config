@@ -139,7 +139,11 @@ DATA[1] = {
     { '[d / ]d',         'LSP: 前 / 次の診断へ' },
     { 'Space e',         'LSP: 診断の詳細を表示' },
     { 'Space s s',       'Namu: シンボル検索を開く' },
-    { 'Space m d',       'Markdownプレビューをトグル' },
+    { 'Space /',         'rg+fzf: 全ファイル検索' },
+    { 'Space *',         'rg+fzf: カーソル単語で全ファイル検索' },
+    { 'Space s r',       'rg+fzf: 全ファイル置換' },
+    { 'Space s *',       'rg+fzf: カーソル単語で全ファイル置換' },
+    { 'Space m d',       'Markview: Markdownプレビューをトグル' },
     { 'Space G',         'GitHubパーマリンクをコピー' },
     { 'Space P',         'パス付きコードをコピー' },
     { 'Space ?',         'このショートカット一覧を開閉' },
@@ -268,12 +272,9 @@ DATA[4] = {
     { 'ctrl+shift + ↑/↓',   '前 / 次のワークスペースへ' },
   }},
   { header = '🔧 カスタムコマンド', color = 'ShortcutsHerdr', rows = {
-    { 'ctrl+b + Enter',     'ターミナルを開く' },
-    { 'ctrl+b + g',         'lazygit を開く' },
-    { 'ctrl+b + y',         'yazi を開く' },
-    { 'ctrl+alt+t',         'ターミナルを開く' },
-    { 'ctrl+alt+g',         'lazygit を開く' },
-    { 'ctrl+alt+y',         'yazi を開く' },
+    { 'ctrl+b+Enter / ctrl+alt+t', 'ターミナルを開く' },
+    { 'ctrl+b+g / ctrl+alt+g',    'lazygit を開く' },
+    { 'ctrl+b+y / ctrl+alt+y',    'yazi を開く' },
   }},
 }
 

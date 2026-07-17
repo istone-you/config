@@ -1,86 +1,38 @@
-local preview_win = nil
-local preview_buf = nil
+-- Markdown プレビュー（lua/config/markview にソースを同梱）
+-- 元: https://github.com/OXY2DEV/markview.nvim
 
-local function is_open()
-  return preview_win ~= nil and vim.api.nvim_win_is_valid(preview_win)
-end
+require('config.markview.autocmds').setup()
+require('config.markview.commands').setup()
 
-local function close()
-  if is_open() then
-    vim.api.nvim_win_close(preview_win, true)
-  end
-  preview_win = nil
-  preview_buf = nil
-end
-
-local function render(filepath)
-  local new_buf = vim.api.nvim_create_buf(false, true)
-
-  if is_open() then
-    local old_buf = preview_buf
-    vim.api.nvim_win_set_buf(preview_win, new_buf)
-    if old_buf and vim.api.nvim_buf_is_valid(old_buf) then
-      pcall(vim.api.nvim_buf_delete, old_buf, { force = true })
-    end
-  else
-    local from_win = vim.api.nvim_get_current_win()
-    local old_splitright = vim.o.splitright
-    vim.o.splitright = true
-    vim.cmd('vsplit')
-    vim.o.splitright = old_splitright
-    preview_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(preview_win, new_buf)
-    vim.wo[preview_win].number = false
-    vim.wo[preview_win].relativenumber = false
-    vim.wo[preview_win].wrap = true
-    vim.wo[preview_win].signcolumn = 'no'
-    vim.api.nvim_set_current_win(from_win)
-  end
-
-  preview_buf = new_buf
-
-  vim.api.nvim_win_call(preview_win, function()
-    vim.fn.termopen({ 'bun', filepath })
-  end)
-end
-
-local function toggle()
-  if is_open() then
-    close()
-    return
-  end
-  local ft = vim.bo.filetype
-  if ft ~= 'markdown' then
-    vim.notify('markdown ファイルではありません', vim.log.levels.WARN)
-    return
-  end
-  local filepath = vim.api.nvim_buf_get_name(0)
-  if filepath == '' then
-    vim.notify('先にファイルを保存してください', vim.log.levels.WARN)
-    return
-  end
-  render(filepath)
-end
-
-local function refresh()
-  if not is_open() then return end
-  local filepath = vim.api.nvim_buf_get_name(0)
-  if filepath == '' then return end
-  render(filepath)
-end
-
-vim.keymap.set('n', '<leader>md', toggle, { desc = 'Toggle markdown preview' })
-
-vim.api.nvim_create_autocmd('BufWritePost', {
-  pattern = { '*.md', '*.markdown' },
-  callback = refresh,
+require('config.markview').setup({
+  preview = {
+    enable = false,
+    icon_provider = 'internal',
+  },
 })
 
-vim.api.nvim_create_autocmd('WinClosed', {
-  callback = function(args)
-    if tonumber(args.match) == preview_win then
-      preview_win = nil
-      preview_buf = nil
-    end
+-- デフォルトの MarkviewInlineCode は fg が @markup.raw (= Comment グレー) のため
+-- 文字色が通常テキストと区別しにくい。
+-- 背景色は markview が出したデフォルト値を維持し、fg だけ Identifier 色にする。
+local function set_inline_code_fg()
+  local inline = vim.api.nvim_get_hl(0, { name = 'MarkviewInlineCode', link = false })
+  local ident = vim.api.nvim_get_hl(0, { name = 'Identifier', link = false })
+  if not ident.fg or not inline.bg then
+    return
+  end
+  vim.api.nvim_set_hl(0, 'MarkviewInlineCode', {
+    fg = ident.fg,
+    bg = inline.bg,
+  })
+end
+
+vim.api.nvim_create_autocmd({ 'VimEnter', 'ColorScheme' }, {
+  callback = function()
+    -- markview のハンドラ（highlights.setup）より後に実行する
+    vim.schedule(set_inline_code_fg)
   end,
+})
+
+vim.keymap.set('n', '<leader>md', '<cmd>Markview toggle<cr>', {
+  desc = 'Toggle markdown preview',
 })
