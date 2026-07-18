@@ -15,20 +15,26 @@ focus_pane_right = "ctrl+alt+right"
 [[keys.command]]
 key = "prefix+g"
 command = "lazygit"
-type = "pane"
+type = "popup"
 description = "lazygit"
+width = "80%"
+height = "80%"
 
 [[keys.command]]
 key = "prefix+y"
 command = "yazi"
-type = "pane"
+type = "popup"
 description = "yazi"
+width = "80%"
+height = "80%"
 
 [[keys.command]]
 key = "prefix+enter"
 command = "zsh"
-type = "pane"
+type = "popup"
 description = "terminal"
+width = "80%"
+height = "80%"
 
 [[keys.command]]
 key = "ctrl+alt+g"
