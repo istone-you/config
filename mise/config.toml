@@ -29,6 +29,7 @@
 "node"                           = "24.18.0"
 "bun"                            = "1.3.14"
 "npm:typescript"                 = "5.9.3"
+"npm:typescript-language-server" = "5.0.0"
 "npm:@typescript/native-preview" = "7.0.0-dev.20260318.1"
 "npm:@biomejs/biome"             = "2.5.4"
 "npm:eas-cli"                    = "18.4.0"
@@ -44,7 +45,8 @@
 "aqua:mvdan/sh"            = "3.13.0"
 "aqua:koalaman/shellcheck" = "0.11.0"
 # microCMS
-"npm:microcms-mcp-server" = "0.8.0"
+"npm:microcms-mcp-server"          = "0.8.0"
+"npm:microcms-document-mcp-server" = "0.2.5"
 
 [settings]
 jobs         = 20
@@ -62,11 +64,20 @@ uvx = true
 
 [env]
 NPM_CONFIG_REGISTRY    = "https://npm.flatt.tech"
+BUN_CONFIG_REGISTRY    = "https://npm.flatt.tech"
 PIP_INDEX_URL          = "https://pypi.flatt.tech/simple/"
 UV_INDEX_URL           = "https://pypi.flatt.tech/simple/"
+GOPROXY                = "https://golang.flatt.tech"
 LANG                   = "ja_JP.UTF-8"
 LC_ALL                 = "ja_JP.UTF-8"
 HK_MISE                = "1"
 HK_PKL_BACKEND         = "pklr"
 CLAUDE_CODE_NO_FLICKER = "1"
 EDITOR                 = "nvim"
+
+[shell_alias]
+m = "mise"
+y = "yazi"
+g = "lazygit"
+h = "herdr"
+d = "hunk diff"
