@@ -1,11 +1,9 @@
 .mono
-cmux
 configstore
 gh
 git
 Microsoft\\VisualStudio Services/
 xbuild
-yarn
 
 herdr-client.log
 herdr-server.log
