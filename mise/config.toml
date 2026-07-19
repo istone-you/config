@@ -1,17 +1,17 @@
 [tools]
-"hk" = "1.51.0"
-# CLIヘルパーツール
-"aqua:jqlang/jq"             = "1.8.2"   
-"aqua:mikefarah/yq"          = "4.53.3"  
-"aqua:tamasfe/taplo"         = "0.10.0"  
-"aqua:junegunn/fzf"          = "0.74.1" 
-"aqua:sharkdp/fd"            = "10.4.2"  
-"aqua:sharkdp/bat"           = "0.26.1"  
-"aqua:BurntSushi/ripgrep"    = "15.2.0"  
-"aqua:dandavison/delta"      = "0.19.2"  
-"aqua:ajeetdsouza/zoxide"    = "0.10.0" 
-"aqua:sxyazi/yazi"           = "26.5.6" 
-"aqua:jesseduffield/lazygit" = "0.63.1"  
+"aqua:cli/cli"               = "2.96.0"
+"hk"                         = "1.51.0"
+"aqua:jqlang/jq"             = "1.8.2"
+"aqua:mikefarah/yq"          = "4.53.3"
+"aqua:tamasfe/taplo"         = "0.10.0"
+"aqua:junegunn/fzf"          = "0.74.1"
+"aqua:sharkdp/fd"            = "10.4.2"
+"aqua:sharkdp/bat"           = "0.26.1"
+"aqua:BurntSushi/ripgrep"    = "15.2.0"
+"aqua:dandavison/delta"      = "0.19.2"
+"aqua:ajeetdsouza/zoxide"    = "0.10.0"
+"aqua:sxyazi/yazi"           = "26.5.6"
+"aqua:jesseduffield/lazygit" = "0.63.1"
 "aqua:neovim/neovim"         = "0.12.4"
 "aqua:ogulcancelik/herdr"    = "0.7.4"
 "npm:hunkdiff"               = "0.17.1"
@@ -41,10 +41,10 @@
 "aqua:zizmorcore/zizmor"       = "1.27.0"
 "aqua:suzuki-shunsuke/pinact"  = "3.4.5"
 # ShellScript
-"aqua:mvdan/sh"            = "3.13.0" 
+"aqua:mvdan/sh"            = "3.13.0"
 "aqua:koalaman/shellcheck" = "0.11.0"
 # microCMS
-"npm:microcms-mcp-server"  = "0.8.0"
+"npm:microcms-mcp-server" = "0.8.0"
 
 [settings]
 jobs         = 20
@@ -61,10 +61,12 @@ bun = true
 uvx = true
 
 [env]
-NPM_CONFIG_REGISTRY = "https://npm.flatt.tech"
-PIP_INDEX_URL       = "https://pypi.flatt.tech/simple/"
-UV_INDEX_URL        = "https://pypi.flatt.tech/simple/"
-HK_MISE = "1"
-HK_PKL_BACKEND = "pklr"
+NPM_CONFIG_REGISTRY    = "https://npm.flatt.tech"
+PIP_INDEX_URL          = "https://pypi.flatt.tech/simple/"
+UV_INDEX_URL           = "https://pypi.flatt.tech/simple/"
+LANG                   = "ja_JP.UTF-8"
+LC_ALL                 = "ja_JP.UTF-8"
+HK_MISE                = "1"
+HK_PKL_BACKEND         = "pklr"
 CLAUDE_CODE_NO_FLICKER = "1"
-EDITOR = "nvim"
+EDITOR                 = "nvim"

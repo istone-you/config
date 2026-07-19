@@ -44,7 +44,13 @@ vim.lsp.config('tofu_ls', {
   },
 })
 
-vim.lsp.enable({ 'gopls', 'ts_ls', 'tofu_ls' })
+vim.lsp.config('taplo', {
+  cmd          = { 'taplo', 'lsp', 'stdio' },
+  filetypes    = { 'toml' },
+  root_markers = { '.taplo.toml', 'taplo.toml', '.git' },
+})
+
+vim.lsp.enable({ 'gopls', 'ts_ls', 'tofu_ls', 'taplo' })
 
 -- 診断表示の設定
 vim.diagnostic.config({
@@ -68,5 +74,22 @@ vim.api.nvim_create_autocmd('LspAttach', {
     map('[d',         vim.diagnostic.goto_prev,     'LSP: 前の診断へ')
     map(']d',         vim.diagnostic.goto_next,     'LSP: 次の診断へ')
     map('<leader>e',  vim.diagnostic.open_float,    'LSP: 診断の詳細')
+  end,
+})
+
+local format_on_save_clients = {
+  gopls   = true,
+  tofu_ls = true,
+  taplo   = true,
+}
+
+vim.api.nvim_create_autocmd('BufWritePre', {
+  callback = function()
+    vim.lsp.buf.format({
+      async = false,
+      filter = function(client)
+        return format_on_save_clients[client.name] == true
+      end,
+    })
   end,
 })

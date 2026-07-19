@@ -1,57 +1,72 @@
 onboarding = false
 
 [keys]
-goto = "prefix+t"
-switch_tab = "ctrl+shift+1..9"
-previous_tab = "ctrl+shift+left"
-next_tab = "ctrl+shift+right"
-previous_workspace = "ctrl+shift+up"
-next_workspace = "ctrl+shift+down"
-focus_pane_up = "ctrl+alt+up"
-focus_pane_down = "ctrl+alt+down"
-focus_pane_left = "ctrl+alt+left"
-focus_pane_right = "ctrl+alt+right"
+prefix             = "ctrl+space"
+goto               = "prefix+t"
+switch_tab         = "ctrl+alt+1..9"
+previous_tab       = "ctrl+alt+left"
+next_tab           = "ctrl+alt+right"
+previous_workspace = "ctrl+alt+up"
+next_workspace     = "ctrl+alt+down"
+focus_pane_up      = "ctrl+shift+up"
+focus_pane_down    = "ctrl+shift+down"
+focus_pane_left    = "ctrl+shift+left"
+focus_pane_right   = "ctrl+shift+right"
 
 [[keys.command]]
-key = "prefix+g"
-command = "lazygit"
-type = "popup"
+key         = "prefix+g"
+command     = "lazygit"
+type        = "popup"
 description = "lazygit"
-width = "80%"
-height = "80%"
+width       = "90%"
+height      = "90%"
 
 [[keys.command]]
-key = "prefix+y"
-command = "yazi"
-type = "popup"
+key         = "prefix+y"
+command     = "yazi"
+type        = "popup"
 description = "yazi"
-width = "80%"
-height = "80%"
+width       = "90%"
+height      = "90%"
 
 [[keys.command]]
-key = "prefix+enter"
-command = "zsh"
-type = "popup"
+key         = "prefix+enter"
+command     = "zsh"
+type        = "popup"
 description = "terminal"
-width = "80%"
-height = "80%"
+width       = "90%"
+height      = "90%"
 
 [[keys.command]]
-key = "ctrl+alt+g"
-command = "lazygit"
-type = "pane"
+key         = "prefix+p"
+command     = "gh-dash"
+type        = "popup"
+description = "gh-dash"
+width       = "90%"
+height      = "90%"
+
+[[keys.command]]
+key         = "prefix+h"
+command     = "bash -lc 'r=$(herdr tab create --label \"hunk diff\" --no-focus); p=$(printf \"%s\" \"$r\" | jq -r \".result.root_pane.pane_id\"); t=$(printf \"%s\" \"$r\" | jq -r \".result.tab.tab_id\"); herdr pane run \"$p\" \"mise exec -- hunk diff; herdr tab close $t\"; herdr tab focus \"$t\"'"
+type        = "shell"
+description = "hunk diff"
+
+[[keys.command]]
+key         = "ctrl+alt+g"
+command     = "lazygit"
+type        = "pane"
 description = "lazygit"
 
 [[keys.command]]
-key = "ctrl+alt+y"
-command = "yazi"
-type = "pane"
+key         = "ctrl+alt+y"
+command     = "yazi"
+type        = "pane"
 description = "yazi"
 
 [[keys.command]]
-key = "ctrl+alt+t"
-command = "zsh"
-type = "pane"
+key         = "ctrl+alt+t"
+command     = "zsh"
+type        = "pane"
 description = "terminal"
 
 [worktrees]
