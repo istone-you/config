@@ -426,10 +426,11 @@
     <div class="section-header mode-buffer">🔧 カスタムキーマップ</div>
     <table>
       <tr><td><kbd>Space</kbd> <kbd>t</kbd></td><td class="desc">ターミナルを右に開く</td></tr>
-      <tr><td><kbd>Ctrl-h</kbd></td><td class="desc">ターミナルからエディタ（左）へ戻る</td></tr>
-      <tr><td><kbd>Ctrl-l</kbd></td><td class="desc">エディタからターミナル（右）へ移動</td></tr>
+      <tr><td><kbd>Ctrl-h</kbd></td><td class="desc">左のウィンドウへ移動（エディタ↔ターミナル・ファイラー）</td></tr>
+      <tr><td><kbd>Ctrl-l</kbd></td><td class="desc">右のウィンドウへ移動（エディタ↔ターミナル・ファイラー）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>y</kbd></td><td class="desc">yaziを開く（カレントファイルのdir）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>c</kbd> <kbd>w</kbd></td><td class="desc">yaziを開く（Neovimのcwd）</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>e</kbd></td><td class="desc">ファイラーを開閉（右パネル、詳細は下のセクション）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>g</kbd></td><td class="desc">lazygitを開く</td></tr>
       <tr><td><kbd>Tab</kbd></td><td class="desc">次のバッファへ</td></tr>
       <tr><td><kbd>Shift-Tab</kbd></td><td class="desc">前のバッファへ</td></tr>
@@ -444,7 +445,7 @@
       <tr><td><kbd>Space</kbd> <kbd>c a</kbd></td><td class="desc">LSP: コードアクション</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>f</kbd></td><td class="desc">LSP: フォーマット</td></tr>
       <tr><td><kbd>[d</kbd> / <kbd>]d</kbd></td><td class="desc">LSP: 前/次の診断へ</td></tr>
-      <tr><td><kbd>Space</kbd> <kbd>e</kbd></td><td class="desc">LSP: 診断の詳細を表示</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>E</kbd></td><td class="desc">LSP: 診断の詳細を表示</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>s s</kbd></td><td class="desc">Namu: シンボル検索を開く</td></tr>
       <tr><td class="section-divider" colspan="2">Namu ポップアップ内</td></tr>
       <tr><td><kbd>Ctrl-j</kbd> / <kbd>↓</kbd></td><td class="desc">Namu: 次の候補へ</td></tr>
@@ -458,6 +459,29 @@
       <tr><td><kbd>Space</kbd> <kbd>m</kbd> <kbd>d</kbd></td><td class="desc">Markview: Markdownプレビューをトグル</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>G</kbd></td><td class="desc">GitHubパーマリンクをコピー（現在行 / ビジュアル選択行）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>P</kbd></td><td class="desc">パス付きコードをコピー（現在行 / ビジュアル選択行）</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-buffer">🗂️ ファイラー（Space e で開閉）</div>
+    <table>
+      <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td class="desc">カーソルを下 / 上へ</td></tr>
+      <tr><td><kbd>l</kbd> / <kbd>→</kbd></td><td class="desc">ディレクトリへ入る（ファイルには無反応）</td></tr>
+      <tr><td><kbd>h</kbd> / <kbd>←</kbd></td><td class="desc">親ディレクトリへ（元の位置にカーソル復帰）</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td class="desc">ディレクトリへ入る / ファイルを開く</td></tr>
+      <tr><td><kbd>.</kbd></td><td class="desc">隠しファイルの表示トグル</td></tr>
+      <tr><td><kbd>R</kbd></td><td class="desc">一覧を再読み込み</td></tr>
+      <tr><td><kbd>Tab</kbd> / <kbd>S-Tab</kbd></td><td class="desc">選択トグル（複数選択可）＋1つ下/上へ</td></tr>
+      <tr><td><kbd>Ctrl-a</kbd> / <kbd>Ctrl-r</kbd></td><td class="desc">すべて選択 / 選択を反転</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td class="desc">選択解除→フィルタ解除→（どちらも無ければ）閉じる</td></tr>
+      <tr><td><kbd>a</kbd></td><td class="desc">ファイル/ディレクトリを作成（末尾/でディレクトリ）</td></tr>
+      <tr><td><kbd>r</kbd></td><td class="desc">名前を変更</td></tr>
+      <tr><td><kbd>d</kbd></td><td class="desc">確認して完全削除（複数選択可）</td></tr>
+      <tr><td><kbd>y</kbd> / <kbd>x</kbd></td><td class="desc">コピー / カットをクリップボードにセット</td></tr>
+      <tr><td><kbd>p</kbd> / <kbd>P</kbd></td><td class="desc">貼り付け（衝突時リネーム） / 上書き貼り付け</td></tr>
+      <tr><td><kbd>/</kbd></td><td class="desc">現在フォルダ内をファイル名でフィルタ（Escでクリア）</td></tr>
+      <tr><td><kbd>s</kbd></td><td class="desc">fd+fzfで再帰検索して移動/開く</td></tr>
+      <tr><td><kbd>q</kbd></td><td class="desc">ファイラーを閉じる</td></tr>
     </table>
   </div>
 

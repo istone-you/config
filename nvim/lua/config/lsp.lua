@@ -73,7 +73,7 @@ vim.api.nvim_create_autocmd('LspAttach', {
     map('<leader>f',  vim.lsp.buf.format,           'LSP: フォーマット')
     map('[d',         vim.diagnostic.goto_prev,     'LSP: 前の診断へ')
     map(']d',         vim.diagnostic.goto_next,     'LSP: 次の診断へ')
-    map('<leader>e',  vim.diagnostic.open_float,    'LSP: 診断の詳細')
+    map('<leader>E',  vim.diagnostic.open_float,    'LSP: 診断の詳細')
   end,
 })
 
