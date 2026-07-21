@@ -6,12 +6,46 @@ local M = {}
 M.root = nil
 M.command_log = {}
 local MAX_LOG = 200
+--- init.luaがrender_cmdlog相当を差し込むためのフック（コマンドログに変化があるたびに呼ぶ）
+M.on_log_update = function() end
+
+--- lazygit本体(command_log_panel.go)と同じく、古い→新しいの順で末尾に追記する
+--- （表示側でビューを一番下へスクロールすることで最新行を見せる。Autoscroll相当）
+local function push_log(text)
+  table.insert(M.command_log, text)
+  if #M.command_log > MAX_LOG then
+    table.remove(M.command_log, 1)
+  end
+  -- push_logはvim.system側のstdout/stderrコールバック(fast event context)からも
+  -- 呼ばれるため、vim.api経由の再描画は必ずscheduleする
+  vim.schedule(M.on_log_update)
+end
 
 local function log_command(args)
-  table.insert(M.command_log, 1, 'git ' .. table.concat(args, ' '))
-  if #M.command_log > MAX_LOG then
-    table.remove(M.command_log)
+  push_log('git ' .. table.concat(args, ' '))
+end
+
+--- lazygit本体のStreamOutput()相当。標準出力/エラーを完了を待たず1行ずつコマンドログへ
+--- 流し込む（lefthook/hk等のpre-commitフックの出力や、push/pullの進捗メッセージが
+--- 見えるようにする）。vim.systemはstdout/stderrにコールバックを渡すと最終res.stdout/
+--- res.stderrをnilにしてしまうため、ここで全文も別途累積して呼び出し元に渡せるようにする
+local function make_streamer()
+  local pending, full = '', {}
+  local function feed(_, data)
+    if not data then
+      if pending ~= '' then push_log('  ' .. pending); table.insert(full, pending); pending = '' end
+      return
+    end
+    table.insert(full, data)
+    pending = pending .. data
+    while true do
+      local nl = pending:find('\n')
+      if not nl then break end
+      push_log('  ' .. pending:sub(1, nl - 1))
+      pending = pending:sub(nl + 1)
+    end
   end
+  return feed, function() return table.concat(full) end
 end
 
 function M.find_root(cb)
@@ -30,11 +64,23 @@ end
 
 --- lazygit本体(pkg/commands/oscommands/cmd_obj.go DontLog)と同じ方針:
 --- git状態を変えないコマンド(status/diff/logなど)はコマンドログに出さない。
---- 状態を変えるコマンド(add/commit/checkoutなど)は出す。opts.dont_log=trueで前者を指定する
+--- 状態を変えるコマンド(add/commit/checkoutなど)は出す。opts.dont_log=trueで前者を指定する。
+--- opts.stream_output=trueなら、そのコマンドの標準出力/エラーもコマンドログへ流し込む
+--- （本体がcommit/push/pull/merge/rebase等でStreamOutput()するのと同じ対象）
 function M.run(args, cb, opts)
   local cmd = vim.list_extend({ 'git' }, args)
   if not (opts and opts.dont_log) then log_command(args) end
-  vim.system(cmd, { cwd = M.root, text = true }, function(res)
+  local sys_opts = { cwd = M.root, text = true }
+  local get_stdout, get_stderr
+  if opts and opts.stream_output then
+    local stdout_feed, stdout_get = make_streamer()
+    local stderr_feed, stderr_get = make_streamer()
+    sys_opts.stdout, sys_opts.stderr = stdout_feed, stderr_feed
+    get_stdout, get_stderr = stdout_get, stderr_get
+  end
+  vim.system(cmd, sys_opts, function(res)
+    if get_stdout then res.stdout = get_stdout() end
+    if get_stderr then res.stderr = get_stderr() end
     vim.schedule(function() cb(res) end)
   end)
 end
@@ -80,11 +126,11 @@ function M.commit(msg_lines, no_verify, cb)
   M.run(args, function(res)
     vim.fn.delete(tmp)
     cb(res)
-  end)
+  end, { stream_output = true })
 end
 
 function M.amend(cb)
-  M.run({ 'commit', '--amend', '--no-edit' }, cb)
+  M.run({ 'commit', '--amend', '--no-edit' }, cb, { stream_output = true })
 end
 
 -- ══════════════════════════════════════════════
@@ -144,13 +190,19 @@ function M.branches(cb)
     '--sort=-committerdate',
   }, function(res)
     local list = {}
+    local head_idx = nil
     for _, line in ipairs(vim.split(res.stdout or '', '\n', { plain = true })) do
       if line ~= '' then
         local head, name, upstream, track = line:match('^(.-)\t(.-)\t(.-)\t(.*)$')
         if name then
           table.insert(list, { name = name, current = head == '*', upstream = upstream, track = track })
+          if head == '*' then head_idx = #list end
         end
       end
+    end
+    -- branch_loader.go Load(): ソート順設定に関わらずHEADブランチを常に先頭へ移動する
+    if head_idx and head_idx ~= 1 then
+      table.insert(list, 1, table.remove(list, head_idx))
     end
     cb(list)
   end, { dont_log = true })
@@ -162,8 +214,8 @@ function M.checkout_previous(cb) M.run({ 'checkout', '-' }, cb) end
 function M.create_branch(name, cb) M.run({ 'checkout', '-b', name }, cb) end
 function M.delete_branch(name, force, cb) M.run({ 'branch', force and '-D' or '-d', name }, cb) end
 function M.force_checkout(name, cb) M.run({ 'checkout', '-f', name }, cb) end
-function M.merge_branch(name, cb) M.run({ 'merge', name }, cb) end
-function M.rebase_branch(name, cb) M.run({ 'rebase', name }, cb) end
+function M.merge_branch(name, cb) M.run({ 'merge', name }, cb, { stream_output = true }) end
+function M.rebase_branch(name, cb) M.run({ 'rebase', name }, cb, { stream_output = true }) end
 function M.rename_branch(old, new, cb) M.run({ 'branch', '-m', old, new }, cb) end
 function M.fast_forward(name, cb) M.run({ 'fetch', 'origin', name .. ':' .. name }, cb) end
 function M.set_upstream(remote, branch_name, cb) M.run({ 'branch', '-u', remote .. '/' .. branch_name }, cb) end
@@ -193,7 +245,7 @@ end
 
 function M.show_commit(hash, cb) M.run({ 'show', hash }, function(res) cb(res.stdout or '') end, { dont_log = true }) end
 function M.reset(hash, mode, cb) M.run({ 'reset', '--' .. mode, hash }, cb) end
-function M.revert_commit(hash, cb) M.run({ 'revert', '--no-edit', hash }, cb) end
+function M.revert_commit(hash, cb) M.run({ 'revert', '--no-edit', hash }, cb, { stream_output = true }) end
 function M.new_branch_from_commit(hash, name, cb) M.run({ 'checkout', '-b', name, hash }, cb) end
 
 --- Undo(z): 直前のコミット1つだけをsoft resetで取り消す（lazygit本体のreflog Undoの
@@ -258,8 +310,8 @@ function M.stash_list(cb)
 end
 
 function M.stash_show(ref, cb) M.run({ 'stash', 'show', '-p', ref }, function(res) cb(res.stdout or '') end, { dont_log = true }) end
-function M.stash_apply(ref, cb) M.run({ 'stash', 'apply', ref }, cb) end
-function M.stash_pop(ref, cb) M.run({ 'stash', 'pop', ref }, cb) end
+function M.stash_apply(ref, cb) M.run({ 'stash', 'apply', ref }, cb, { stream_output = true }) end
+function M.stash_pop(ref, cb) M.run({ 'stash', 'pop', ref }, cb, { stream_output = true }) end
 function M.stash_drop(ref, cb) M.run({ 'stash', 'drop', ref }, cb) end
 function M.stash_branch(ref, name, cb) M.run({ 'stash', 'branch', name, ref }, cb) end
 
@@ -282,11 +334,11 @@ function M.has_upstream(cb)
   end, { dont_log = true })
 end
 
-function M.push(cb) M.run({ 'push' }, cb) end
-function M.push_force_with_lease(cb) M.run({ 'push', '--force-with-lease' }, cb) end
-function M.push_set_upstream(remote, branch_name, cb) M.run({ 'push', '-u', remote, branch_name }, cb) end
-function M.pull(cb) M.run({ 'pull' }, cb) end
-function M.fetch(cb) M.run({ 'fetch' }, cb) end
+function M.push(cb) M.run({ 'push' }, cb, { stream_output = true }) end
+function M.push_force_with_lease(cb) M.run({ 'push', '--force-with-lease' }, cb, { stream_output = true }) end
+function M.push_set_upstream(remote, branch_name, cb) M.run({ 'push', '-u', remote, branch_name }, cb, { stream_output = true }) end
+function M.pull(cb) M.run({ 'pull' }, cb, { stream_output = true }) end
+function M.fetch(cb) M.run({ 'fetch' }, cb, { stream_output = true }) end
 function M.remote_names(cb)
   M.run({ 'remote' }, function(res)
     cb(vim.tbl_filter(function(l) return l ~= '' end, vim.split(res.stdout or '', '\n', { plain = true })))

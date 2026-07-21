@@ -105,7 +105,11 @@ local function update_scrollbar(win_id)
       height = win_height,
       style = 'minimal',
       focusable = false,
-      zindex = 250,
+      -- フロートは自身のzindexに関係なく通常ウィンドウのテキストより前面に描画される。
+      -- zindexはフロート同士の前後関係のみを決めるため、既定のフロートzindex(50)より
+      -- 小さくしておくと、通常ウィンドウ上では見えつつ、gitパネル等のフロートには
+      -- きちんと覆い隠される（以前は250でgitパネルの前面にはみ出していた）
+      zindex = 45,
     })
     if open_ok then
       scrollbar_wins[win_id] = result

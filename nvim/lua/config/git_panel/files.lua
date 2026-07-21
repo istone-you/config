@@ -496,12 +496,34 @@ local function amend()
   end)
 end
 
-local function stash_all()
-  git.stash_save(nil, function(res)
+--- files_controller.go fetch()相当（KeybindingFilesConfig.Fetch既定"f"）。
+--- 成功時は無通知（push/pullと同じくパネル再描画自体が結果を表す）。
+--- 本体のPostFetchRefreshと同じく、fetch完了時にBranchesパネルのPR状態も更新する
+local function fetch()
+  ctx.set_loading('Fetching')
+  git.fetch(function(res)
+    ctx.clear_loading()
     ctx.render_cmdlog()
-    if res.code ~= 0 then vim.notify('スタッシュに失敗しました: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
-    cursor_mem = nil
+    if res.code ~= 0 then
+      vim.notify('fetch失敗: ' .. (res.stderr or ''), vim.log.levels.ERROR)
+      return
+    end
     M.refresh()
+    require('config.git_panel.branches').refresh_prs()
+  end)
+end
+
+--- files_controller.go handleStashSave相当。AllowEmptyInput=trueと同じく、
+--- 空メッセージのままEnterしてもキャンセルにはせずスタッシュを実行する
+local function stash_all()
+  ctx.input('スタッシュメッセージ', '', function(msg)
+    if msg == nil then return end
+    git.stash_save(msg, function(res)
+      ctx.render_cmdlog()
+      if res.code ~= 0 then vim.notify('スタッシュに失敗しました: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
+      cursor_mem = nil
+      M.refresh()
+    end)
   end)
 end
 
@@ -518,6 +540,7 @@ function M.keymaps()
     i = ignore_file,
     y = copy_path,
     s = stash_all,
+    f = fetch,
     ['<CR>'] = enter_or_toggle,
   }
 end

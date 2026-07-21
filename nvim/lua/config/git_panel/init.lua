@@ -76,8 +76,16 @@ local function render_cmdlog()
   vim.bo[win.cmdlog_buf].modifiable = true
   vim.api.nvim_buf_set_lines(win.cmdlog_buf, 0, -1, false, lines)
   vim.bo[win.cmdlog_buf].modifiable = false
+  -- lazygit本体のAutoscroll相当: 末尾に追記していく分、ビューを常に一番下へ追従させる
+  if win.cmdlog_win and vim.api.nvim_win_is_valid(win.cmdlog_win) then
+    pcall(vim.api.nvim_win_set_cursor, win.cmdlog_win, { #lines, 0 })
+  end
 end
 ctx.render_cmdlog = render_cmdlog
+-- stream_output=trueのコマンドが実行中に標準出力/エラーを流し込んでくるたびに
+-- 呼ばれる（vim.schedule済み）。パネルが開いていない時にも呼ばれるが、
+-- render_cmdlogはcmdlog_bufの有効性チェックを持っているので安全
+git.on_log_update = render_cmdlog
 
 -- ══════════════════════════════════════════════
 -- 汎用ヘルパー（各パネルモジュールに渡す）
@@ -120,12 +128,16 @@ function ctx.menu(title, items, on_choice)
   ui.menu(title, items, { refocus_win = win.left_win }, on_choice)
 end
 
-function ctx.set_right_lines(lines, filetype)
+function ctx.set_right_lines(lines, filetype, hl_queue)
   if not (win.right_buf and vim.api.nvim_buf_is_valid(win.right_buf)) then return end
   vim.bo[win.right_buf].modifiable = true
   vim.bo[win.right_buf].filetype = filetype or 'diff'
   vim.api.nvim_buf_set_lines(win.right_buf, 0, -1, false, lines)
   vim.bo[win.right_buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(win.right_buf, hl_ns, 0, -1)
+  for _, h in ipairs(hl_queue or {}) do
+    vim.api.nvim_buf_add_highlight(win.right_buf, hl_ns, h[2], h[1], h[3] or 0, h[4] or -1)
+  end
 end
 
 function ctx.set_left_lines(lines, hl_queue)
@@ -151,6 +163,9 @@ function ctx.get_left_buf() return win.left_buf end
 function ctx.get_right_win() return win.right_win end
 function ctx.get_right_buf() return win.right_buf end
 function ctx.get_root() return git.root end
+--- 表示中のパネル名（'files'/'branches'等）。パネルモジュールがpush/pull/fetch完了時などに
+--- 「自分が今表示されているか」を判定し、非表示のパネルが誤って左バッファへ描画するのを防ぐ
+function ctx.current_panel_name() return PANELS[current_panel_idx] and PANELS[current_panel_idx].name end
 
 --- カーソルをlist entryのある行にクランプする汎用CursorMoved
 function ctx.setup_cursor_clamp(get_line_entries, get_total_rows, on_land)
@@ -192,6 +207,9 @@ local GLOBAL_KEYS
 local activate_panel
 -- toggle_cmdlog_focus(GLOBAL_KEYSより前で必要)がlayout(下で定義)を使うための前方宣言
 local layout
+-- switch_to内でタブ切替時に拡大状態を戻すため、collapse_cmdlog(下で定義)を先に使えるようにする
+local cmdlog_focused = false
+local collapse_cmdlog
 
 -- render_tabbarで再計算するタブごとのクリック判定用バイト列範囲: { {start_col,end_col,idx}, ... }
 local tab_click_ranges = {}
@@ -219,8 +237,16 @@ local function render_tabbar(idx)
 end
 
 local function switch_to(idx)
-  if idx == current_panel_idx then return end
-  activate_panel(idx)
+  -- コマンドログを@で拡大したままタブを切り替えると、後から作られたcmdlog_winが
+  -- left_win/right_winの上に居座り続けて新しいパネルが見えなくなるため、
+  -- 切替時は必ず元の大きさに戻す。同じタブへの切替(idx==current)でも、
+  -- 拡大解除とleft_winへのフォーカス復帰は行う（キー/クリックどちらの経路でも
+  -- 一貫して「拡大表示から抜けてそのパネルを見る」動きになるようにする）
+  collapse_cmdlog()
+  if idx ~= current_panel_idx then activate_panel(idx) end
+  if win.left_win and vim.api.nvim_win_is_valid(win.left_win) then
+    vim.api.nvim_set_current_win(win.left_win)
+  end
 end
 
 local function switch_relative(delta)
@@ -267,11 +293,25 @@ end
 -- lazygit本体(pkg/gui/controllers/helpers/window_arrangement_helper.go getExtrasWindowSize)相当:
 -- コマンドログにフォーカスすると、通常の固定行数(CommandLogSize)ではなく利用可能な
 -- 領域いっぱいに広がる。ここではFiles/Diffが占めていた領域も含めて丸ごと専有させる
-local cmdlog_focused = false
-local function toggle_cmdlog_focus()
+
+--- 拡大表示を元の大きさに戻す（フォーカスの移動はしない）。switch_toからも呼ぶため、
+--- toggle_cmdlog_focusのelse分岐から切り出している
+function collapse_cmdlog()
+  if not cmdlog_focused then return end
+  cmdlog_focused = false
   if not (win.cmdlog_win and vim.api.nvim_win_is_valid(win.cmdlog_win)) then return end
   local L = layout()
+  vim.api.nvim_win_set_config(win.cmdlog_win, {
+    relative = 'editor', row = L.cmdlog_row, col = L.outer_col,
+    width = L.cmdlog_w, height = L.cmdlog_h,
+  })
+  vim.wo[win.cmdlog_win].cursorline = false
+end
+
+local function toggle_cmdlog_focus()
+  if not (win.cmdlog_win and vim.api.nvim_win_is_valid(win.cmdlog_win)) then return end
   if not cmdlog_focused then
+    local L = layout()
     cmdlog_focused = true
     vim.api.nvim_win_set_config(win.cmdlog_win, {
       relative = 'editor', row = L.top_row, col = L.outer_col,
@@ -281,12 +321,7 @@ local function toggle_cmdlog_focus()
     vim.api.nvim_set_current_win(win.cmdlog_win)
     vim.api.nvim_win_set_cursor(win.cmdlog_win, { math.max(1, vim.api.nvim_buf_line_count(win.cmdlog_buf)), 0 })
   else
-    cmdlog_focused = false
-    vim.api.nvim_win_set_config(win.cmdlog_win, {
-      relative = 'editor', row = L.cmdlog_row, col = L.outer_col,
-      width = L.cmdlog_w, height = L.cmdlog_h,
-    })
-    vim.wo[win.cmdlog_win].cursorline = false
+    collapse_cmdlog()
     if win.left_win and vim.api.nvim_win_is_valid(win.left_win) then
       vim.api.nvim_set_current_win(win.left_win)
     end
@@ -339,11 +374,32 @@ end
 -- lazygit本体(sync_controller.go)と同じ分岐:
 -- ・追跡中でbehindと分かっていれば事前にforce push確認
 -- ・そうでなければ通常push→rejectされたら事後にforce push確認（--force-with-lease）
+-- lazygit本体(WithInlineStatus/WithWaitingStatus)は実行中のパネルにインラインで
+-- "Pushing.../Pulling..."を出す。左パネルのタイトルを一時的に書き換えて同じ役割を持たせる
+-- （通信中に何も表示が変わらず「動いているのか分からない」状態を防ぐ）
+local function set_loading(label)
+  if win.left_win and vim.api.nvim_win_is_valid(win.left_win) then
+    vim.api.nvim_win_set_config(win.left_win, { title = ' ⏳ ' .. label .. '... ', title_pos = 'center' })
+  end
+end
+
+local function clear_loading()
+  local spec = PANELS[current_panel_idx]
+  if win.left_win and vim.api.nvim_win_is_valid(win.left_win) and spec then
+    vim.api.nvim_win_set_config(win.left_win, { title = ' ' .. spec.title .. ' ', title_pos = 'center' })
+  end
+end
+-- 各パネルモジュール(files.luaのfetch等)からも同じローディング表示を使えるようにする
+ctx.set_loading = set_loading
+ctx.clear_loading = clear_loading
+
 local function attempt_push(force)
   local function on_done(res)
+    clear_loading()
     ctx.render_cmdlog()
     if res.code == 0 then
       refresh_current_panel()
+      require('config.git_panel.branches').refresh_prs()
       return
     end
     local err = res.stderr or ''
@@ -355,6 +411,7 @@ local function attempt_push(force)
     end
     vim.notify('push失敗: ' .. err, vim.log.levels.ERROR)
   end
+  set_loading('Pushing')
   if force then
     git.push_force_with_lease(on_done)
   else
@@ -368,10 +425,13 @@ local function do_push()
       git.branch_name(function(branch)
         ctx.confirm('アップストリームが未設定です。\norigin/' .. branch .. ' を設定してpushしますか？', function(yes)
           if not yes then return end
+          set_loading('Pushing')
           git.push_set_upstream('origin', branch, function(res)
+            clear_loading()
             ctx.render_cmdlog()
             notify_result(res, 'push失敗')
             refresh_current_panel()
+            if res.code == 0 then require('config.git_panel.branches').refresh_prs() end
           end)
         end)
       end)
@@ -395,10 +455,13 @@ local function do_push()
 end
 
 local function do_pull()
+  set_loading('Pulling')
   git.pull(function(res)
+    clear_loading()
     ctx.render_cmdlog()
     notify_result(res, 'pull失敗')
     refresh_current_panel()
+    if res.code == 0 then require('config.git_panel.branches').refresh_prs() end
   end)
 end
 
@@ -558,6 +621,15 @@ local function open()
       if cmdlog_focused then toggle_cmdlog_focus() else M.close() end
     end, { buffer = win.cmdlog_buf, nowait = true, silent = true })
   end
+  -- 拡大表示中もパネル切替キーは効くようにする（left_bufにしかバインドされていないと、
+  -- フォーカスがcmdlog_bufにある間は1-5/矢印が反応しなくなってしまう）
+  vim.keymap.set('n', '1', function() switch_to(1) end, { buffer = win.cmdlog_buf, nowait = true, silent = true })
+  vim.keymap.set('n', '2', function() switch_to(2) end, { buffer = win.cmdlog_buf, nowait = true, silent = true })
+  vim.keymap.set('n', '3', function() switch_to(3) end, { buffer = win.cmdlog_buf, nowait = true, silent = true })
+  vim.keymap.set('n', '4', function() switch_to(4) end, { buffer = win.cmdlog_buf, nowait = true, silent = true })
+  vim.keymap.set('n', '5', function() switch_to(5) end, { buffer = win.cmdlog_buf, nowait = true, silent = true })
+  vim.keymap.set('n', '<Left>', function() switch_relative(-1) end, { buffer = win.cmdlog_buf, nowait = true, silent = true })
+  vim.keymap.set('n', '<Right>', function() switch_relative(1) end, { buffer = win.cmdlog_buf, nowait = true, silent = true })
 
   vim.api.nvim_create_autocmd('WinClosed', {
     group = augrp,

@@ -184,6 +184,7 @@ DATA[1] = {
     { '[Files] A',       '直前コミットをamend（ステージ済み変更で）' },
     { '[Files] d',       '破棄（確認あり）' },
     { '[Files] s',       '全変更をスタッシュ' },
+    { '[Files] f',       'fetch（成功時はBranchesのPR状態も再取得）' },
     { '[Files] i / y',   'ignoreに追加 / パスをコピー' },
     { '[hunk] h/l, Tab', '前後のhunkへ, ステージ済み/未ステージを切替' },
     { '[hunk] Space/d',  'hunkをステージ/アンステージ / 破棄' },

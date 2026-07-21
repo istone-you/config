@@ -1,7 +1,6 @@
 onboarding = false
 
 [keys]
-prefix             = "ctrl+space"
 goto               = "prefix+t"
 switch_tab         = "ctrl+alt+1..9"
 previous_tab       = "ctrl+alt+left"

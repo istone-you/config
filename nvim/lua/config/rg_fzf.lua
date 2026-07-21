@@ -217,7 +217,7 @@ function M.open(initial_query)
     vim.fn.shellescape(out)
   )
 
-  open_float_term(' rg + fzf ', shell, function()
+  open_float_term(' rg + fzf: ' .. cwd .. ' ', shell, function()
     if vim.fn.filereadable(out) == 0 then
       return
     end
@@ -319,7 +319,7 @@ function M.replace(initial_query, initial_replace)
     row = fzf_row,
     style = 'minimal',
     border = 'single',
-    title = ' rg + fzf replace ',
+    title = ' rg + fzf replace: ' .. cwd .. ' ',
     title_pos = 'center',
   })
   vim.wo[fzf_win].number = false
