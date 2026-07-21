@@ -16,6 +16,7 @@ local PANELS = {
 
 local win = {}
 local origin_win
+local fullscreen_mode = false
 local augrp = vim.api.nvim_create_augroup('git_panel', { clear = true })
 local hl_ns = vim.api.nvim_create_namespace('git_panel_hl')
 local current_panel_idx = 1
@@ -620,10 +621,19 @@ GLOBAL_KEYS = {
 -- ══════════════════════════════════════════════
 
 function layout()
-  local total_w = math.floor(vim.o.columns * 0.9)
-  local total_h = math.floor(vim.o.lines * 0.9)
-  local outer_col = math.floor((vim.o.columns - total_w) / 2)
-  local outer_row = math.floor((vim.o.lines - total_h) / 2)
+  -- explorer.luaの:Explorer!と同じく、全画面表示時は画面いっぱい(コマンドライン分の
+  -- 2行だけ残す)を使う。中身のパネル構成・計算は90%表示と全く同じで、total_w/total_h/
+  -- outer_col/outer_rowの元になる値だけが変わる
+  local total_w, total_h, outer_col, outer_row
+  if fullscreen_mode then
+    total_w, total_h = vim.o.columns, vim.o.lines - 2
+    outer_col, outer_row = 0, 0
+  else
+    total_w = math.floor(vim.o.columns * 0.9)
+    total_h = math.floor(vim.o.lines * 0.9)
+    outer_col = math.floor((vim.o.columns - total_w) / 2)
+    outer_row = math.floor((vim.o.lines - total_h) / 2)
+  end
 
   local hgap, vgap = 0, 0
   -- tabbarもcmdlogと同じ「ボーダー付きで全幅」の作り方に統一する
@@ -672,15 +682,25 @@ local function close_wins()
     end
   end
   win = {}
+  fullscreen_mode = false
 end
 
+--- 全画面表示は「これがこのnvimプロセスの用件そのもの」という前提(herdrの
+--- popupから nvim +Git! で直接立ち上げる運用等)なので、閉じる操作(q/Esc/:q
+--- どれでも最終的にここを通る)がそのまま裏側の元バッファへ戻るのではなく、
+--- nvim自体を終了させる。通常の90%表示ではこれまで通り単に閉じるだけ
 function M.close()
+  local was_fullscreen = fullscreen_mode
   vim.api.nvim_clear_autocmds({ group = augrp })
   close_wins()
+  if was_fullscreen then
+    vim.cmd('qall')
+  end
 end
 
-local function open()
+local function open(fullscreen)
   -- gitコマンドの完了を待たず、ウィンドウは即座に表示する（読み込み中表示→非同期で内容を反映）
+  fullscreen_mode = fullscreen or false
   origin_win = vim.api.nvim_get_current_win()
   local L = layout()
 
@@ -770,17 +790,17 @@ local function open()
   end)
 end
 
-function M.open()
+function M.open(fullscreen)
   if not (win.left_win and vim.api.nvim_win_is_valid(win.left_win)) then
-    open()
+    open(fullscreen)
   end
 end
 
-function M.toggle()
+function M.toggle(fullscreen)
   if win.left_win and vim.api.nvim_win_is_valid(win.left_win) then
     M.close()
   else
-    open()
+    open(fullscreen)
   end
 end
 
@@ -820,6 +840,6 @@ vim.api.nvim_create_autocmd('ColorScheme', { callback = setup_hl })
 
 -- <leader>gg（ターミナル版lazygit）と接頭辞が被るため、timeoutlen待ちが起きないようnowaitで即時発火させる
 vim.keymap.set('n', '<leader>g', function() M.toggle() end, { desc = 'gitパネルを開閉', nowait = true })
-vim.api.nvim_create_user_command('Git', function() M.toggle() end, { desc = 'gitパネルを開閉' })
+vim.api.nvim_create_user_command('Git', function(cmd_opts) M.toggle(cmd_opts.bang) end, { bang = true, desc = 'gitパネルを開閉（!で全画面表示）' })
 
 return M

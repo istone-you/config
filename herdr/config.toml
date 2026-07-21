@@ -52,21 +52,27 @@ description = "hunk diff"
 
 [[keys.command]]
 key         = "ctrl+alt+g"
-command     = "lazygit"
-type        = "pane"
-description = "lazygit"
+command     = "zsh -ic 'nvim +Git!'"
+type        = "popup"
+description = "git panel"
+width       = "90%"
+height      = "90%"
 
 [[keys.command]]
-key         = "ctrl+alt+y"
-command     = "yazi"
-type        = "pane"
-description = "yazi"
+key         = "ctrl+alt+e"
+command     = "zsh -ic 'nvim +Explorer!'"
+type        = "popup"
+description = "explorer"
+width       = "90%"
+height      = "90%"
 
 [[keys.command]]
 key         = "ctrl+alt+t"
 command     = "zsh"
-type        = "pane"
+type        = "popup"
 description = "terminal"
+width       = "90%"
+height      = "90%"
 
 [worktrees]
 directory = "/app/.tmp/worktree"

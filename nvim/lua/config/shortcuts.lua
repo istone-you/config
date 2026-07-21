@@ -329,8 +329,10 @@ DATA[4] = {
   }},
   { header = '🔧 カスタムコマンド', color = 'ShortcutsHerdr', rows = {
     { 'ctrl+b+Enter / ctrl+alt+t', 'ターミナルを開く' },
-    { 'ctrl+b+g / ctrl+alt+g',    'lazygit を開く' },
-    { 'ctrl+b+y / ctrl+alt+y',    'yazi を開く' },
+    { 'ctrl+b+g',                 'lazygit を開く' },
+    { 'ctrl+b+y',                 'yazi を開く' },
+    { 'ctrl+alt+g',               'nvim +Git（gitパネル）を開く' },
+    { 'ctrl+alt+e',               'nvim +Explorer!（ファイラー全画面）を開く' },
   }},
 }
 

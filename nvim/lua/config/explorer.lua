@@ -13,11 +13,19 @@ local clipboard = nil
 local show_hidden = true
 local filter = ''
 
+-- 全画面表示(:Explorer!)の時だけ有効になるプレビューパネル。通常のサイドパネル表示は
+-- 幅が狭く単一カラムのままにする（トップのコメント通り）
+local preview_win, preview_buf
+local last_preview_path = nil
+local BAT_AVAILABLE = vim.fn.executable('bat') == 1
+local is_fullscreen = false
+
 local git_status = {}      -- [リポジトリルート相対path] = GIT_CODES（git statusは常にルート相対で返るため）
 local git_status_cwd = nil -- git_statusがどのcwdのものか
 local git_repo_root = nil  -- git_statusに対応するリポジトリルート（絶対path）
 local git_status_dirty = false
 local render -- 前方宣言（gitステータス取得の非同期コールバックから参照するため）
+local render_preview -- 前方宣言（render()の末尾から参照するため）
 
 local hl_ns = vim.api.nvim_create_namespace('explorer_hl')
 local augrp = vim.api.nvim_create_augroup('explorer', { clear = true })
@@ -272,12 +280,140 @@ function render()
     target_row = math.min(target_row, ENTRY_OFFSET + #rows)
     pcall(vim.api.nvim_win_set_cursor, win, { target_row, 0 })
   end
+
+  render_preview()
 end
 
 local function entry_at_cursor()
   if not win or not vim.api.nvim_win_is_valid(win) then return nil end
   local row = vim.api.nvim_win_get_cursor(win)[1]
   return rows[row - ENTRY_OFFSET]
+end
+
+-- ══════════════════════════════════════════════
+-- プレビュー（全画面表示のみ）
+-- ══════════════════════════════════════════════
+
+--- bat(ANSI付きカラー出力)はterminalバッファ(nvim_open_term)でしか描画できず、
+--- 通常のディレクトリ一覧/cat結果は普通のバッファで済むため、切り替わる時だけ
+--- バッファを作り直す。新規作成→ウィンドウへ差し込み→旧バッファ削除の順にする
+--- (逆順だと表示中のterminalバッファ削除でウィンドウ自体が閉じることがある)
+local function recreate_preview_buf(as_terminal)
+  local old = preview_buf
+  preview_buf = vim.api.nvim_create_buf(false, true)
+  if not as_terminal then
+    vim.bo[preview_buf].buftype = 'nofile'
+    vim.bo[preview_buf].buflisted = false
+  end
+  -- nvim_win_set_bufは対象ウィンドウがフォーカスされていなくてもBufEnterを発火し、
+  -- その一瞬だけ「カレントバッファ」がこのバッファとして扱われる。hidden_cursorの
+  -- 判定(vim.b.hide_cursor)がその瞬間に走るため、差し込む前に必ずマークしておく
+  -- （後からmark_bufferすると一瞬フラグが立っていない状態でBufEnterが飛び、
+  -- 実際にフォーカスしている一覧側のカーソルが復活して見えるちらつきが起きていた）
+  require('config.hidden_cursor').mark_buffer(preview_buf)
+  if preview_win and vim.api.nvim_win_is_valid(preview_win) then
+    vim.api.nvim_win_set_buf(preview_win, preview_buf)
+  end
+  if old and vim.api.nvim_buf_is_valid(old) then
+    pcall(vim.api.nvim_buf_delete, old, { force = true })
+  end
+end
+
+local function set_preview_title(text)
+  if preview_win and vim.api.nvim_win_is_valid(preview_win) then
+    vim.api.nvim_win_set_config(preview_win, { title = ' ' .. text .. ' ', title_pos = 'center' })
+  end
+end
+
+local function set_preview_lines(lines, filetype)
+  if not (preview_buf and vim.api.nvim_buf_is_valid(preview_buf)) then return end
+  if vim.bo[preview_buf].buftype == 'terminal' then recreate_preview_buf(false) end
+  vim.bo[preview_buf].modifiable = true
+  vim.bo[preview_buf].filetype = filetype or ''
+  vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, lines)
+  vim.bo[preview_buf].modifiable = false
+end
+
+local function set_preview_ansi(ansi_text)
+  if not (preview_win and vim.api.nvim_win_is_valid(preview_win)) then return end
+  recreate_preview_buf(true)
+  local chan = vim.api.nvim_open_term(preview_buf, {})
+  vim.api.nvim_chan_send(chan, ansi_text)
+end
+
+local function preview_dir_lines(path)
+  local names = vim.fn.readdir(path) or {}
+  local list = {}
+  for _, name in ipairs(names) do
+    if show_hidden or name:sub(1, 1) ~= '.' then table.insert(list, name) end
+  end
+  table.sort(list, function(a, b) return a:lower() < b:lower() end)
+  if #list == 0 then return { '  (空)' } end
+  local lines = {}
+  for _, name in ipairs(list) do
+    local isdir = vim.fn.isdirectory(path .. '/' .. name) == 1
+    table.insert(lines, '  ' .. get_icon(name, isdir) .. '  ' .. name)
+  end
+  return lines
+end
+
+--- batが無い/失敗した時のフォールバック。実際にcatを起動する代わりに直接読むが、
+--- 得られる見た目(生テキストをそのまま表示)はcatと同じ
+local function preview_file_plain(path)
+  local ok, content = pcall(vim.fn.readfile, path, '', 2000)
+  if not ok then
+    set_preview_lines({ '  (読み込み不可)' })
+    return
+  end
+  set_preview_lines(content, '')
+end
+
+--- 1000行/画面幅分だけ取得すれば十分なので、巨大ファイルでも固まらないよう
+--- --line-rangeで上限を切る
+local function preview_file(path)
+  if not BAT_AVAILABLE then
+    preview_file_plain(path)
+    return
+  end
+  local width = (preview_win and vim.api.nvim_win_is_valid(preview_win))
+    and vim.api.nvim_win_get_width(preview_win) or 80
+  vim.system(
+    {
+      'bat', '--color=always', '--paging=never', '--style=numbers',
+      '--terminal-width=' .. tostring(width), '--line-range=:1000', '--', path,
+    },
+    { text = true },
+    function(res)
+      vim.schedule(function()
+        if res.code == 0 and res.stdout and res.stdout ~= '' then
+          set_preview_ansi(res.stdout)
+        else
+          preview_file_plain(path)
+        end
+      end)
+    end
+  )
+end
+
+--- 一覧のCursorMoved、render()末尾、ディレクトリ移動後などから呼ばれる。
+--- 同じ対象への連続呼び出しは無視して再描画/再実行を省く
+function render_preview()
+  if not (preview_win and vim.api.nvim_win_is_valid(preview_win)) then return end
+  local entry = entry_at_cursor()
+  local path = entry and entry.path or nil
+  if path == last_preview_path then return end
+  last_preview_path = path
+  if not entry then
+    set_preview_title('プレビュー')
+    set_preview_lines({})
+    return
+  end
+  set_preview_title(entry.name)
+  if entry.isdir then
+    set_preview_lines(preview_dir_lines(entry.path), '')
+  else
+    preview_file(entry.path)
+  end
 end
 
 -- ══════════════════════════════════════════════
@@ -736,7 +872,12 @@ end
 -- 開閉
 -- ══════════════════════════════════════════════
 
+--- 全画面表示は「これがこのnvimプロセスの用件そのもの」という前提(herdrの
+--- popupから nvim +Explorer! で直接立ち上げる運用等)なので、閉じる操作(q/Esc/:q
+--- どれでも最終的にここを通る)がそのまま裏側の元バッファへ戻るのではなく、
+--- nvim自体を終了させる。通常のサイドパネル表示ではこれまで通り単に閉じるだけ
 local function close()
+  local was_fullscreen = is_fullscreen
   vim.api.nvim_clear_autocmds({ group = augrp })
   if win and vim.api.nvim_win_is_valid(win) then
     vim.api.nvim_win_close(win, true)
@@ -744,10 +885,22 @@ local function close()
   if buf and vim.api.nvim_buf_is_valid(buf) then
     vim.api.nvim_buf_delete(buf, { force = true })
   end
-  win, buf = nil, nil
+  if preview_win and vim.api.nvim_win_is_valid(preview_win) then
+    vim.api.nvim_win_close(preview_win, true)
+  end
+  if preview_buf and vim.api.nvim_buf_is_valid(preview_buf) then
+    vim.api.nvim_buf_delete(preview_buf, { force = true })
+  end
+  win, buf, preview_win, preview_buf = nil, nil, nil, nil
+  last_preview_path = nil
+  is_fullscreen = false
+  if was_fullscreen then
+    vim.cmd('qall')
+  end
 end
 
 local function open(fullscreen)
+  is_fullscreen = fullscreen or false
   origin_win = vim.api.nvim_get_current_win()
   if not initialized then
     cwd = vim.fn.getcwd()
@@ -761,15 +914,44 @@ local function open(fullscreen)
   vim.bo[buf].filetype   = 'explorer'
 
   if fullscreen then
+    local total_w = vim.o.columns
+    local total_h = vim.o.lines - 2
+    -- 一覧は幅32%程度、残りをプレビューに割く。ボーダー分(左右1桁ずつ)を差し引いて
+    -- 隙間無く並べる
+    local list_w = math.max(24, math.floor(total_w * 0.32) - 2)
+    local list_screen_w = list_w + 2
+    local preview_w = total_w - list_screen_w - 2
+
     win = vim.api.nvim_open_win(buf, true, {
       relative = 'editor',
-      width    = vim.o.columns,
-      height   = vim.o.lines - 2,
+      width    = list_w,
+      height   = total_h,
       col      = 0,
       row      = 0,
       style    = 'minimal',
-      border   = 'none',
+      border   = 'single',
     })
+
+    preview_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[preview_buf].buftype   = 'nofile'
+    vim.bo[preview_buf].buflisted = false
+    -- ウィンドウへ差し込む前に必ずマークする（recreate_preview_bufと同じ理由:
+    -- nvim_open_win/nvim_win_set_bufはフォーカスしていなくてもBufEnterを発火するため）
+    require('config.hidden_cursor').mark_buffer(preview_buf)
+    preview_win = vim.api.nvim_open_win(preview_buf, false, {
+      relative = 'editor',
+      width    = preview_w,
+      height   = total_h,
+      col      = list_screen_w,
+      row      = 0,
+      style    = 'minimal',
+      border   = 'single',
+      title    = ' プレビュー ',
+      title_pos = 'center',
+    })
+    vim.wo[preview_win].wrap         = false
+    vim.wo[preview_win].signcolumn   = 'no'
+    vim.wo[preview_win].winhighlight = 'Normal:ExplorerBg'
   else
     vim.cmd('botright ' .. PANEL_WIDTH .. 'vsplit')
     win = vim.api.nvim_get_current_win()
@@ -800,6 +982,7 @@ local function open(fullscreen)
       if pos[1] < min_row then
         pcall(vim.api.nvim_win_set_cursor, win, { min_row, pos[2] })
       end
+      render_preview()
     end,
   })
 
@@ -830,17 +1013,14 @@ local function open(fullscreen)
   map('/',       set_filter)
   map('s',       fd_search)
 
+  local watched = tostring(win)
+  if preview_win then watched = watched .. ',' .. tostring(preview_win) end
+  -- :q等でウィンドウが閉じられた時もclose()と同じ後始末(+全画面ならqall)を通す
   vim.api.nvim_create_autocmd('WinClosed', {
     group    = augrp,
-    pattern  = tostring(win),
+    pattern  = watched,
     once     = true,
-    callback = function()
-      if buf and vim.api.nvim_buf_is_valid(buf) then
-        vim.api.nvim_buf_delete(buf, { force = true })
-      end
-      win, buf = nil, nil
-      vim.api.nvim_clear_autocmds({ group = augrp })
-    end,
+    callback = close,
   })
 end
 
