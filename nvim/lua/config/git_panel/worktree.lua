@@ -8,12 +8,20 @@ local ctx
 local worktrees = {}
 local line_entries = {}
 local total_rows = 0
+local cursor_mem = nil  -- 直前に選択していたワークツリーのpath
 
 local function current_entry()
   local win = ctx.get_left_win()
   if not win then return nil end
   local row = vim.api.nvim_win_get_cursor(win)[1]
   return line_entries[row]
+end
+
+--- 明示的な操作を伴わないrefresh（自動更新・Rキー）の直前に呼ばれ、今カーソルが
+--- 乗っている項目をcursor_memに反映する
+function M.remember_cursor()
+  local entry = current_entry()
+  if entry then cursor_mem = entry.path end
 end
 
 local function show_detail(entry)
@@ -36,20 +44,24 @@ local function render()
 
   push('  ワークツリー', nil, 'GitPanelHeader')
   push('', nil)
+  local remembered_row = nil
   for _, w in ipairs(worktrees) do
     local is_current = (w.path == git.root)
     local marker = is_current and '* ' or '  '
     local label = w.branch or (w.detached and '(detached)' or '')
     push('  ' .. marker .. w.path .. '  ' .. label, w, is_current and 'GitPanelCurrent' or nil)
+    if cursor_mem == w.path then remembered_row = #lines end
   end
   if #worktrees == 0 then push('  (ワークツリーなし)', nil) end
 
   total_rows = #lines
   ctx.set_left_lines(lines, hl_queue)
 
-  local target = nil
-  for i = 1, total_rows do
-    if line_entries[i] then target = i; break end
+  local target = remembered_row
+  if not target then
+    for i = 1, total_rows do
+      if line_entries[i] then target = i; break end
+    end
   end
   if target then
     ctx.set_left_cursor(target)

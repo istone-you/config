@@ -10,12 +10,20 @@ local ctx
 local stashes = {}
 local line_entries = {}
 local total_rows = 0
+local cursor_mem = nil  -- 直前に選択していたスタッシュのref（stash@{N}は位置参照なので目安程度）
 
 local function current_entry()
   local win = ctx.get_left_win()
   if not win then return nil end
   local row = vim.api.nvim_win_get_cursor(win)[1]
   return line_entries[row]
+end
+
+--- 明示的な操作を伴わないrefresh（自動更新・Rキー）の直前に呼ばれ、今カーソルが
+--- 乗っている項目をcursor_memに反映する
+function M.remember_cursor()
+  local entry = current_entry()
+  if entry then cursor_mem = entry.ref end
 end
 
 local function show_detail(entry)
@@ -36,17 +44,21 @@ local function render()
 
   push('  スタッシュ', nil, 'GitPanelHeader')
   push('', nil)
+  local remembered_row = nil
   for _, s in ipairs(stashes) do
     push('  ' .. s.ref .. '  ' .. s.message, s)
+    if cursor_mem == s.ref then remembered_row = #lines end
   end
   if #stashes == 0 then push('  (スタッシュなし)', nil) end
 
   total_rows = #lines
   ctx.set_left_lines(lines, hl_queue)
 
-  local target = nil
-  for i = 1, total_rows do
-    if line_entries[i] then target = i; break end
+  local target = remembered_row
+  if not target then
+    for i = 1, total_rows do
+      if line_entries[i] then target = i; break end
+    end
   end
   if target then
     ctx.set_left_cursor(target)

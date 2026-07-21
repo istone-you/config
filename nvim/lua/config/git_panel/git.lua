@@ -16,7 +16,6 @@ end
 
 function M.find_root(cb)
   local args = { 'rev-parse', '--show-toplevel' }
-  log_command(args)
   vim.system(vim.list_extend({ 'git' }, args), { cwd = vim.fn.getcwd(), text = true }, function(res)
     vim.schedule(function()
       if res.code == 0 then
@@ -29,9 +28,12 @@ function M.find_root(cb)
   end)
 end
 
-function M.run(args, cb)
+--- lazygit本体(pkg/commands/oscommands/cmd_obj.go DontLog)と同じ方針:
+--- git状態を変えないコマンド(status/diff/logなど)はコマンドログに出さない。
+--- 状態を変えるコマンド(add/commit/checkoutなど)は出す。opts.dont_log=trueで前者を指定する
+function M.run(args, cb, opts)
   local cmd = vim.list_extend({ 'git' }, args)
-  log_command(args)
+  if not (opts and opts.dont_log) then log_command(args) end
   vim.system(cmd, { cwd = M.root, text = true }, function(res)
     vim.schedule(function() cb(res) end)
   end)
@@ -43,18 +45,18 @@ end
 
 function M.status(cb)
   -- --untracked-files=all: 未追跡ディレクトリを1行にまとめず配下ファイルを個別に列挙する
-  M.run({ 'status', '--porcelain=v1', '--untracked-files=all' }, function(res) cb(res.stdout or '') end)
+  M.run({ 'status', '--porcelain=v1', '--untracked-files=all' }, function(res) cb(res.stdout or '') end, { dont_log = true })
 end
 
 function M.branch_name(cb)
-  M.run({ 'rev-parse', '--abbrev-ref', 'HEAD' }, function(res) cb(vim.trim(res.stdout or '')) end)
+  M.run({ 'rev-parse', '--abbrev-ref', 'HEAD' }, function(res) cb(vim.trim(res.stdout or '')) end, { dont_log = true })
 end
 
 function M.diff_file(entry, cb)
   local args = (entry.section == 'staged')
     and { 'diff', '--cached', '--', entry.path }
     or { 'diff', '--', entry.path }
-  M.run(args, function(res) cb(res.stdout or '') end)
+  M.run(args, function(res) cb(res.stdout or '') end, { dont_log = true })
 end
 
 function M.stage(path, cb) M.run({ 'add', '--', path }, cb) end
@@ -151,7 +153,7 @@ function M.branches(cb)
       end
     end
     cb(list)
-  end)
+  end, { dont_log = true })
 end
 
 function M.checkout_branch(name, cb) M.run({ 'checkout', '--', name }, cb) end
@@ -186,10 +188,10 @@ function M.log(cb)
       end
     end
     cb(list)
-  end)
+  end, { dont_log = true })
 end
 
-function M.show_commit(hash, cb) M.run({ 'show', hash }, function(res) cb(res.stdout or '') end) end
+function M.show_commit(hash, cb) M.run({ 'show', hash }, function(res) cb(res.stdout or '') end, { dont_log = true }) end
 function M.reset(hash, mode, cb) M.run({ 'reset', '--' .. mode, hash }, cb) end
 function M.revert_commit(hash, cb) M.run({ 'revert', '--no-edit', hash }, cb) end
 function M.new_branch_from_commit(hash, name, cb) M.run({ 'checkout', '-b', name, hash }, cb) end
@@ -198,6 +200,43 @@ function M.new_branch_from_commit(hash, name, cb) M.run({ 'checkout', '-b', name
 --- 「直前の操作がコミットだった」場合の挙動を再現。checkout/rebaseのUndoは対象外）
 function M.undo_last_commit(cb) M.run({ 'reset', '--soft', 'HEAD@{1}' }, cb) end
 function M.checkout_commit(hash, cb) M.run({ 'checkout', hash }, cb) end
+
+--- lazygit本体のGit.MainBranches既定値("master","main")に合わせ、
+--- pkg/commands/git_commands/main_branches.go の determineMainBranches と同じ優先順位で解決する:
+--- 1. ローカルブランチのアップストリーム（<name>@{u}。例: main@{u} -> origin/main）
+--- 2. アップストリーム未設定ならorigin配下のリモート追跡ブランチ（refs/remotes/origin/<name>）
+--- 3. それも無ければローカルブランチ自体（refs/heads/<name>）
+--- ※ 1を最優先するのが重要: mainブランチにチェックアウトしている状態でmain自身を使うと
+---   git rev-list HEAD ^main が常に空になり、未pushコミットまで緑(Merged)になってしまう
+function M.resolve_main_branches(cb)
+  local candidates = { 'master', 'main' }
+  local refs = {}
+  local pending = #candidates
+  local function done()
+    pending = pending - 1
+    if pending == 0 then cb(refs) end
+  end
+  for _, name in ipairs(candidates) do
+    M.run({ 'rev-parse', '--symbolic-full-name', name .. '@{u}' }, function(res)
+      if res.code == 0 then
+        table.insert(refs, vim.trim(res.stdout or ''))
+        done()
+        return
+      end
+      M.run({ 'rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' .. name }, function(res2)
+        if res2.code == 0 then
+          table.insert(refs, 'refs/remotes/origin/' .. name)
+          done()
+          return
+        end
+        M.run({ 'rev-parse', '--verify', '--quiet', 'refs/heads/' .. name }, function(res3)
+          if res3.code == 0 then table.insert(refs, 'refs/heads/' .. name) end
+          done()
+        end, { dont_log = true })
+      end, { dont_log = true })
+    end, { dont_log = true })
+  end
+end
 
 -- ══════════════════════════════════════════════
 -- スタッシュ
@@ -215,10 +254,10 @@ function M.stash_list(cb)
       end
     end
     cb(list)
-  end)
+  end, { dont_log = true })
 end
 
-function M.stash_show(ref, cb) M.run({ 'stash', 'show', '-p', ref }, function(res) cb(res.stdout or '') end) end
+function M.stash_show(ref, cb) M.run({ 'stash', 'show', '-p', ref }, function(res) cb(res.stdout or '') end, { dont_log = true }) end
 function M.stash_apply(ref, cb) M.run({ 'stash', 'apply', ref }, cb) end
 function M.stash_pop(ref, cb) M.run({ 'stash', 'pop', ref }, cb) end
 function M.stash_drop(ref, cb) M.run({ 'stash', 'drop', ref }, cb) end
@@ -240,17 +279,43 @@ end
 function M.has_upstream(cb)
   M.run({ 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}' }, function(res)
     cb(res.code == 0, vim.trim(res.stdout or ''))
-  end)
+  end, { dont_log = true })
 end
 
 function M.push(cb) M.run({ 'push' }, cb) end
+function M.push_force_with_lease(cb) M.run({ 'push', '--force-with-lease' }, cb) end
 function M.push_set_upstream(remote, branch_name, cb) M.run({ 'push', '-u', remote, branch_name }, cb) end
 function M.pull(cb) M.run({ 'pull' }, cb) end
 function M.fetch(cb) M.run({ 'fetch' }, cb) end
 function M.remote_names(cb)
   M.run({ 'remote' }, function(res)
     cb(vim.tbl_filter(function(l) return l ~= '' end, vim.split(res.stdout or '', '\n', { plain = true })))
-  end)
+  end, { dont_log = true })
+end
+
+--- suggestions_helper.go GetRefsSuggestionsFuncと同じ材料を集める:
+--- リモート追跡ブランチ("remote/branch"形式) + ローカルブランチ + タグ + HEAD系の特殊ref
+function M.ref_candidates(cb)
+  local function lines(res)
+    local out = {}
+    for l in (res.stdout or ''):gmatch('[^\r\n]+') do table.insert(out, l) end
+    return out
+  end
+  M.run({ 'for-each-ref', 'refs/remotes/', '--format=%(refname:short)' }, function(r1)
+    local remotes = vim.tbl_filter(function(l) return not l:match('/HEAD$') end, lines(r1))
+    M.run({ 'for-each-ref', 'refs/heads/', '--format=%(refname:short)' }, function(r2)
+      local locals = lines(r2)
+      M.run({ 'for-each-ref', 'refs/tags/', '--format=%(refname:short)' }, function(r3)
+        local tags = lines(r3)
+        local all = {}
+        vim.list_extend(all, remotes)
+        vim.list_extend(all, locals)
+        vim.list_extend(all, tags)
+        vim.list_extend(all, { 'HEAD', 'FETCH_HEAD', 'MERGE_HEAD', 'ORIG_HEAD' })
+        cb(all)
+      end, { dont_log = true })
+    end, { dont_log = true })
+  end, { dont_log = true })
 end
 
 -- ══════════════════════════════════════════════
@@ -283,7 +348,7 @@ function M.worktrees(cb)
       end
     end
     cb(list)
-  end)
+  end, { dont_log = true })
 end
 
 function M.worktree_add(path, branch_name, as_new_branch, cb)

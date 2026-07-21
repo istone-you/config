@@ -169,11 +169,13 @@ DATA[1] = {
     { 's',               'fd+fzfで再帰検索して移動/開く' },
     { 'q',               'ファイラーを閉じる' },
   }},
-  { header = '🌱 gitパネル（Space g で開閉、1-5でパネル切替）', color = 'ShortcutsBuffer', rows = {
+  { header = '🌱 gitパネル（Space g で開閉、1-5/←→/タブクリックでパネル切替）', color = 'ShortcutsBuffer', rows = {
     { '1-5',             'Files / Branches / Commits / Stash / Worktree へ切替' },
+    { '← / →',           '前後のパネルへ切替（タブバーはクリックでも切替可）' },
     { 'P / p',           'push / pull（どのパネルでも共通）' },
     { 'R',               '現在のパネルを再取得' },
     { 'z',               '直前のコミットを取り消す（soft reset、確認あり）' },
+    { '@',               'コマンドログを画面いっぱいに拡大 / 再度で元に戻す' },
     { 'q / Esc',         '閉じる' },
     { '[Files] Space',   'ステージ / アンステージ（ディレクトリは配下全て）' },
     { '[Files] Enter',   'ディレクトリの折り畳み / ファイルはhunkステージへ' },

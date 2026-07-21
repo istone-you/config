@@ -19,6 +19,46 @@ local origin_win
 local augrp = vim.api.nvim_create_augroup('git_panel', { clear = true })
 local hl_ns = vim.api.nvim_create_namespace('git_panel_hl')
 local current_panel_idx = 1
+local refresh_timer = nil
+
+-- lazygit本体(pkg/gui/background.go)は10秒ごとのFiles再取得+2秒ごとの外部変更検知(reflog等)
+-- を別々のタイマーで走らせているが、こちらは常に1パネルだけを表示する構成なので
+-- 「表示中のパネルを2秒おきに再取得」だけに単純化して同じ体感（外部でのgit操作が
+-- 自動的に反映される）を再現する
+local AUTO_REFRESH_INTERVAL_MS = 2000
+
+--- 「押したから更新する」(R)と「勝手に定期更新する」(auto refresh)の両方から使う共通処理。
+--- 各パネルモジュールが持つremember_cursor()（無ければ何もしない）で「今カーソルが
+--- 乗っている項目」を記録してからrefresh()する。これをしないと、ユーザーが単に
+--- j/kで見ているだけの項目情報が古いまま(あるいは無いまま)再描画されてカーソルが
+--- 先頭などに戻ってしまう
+local function refresh_current_panel()
+  local spec = PANELS[current_panel_idx]
+  if not spec then return end
+  local panel = require(spec.mod)
+  if panel.remember_cursor then panel.remember_cursor() end
+  panel.refresh()
+end
+
+local function start_auto_refresh()
+  if refresh_timer then return end
+  refresh_timer = vim.uv.new_timer()
+  refresh_timer:start(AUTO_REFRESH_INTERVAL_MS, AUTO_REFRESH_INTERVAL_MS, vim.schedule_wrap(function()
+    -- hunkステージング中やモーダル表示中(フォーカスがleft_win以外)は再描画で状態が
+    -- 消えてしまうため、左パネルにフォーカスがある時だけ自動更新する
+    if not (win.left_win and vim.api.nvim_win_is_valid(win.left_win)) then return end
+    if vim.api.nvim_get_current_win() ~= win.left_win then return end
+    refresh_current_panel()
+  end))
+end
+
+local function stop_auto_refresh()
+  if refresh_timer then
+    refresh_timer:stop()
+    refresh_timer:close()
+    refresh_timer = nil
+  end
+end
 
 local ctx = {}
 
@@ -29,7 +69,7 @@ local ctx = {}
 local function render_cmdlog()
   if not (win.cmdlog_buf and vim.api.nvim_buf_is_valid(win.cmdlog_buf)) then return end
   local lines = {}
-  for i = 1, math.min(#git.command_log, 30) do
+  for i = 1, #git.command_log do
     table.insert(lines, git.command_log[i])
   end
   if #lines == 0 then lines = { '(まだ実行なし)' } end
@@ -70,6 +110,12 @@ function ctx.multiline_input(title, on_submit)
   ui.multiline_input({ title = title, refocus_win = win.left_win }, on_submit)
 end
 
+--- lazygitのPrompt+FindSuggestionsFunc相当。get_candidates(text)は全候補からの
+--- フィルタ済み配列を返す関数（fuzzy検索は呼び出し側でvim.fn.matchfuzzy等を使う）
+function ctx.suggest_input(title, get_candidates, on_submit)
+  ui.suggest_input(title, { refocus_win = win.left_win }, get_candidates, on_submit)
+end
+
 function ctx.menu(title, items, on_choice)
   ui.menu(title, items, { refocus_win = win.left_win }, on_choice)
 end
@@ -89,7 +135,7 @@ function ctx.set_left_lines(lines, hl_queue)
   vim.bo[win.left_buf].modifiable = false
   vim.api.nvim_buf_clear_namespace(win.left_buf, hl_ns, 0, -1)
   for _, h in ipairs(hl_queue or {}) do
-    vim.api.nvim_buf_add_highlight(win.left_buf, hl_ns, h[2], h[1], 0, -1)
+    vim.api.nvim_buf_add_highlight(win.left_buf, hl_ns, h[2], h[1], h[3] or 0, h[4] or -1)
   end
   render_cmdlog()
 end
@@ -141,6 +187,14 @@ end
 -- ══════════════════════════════════════════════
 
 local GLOBAL_KEYS
+-- switch_to -> activate_panel -> bind_click -> handle_panel_click -> switch_to と
+-- 循環参照になるため、activate_panelを前方宣言しておく（GLOBAL_KEYSと同じ手法）
+local activate_panel
+-- toggle_cmdlog_focus(GLOBAL_KEYSより前で必要)がlayout(下で定義)を使うための前方宣言
+local layout
+
+-- render_tabbarで再計算するタブごとのクリック判定用バイト列範囲: { {start_col,end_col,idx}, ... }
+local tab_click_ranges = {}
 
 --- 左右パネルの上に全幅で常時表示するタブバー。狭い端末でも左パネルの枠内に
 --- 収まらないため、専用の1行ウィンドウにしている
@@ -154,15 +208,92 @@ local function render_tabbar(idx)
   vim.api.nvim_buf_set_lines(win.tabbar_buf, 0, -1, false, { table.concat(parts) })
   vim.bo[win.tabbar_buf].modifiable = false
   vim.api.nvim_buf_clear_namespace(win.tabbar_buf, hl_ns, 0, -1)
+  tab_click_ranges = {}
   local col = 0
   for i, part in ipairs(parts) do
     local hl = (i == idx) and 'GitPanelTabActive' or 'GitPanelTabInactive'
     vim.api.nvim_buf_add_highlight(win.tabbar_buf, hl_ns, hl, 0, col, col + #part)
+    table.insert(tab_click_ranges, { start_col = col, end_col = col + #part, idx = i })
     col = col + #part
   end
 end
 
-local function activate_panel(idx)
+local function switch_to(idx)
+  if idx == current_panel_idx then return end
+  activate_panel(idx)
+end
+
+local function switch_relative(delta)
+  local idx = current_panel_idx + delta
+  if idx < 1 then idx = #PANELS end
+  if idx > #PANELS then idx = 1 end
+  switch_to(idx)
+end
+
+--- <LeftMouse>はクリック先ではなく「クリックした瞬間にフォーカスがあった」
+--- バッファのキーマップで解決される。パネル内の全バッファに同じハンドラを
+--- 仕込むことで、どこにフォーカスがあっても1回目のクリックで判定が走るようにする。
+--- タブバーへのクリックはタブ切替、それ以外は<LeftMouse>を上書きしたことで
+--- 消えてしまう既定動作(クリック先へフォーカス移動+カーソル位置決め)を自前で再現する
+local function handle_panel_click()
+  local pos = vim.fn.getmousepos()
+  if pos.winid == win.tabbar_win then
+    local col = pos.column - 1
+    for _, r in ipairs(tab_click_ranges) do
+      if col >= r.start_col and col < r.end_col then
+        switch_to(r.idx)
+        break
+      end
+    end
+    if win.left_win and vim.api.nvim_win_is_valid(win.left_win) then
+      vim.api.nvim_set_current_win(win.left_win)
+    end
+    return
+  end
+  if pos.winid and pos.winid ~= 0 and vim.api.nvim_win_is_valid(pos.winid) then
+    vim.api.nvim_set_current_win(pos.winid)
+    if pos.line > 0 then
+      pcall(vim.api.nvim_win_set_cursor, pos.winid, { pos.line, math.max(0, pos.column - 1) })
+    end
+  end
+end
+
+local function bind_click(buf)
+  if buf and vim.api.nvim_buf_is_valid(buf) then
+    vim.keymap.set('n', '<LeftMouse>', handle_panel_click, { buffer = buf, nowait = true, silent = true })
+  end
+end
+
+-- lazygit本体(pkg/gui/controllers/helpers/window_arrangement_helper.go getExtrasWindowSize)相当:
+-- コマンドログにフォーカスすると、通常の固定行数(CommandLogSize)ではなく利用可能な
+-- 領域いっぱいに広がる。ここではFiles/Diffが占めていた領域も含めて丸ごと専有させる
+local cmdlog_focused = false
+local function toggle_cmdlog_focus()
+  if not (win.cmdlog_win and vim.api.nvim_win_is_valid(win.cmdlog_win)) then return end
+  local L = layout()
+  if not cmdlog_focused then
+    cmdlog_focused = true
+    vim.api.nvim_win_set_config(win.cmdlog_win, {
+      relative = 'editor', row = L.top_row, col = L.outer_col,
+      width = L.tabbar_w, height = L.box_h + L.cmdlog_h + 2,
+    })
+    vim.wo[win.cmdlog_win].cursorline = true
+    vim.api.nvim_set_current_win(win.cmdlog_win)
+    vim.api.nvim_win_set_cursor(win.cmdlog_win, { math.max(1, vim.api.nvim_buf_line_count(win.cmdlog_buf)), 0 })
+  else
+    cmdlog_focused = false
+    vim.api.nvim_win_set_config(win.cmdlog_win, {
+      relative = 'editor', row = L.cmdlog_row, col = L.outer_col,
+      width = L.cmdlog_w, height = L.cmdlog_h,
+    })
+    vim.wo[win.cmdlog_win].cursorline = false
+    if win.left_win and vim.api.nvim_win_is_valid(win.left_win) then
+      vim.api.nvim_set_current_win(win.left_win)
+    end
+  end
+end
+
+function activate_panel(idx)
   current_panel_idx = idx
   local spec = PANELS[idx]
   local panel = require(spec.mod)
@@ -176,6 +307,7 @@ local function activate_panel(idx)
   vim.bo[win.left_buf].filetype   = 'gitpanel'
   vim.api.nvim_win_set_buf(win.left_win, win.left_buf)
   require('config.hidden_cursor').mark_buffer(win.left_buf)
+  bind_click(win.left_buf)
   vim.wo[win.left_win].wrap         = false
   vim.wo[win.left_win].number       = false
   vim.wo[win.left_win].signcolumn   = 'no'
@@ -192,43 +324,72 @@ local function activate_panel(idx)
   panel.activate(ctx)
 end
 
-local function switch_to(idx)
-  if idx == current_panel_idx then return end
-  activate_panel(idx)
-end
-
 -- ══════════════════════════════════════════════
 -- グローバルキー（push/pull/refresh, パネル切替, 閉じる）
 -- ══════════════════════════════════════════════
 
-local function notify_result(res, ok_msg, fail_prefix)
-  if res.code == 0 then
-    local detail = vim.trim((res.stdout or '') .. (res.stderr or ''))
-    vim.notify(detail ~= '' and (ok_msg .. '\n' .. detail) or ok_msg, vim.log.levels.INFO)
-  else
+--- lazygit本体(sync_controller.go pushAux/pullWithLock)と同じく、成功時は
+--- 何も通知しない（パネルの再描画自体が結果を表す）。失敗時のみ通知する
+local function notify_result(res, fail_prefix)
+  if res.code ~= 0 then
     vim.notify(fail_prefix .. ': ' .. (res.stderr or ''), vim.log.levels.ERROR)
+  end
+end
+
+-- lazygit本体(sync_controller.go)と同じ分岐:
+-- ・追跡中でbehindと分かっていれば事前にforce push確認
+-- ・そうでなければ通常push→rejectされたら事後にforce push確認（--force-with-lease）
+local function attempt_push(force)
+  local function on_done(res)
+    ctx.render_cmdlog()
+    if res.code == 0 then
+      refresh_current_panel()
+      return
+    end
+    local err = res.stderr or ''
+    if not force and err:find('rejected', 1, true) then
+      ctx.confirm('リモートに新しいコミットがあり、通常のpushは拒否されました。\nforce pushしますか？(--force-with-lease)', function(yes)
+        if yes then attempt_push(true) end
+      end)
+      return
+    end
+    vim.notify('push失敗: ' .. err, vim.log.levels.ERROR)
+  end
+  if force then
+    git.push_force_with_lease(on_done)
+  else
+    git.push(on_done)
   end
 end
 
 local function do_push()
   git.has_upstream(function(ok)
-    if ok then
-      git.push(function(res)
-        ctx.render_cmdlog()
-        notify_result(res, 'push完了', 'push失敗')
-        require(PANELS[current_panel_idx].mod).refresh()
+    if not ok then
+      git.branch_name(function(branch)
+        ctx.confirm('アップストリームが未設定です。\norigin/' .. branch .. ' を設定してpushしますか？', function(yes)
+          if not yes then return end
+          git.push_set_upstream('origin', branch, function(res)
+            ctx.render_cmdlog()
+            notify_result(res, 'push失敗')
+            refresh_current_panel()
+          end)
+        end)
       end)
       return
     end
-    git.branch_name(function(branch)
-      ctx.confirm('アップストリームが未設定です。\norigin/' .. branch .. ' を設定してpushしますか？', function(yes)
-        if not yes then return end
-        git.push_set_upstream('origin', branch, function(res)
-          ctx.render_cmdlog()
-          notify_result(res, 'push完了（アップストリーム設定済み）', 'push失敗')
-          require(PANELS[current_panel_idx].mod).refresh()
+    git.branches(function(list)
+      local current
+      for _, b in ipairs(list) do
+        if b.current then current = b end
+      end
+      local behind = current and current.track and current.track:match('behind (%d+)')
+      if behind then
+        ctx.confirm('リモートより ' .. behind .. ' コミット遅れています。\nforce pushしますか？(--force-with-lease)', function(yes)
+          if yes then attempt_push(true) end
         end)
-      end)
+        return
+      end
+      attempt_push(false)
     end)
   end)
 end
@@ -236,8 +397,8 @@ end
 local function do_pull()
   git.pull(function(res)
     ctx.render_cmdlog()
-    notify_result(res, 'pull完了', 'pull失敗')
-    require(PANELS[current_panel_idx].mod).refresh()
+    notify_result(res, 'pull失敗')
+    refresh_current_panel()
   end)
 end
 
@@ -248,7 +409,7 @@ local function do_undo()
     git.undo_last_commit(function(res)
       ctx.render_cmdlog()
       if res.code ~= 0 then vim.notify('undoに失敗しました: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
-      require(PANELS[current_panel_idx].mod).refresh()
+      refresh_current_panel()
     end)
   end)
 end
@@ -259,10 +420,13 @@ GLOBAL_KEYS = {
   ['3'] = function() switch_to(3) end,
   ['4'] = function() switch_to(4) end,
   ['5'] = function() switch_to(5) end,
+  ['<Left>'] = function() switch_relative(-1) end,
+  ['<Right>'] = function() switch_relative(1) end,
   ['P'] = do_push,
   ['p'] = do_pull,
   ['z'] = do_undo,
-  ['R'] = function() require(PANELS[current_panel_idx].mod).refresh() end,
+  ['R'] = refresh_current_panel,
+  ['@'] = toggle_cmdlog_focus,
   ['q'] = function() M.close() end,
   ['<Esc>'] = function() M.close() end,
 }
@@ -271,7 +435,7 @@ GLOBAL_KEYS = {
 -- レイアウト（90%x90%センター、左パネル+右diff+下部コマンドログ）
 -- ══════════════════════════════════════════════
 
-local function layout()
+function layout()
   local total_w = math.floor(vim.o.columns * 0.9)
   local total_h = math.floor(vim.o.lines * 0.9)
   local outer_col = math.floor((vim.o.columns - total_w) / 2)
@@ -309,6 +473,8 @@ end
 -- ══════════════════════════════════════════════
 
 local function close_wins()
+  stop_auto_refresh()
+  cmdlog_focused = false
   for _, key in ipairs({ 'tabbar_win', 'left_win', 'right_win', 'cmdlog_win' }) do
     local w = win[key]
     if w and vim.api.nvim_win_is_valid(w) then
@@ -344,6 +510,7 @@ local function open()
     style = 'minimal', border = 'single',
   })
   vim.wo[win.tabbar_win].winhighlight = 'Normal:GitPanelBg'
+  bind_click(win.tabbar_buf)
 
   win.left_buf = vim.api.nvim_create_buf(false, true)
   vim.bo[win.left_buf].buftype = 'nofile'
@@ -352,6 +519,7 @@ local function open()
     style = 'minimal', border = 'single', title = ' Files ', title_pos = 'center',
   })
   require('config.hidden_cursor').mark_buffer(win.left_buf)
+  bind_click(win.left_buf)
   vim.bo[win.left_buf].modifiable = true
   vim.api.nvim_buf_set_lines(win.left_buf, 0, -1, false, { '  読み込み中...' })
   vim.bo[win.left_buf].modifiable = false
@@ -369,6 +537,7 @@ local function open()
   vim.wo[win.right_win].wrap = false
   vim.wo[win.right_win].signcolumn = 'no'
   vim.wo[win.right_win].winhighlight = 'Normal:GitPanelBg'
+  bind_click(win.right_buf)
 
   win.cmdlog_buf = vim.api.nvim_create_buf(false, true)
   vim.bo[win.cmdlog_buf].buftype    = 'nofile'
@@ -380,8 +549,15 @@ local function open()
     style = 'minimal', border = 'single', title = ' Command Log ', title_pos = 'center',
   })
   vim.wo[win.cmdlog_win].wrap = false
+  bind_click(win.cmdlog_buf)
   vim.wo[win.cmdlog_win].signcolumn = 'no'
   vim.wo[win.cmdlog_win].winhighlight = 'Normal:GitPanelBg'
+  -- フォーカス中(@で拡大)は @/q/Escで元の大きさに戻す。フォーカス前ならq/Escはパネル自体を閉じる
+  for _, key in ipairs({ '@', 'q', '<Esc>' }) do
+    vim.keymap.set('n', key, function()
+      if cmdlog_focused then toggle_cmdlog_focus() else M.close() end
+    end, { buffer = win.cmdlog_buf, nowait = true, silent = true })
+  end
 
   vim.api.nvim_create_autocmd('WinClosed', {
     group = augrp,
@@ -397,6 +573,7 @@ local function open()
     end
     render_cmdlog()
     activate_panel(1)
+    start_auto_refresh()
   end)
 end
 
@@ -426,9 +603,14 @@ local function setup_hl()
   vim.api.nvim_set_hl(0, 'GitPanelModified',     { fg = '#e0af68' })
   vim.api.nvim_set_hl(0, 'GitPanelAdded',        { fg = '#9ece6a' })
   vim.api.nvim_set_hl(0, 'GitPanelDeleted',      { fg = '#f7768e' })
+  vim.api.nvim_set_hl(0, 'GitPanelStatusStaged',   { fg = '#9ece6a' })
+  vim.api.nvim_set_hl(0, 'GitPanelStatusUnstaged', { fg = '#f7768e' })
   vim.api.nvim_set_hl(0, 'GitPanelRenamed',      { fg = '#2ac3de' })
   vim.api.nvim_set_hl(0, 'GitPanelUntracked',    { fg = '#9ece6a', italic = true })
   vim.api.nvim_set_hl(0, 'GitPanelCurrent',      { fg = '#9ece6a', bold = true })
+  vim.api.nvim_set_hl(0, 'GitPanelUnpushed',     { fg = '#f7768e' })
+  vim.api.nvim_set_hl(0, 'GitPanelPushed',       { fg = '#e0af68' })
+  vim.api.nvim_set_hl(0, 'GitPanelMerged',       { fg = '#9ece6a' })
   vim.api.nvim_set_hl(0, 'GitPanelHunkSelected', { bg = '#2d3250' })
   vim.api.nvim_set_hl(0, 'GitPanelTabActive',    { fg = '#7aa2f7', bold = true })
   vim.api.nvim_set_hl(0, 'GitPanelTabInactive',  { fg = '#565f89' })

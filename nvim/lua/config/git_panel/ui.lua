@@ -78,6 +78,9 @@ function M.input(title, default, opts, on_submit)
   local function finish(value)
     if done then return end
     done = true
+    -- インサートモードのまま閉じるとフォーカス移動後もインサートモードが引き継がれる
+    -- （lazygit本体にはvimのようなモード概念が無いため、閉じたら必ずノーマル相当に戻す）
+    vim.cmd('stopinsert')
     if vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
     refocus(opts.refocus_win)
     on_submit(value)
@@ -93,6 +96,110 @@ function M.input(title, default, opts, on_submit)
   end, { buffer = buf, nowait = true, silent = true })
 
   vim.api.nvim_win_set_cursor(win, { 1, #default })
+  vim.cmd('startinsert!')
+end
+
+--- lazygitのPrompt+FindSuggestionsFunc相当: 入力欄+リアルタイム候補リスト。
+--- 候補は<Up>/<Down>で選択、<Tab>で入力欄に補完、<CR>で選択中の候補
+--- （候補が無い場合は入力中のテキストそのもの）を確定する。
+--- title: モーダルタイトル
+--- opts.refocus_win, opts.default
+--- get_candidates(input_text) -> {string,...}  候補一覧（呼び出し側でフィルタ済み全件を渡す）
+--- on_submit(string|nil)  nil=キャンセル
+function M.suggest_input(title, opts, get_candidates, on_submit)
+  opts = opts or {}
+  local default = opts.default or ''
+  local width = math.max(40, math.min(70, math.floor(vim.o.columns * 0.6)))
+  local list_height = math.min(10, math.floor(vim.o.lines * 0.3))
+  local col = math.floor((vim.o.columns - width) / 2)
+  local row = math.floor((vim.o.lines - (1 + list_height)) / 2) - 1
+
+  local input_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[input_buf].buftype = 'nofile'
+  vim.bo[input_buf].bufhidden = 'wipe'
+  vim.api.nvim_buf_set_lines(input_buf, 0, -1, false, { default })
+
+  local input_win = vim.api.nvim_open_win(input_buf, true, {
+    relative = 'editor', width = width, height = 1, col = col, row = row,
+    style = 'minimal', border = 'rounded', title = ' ' .. title .. ' ', title_pos = 'center',
+  })
+  vim.wo[input_win].winhighlight = 'Normal:GitPanelInputBg,FloatBorder:GitPanelInputBorder'
+
+  local list_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[list_buf].buftype = 'nofile'
+  vim.bo[list_buf].bufhidden = 'wipe'
+
+  local list_win = vim.api.nvim_open_win(list_buf, false, {
+    relative = 'editor', width = width, height = list_height, col = col, row = row + 3,
+    style = 'minimal', border = 'rounded',
+  })
+  vim.wo[list_win].winhighlight =
+    'Normal:GitPanelInputBg,FloatBorder:GitPanelInputBorder,CursorLine:GitPanelCurrent'
+  vim.wo[list_win].cursorline = true
+
+  local suggestions = {}
+  local selected = 1
+
+  local function current_text()
+    return vim.api.nvim_buf_get_lines(input_buf, 0, 1, false)[1] or ''
+  end
+
+  local function render_list()
+    suggestions = get_candidates(current_text()) or {}
+    if selected > #suggestions then selected = #suggestions end
+    if selected < 1 and #suggestions > 0 then selected = 1 end
+    vim.bo[list_buf].modifiable = true
+    vim.api.nvim_buf_set_lines(list_buf, 0, -1, false, #suggestions > 0 and suggestions or { '(該当なし)' })
+    vim.bo[list_buf].modifiable = false
+    if #suggestions > 0 and vim.api.nvim_win_is_valid(list_win) then
+      pcall(vim.api.nvim_win_set_cursor, list_win, { selected, 0 })
+    end
+  end
+  render_list()
+
+  local done = false
+  local function finish(value)
+    if done then return end
+    done = true
+    vim.cmd('stopinsert')
+    if vim.api.nvim_win_is_valid(input_win) then vim.api.nvim_win_close(input_win, true) end
+    if vim.api.nvim_win_is_valid(list_win) then vim.api.nvim_win_close(list_win, true) end
+    refocus(opts.refocus_win)
+    on_submit(value)
+  end
+
+  vim.keymap.set({ 'i', 'n' }, '<CR>', function()
+    if #suggestions > 0 then finish(suggestions[selected]) else finish(current_text()) end
+  end, { buffer = input_buf, nowait = true, silent = true })
+  vim.keymap.set({ 'i', 'n' }, '<Esc>', function() finish(nil) end, { buffer = input_buf, nowait = true, silent = true })
+  vim.keymap.set({ 'i', 'n' }, '<C-u>', function()
+    vim.api.nvim_buf_set_lines(input_buf, 0, 1, false, { '' })
+    vim.api.nvim_win_set_cursor(input_win, { 1, 0 })
+    selected = 1
+    render_list()
+  end, { buffer = input_buf, nowait = true, silent = true })
+  vim.keymap.set({ 'i', 'n' }, '<Down>', function() selected = selected + 1; render_list() end,
+    { buffer = input_buf, nowait = true, silent = true })
+  vim.keymap.set({ 'i', 'n' }, '<C-n>', function() selected = selected + 1; render_list() end,
+    { buffer = input_buf, nowait = true, silent = true })
+  vim.keymap.set({ 'i', 'n' }, '<Up>', function() selected = selected - 1; render_list() end,
+    { buffer = input_buf, nowait = true, silent = true })
+  vim.keymap.set({ 'i', 'n' }, '<C-p>', function() selected = selected - 1; render_list() end,
+    { buffer = input_buf, nowait = true, silent = true })
+  vim.keymap.set({ 'i', 'n' }, '<Tab>', function()
+    if #suggestions == 0 then return end
+    local v = suggestions[selected]
+    vim.api.nvim_buf_set_lines(input_buf, 0, 1, false, { v })
+    vim.api.nvim_win_set_cursor(input_win, { 1, #v })
+    render_list()
+  end, { buffer = input_buf, nowait = true, silent = true })
+
+  vim.api.nvim_create_autocmd('TextChangedI', {
+    buffer = input_buf,
+    callback = function() selected = 1; render_list() end,
+  })
+
+  vim.api.nvim_win_set_cursor(input_win, { 1, #default })
   vim.cmd('startinsert!')
 end
 
@@ -116,7 +223,7 @@ function M.multiline_input(opts, on_submit)
   local win = vim.api.nvim_open_win(buf, true, {
     relative = 'editor', width = width, height = height, col = col, row = row,
     style = 'minimal', border = 'rounded',
-    title = ' ' .. (opts.title or '入力') .. ' (Normalモードで Enter確定 / Esc中止) ',
+    title = ' ' .. (opts.title or '入力') .. ' (Enter確定 / Esc中止) ',
     title_pos = 'center',
   })
   vim.wo[win].winhighlight = 'Normal:GitPanelInputBg,FloatBorder:GitPanelInputBorder'
@@ -126,13 +233,18 @@ function M.multiline_input(opts, on_submit)
     if done then return end
     done = true
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    -- インサートモードのまま閉じるとフォーカス移動後もインサートモードが引き継がれる
+    -- （lazygit本体にはvimのようなモード概念が無いため、閉じたら必ずノーマル相当に戻す）
+    vim.cmd('stopinsert')
     if vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
     refocus(opts.refocus_win)
     on_submit(save and lines or nil)
   end
 
-  vim.keymap.set('n', '<CR>', function() finish(true) end, { buffer = buf, nowait = true, silent = true })
-  vim.keymap.set('n', '<Esc>', function() finish(false) end, { buffer = buf, nowait = true, silent = true })
+  -- lazygit本体(commit_message_controller.go)と同じくEnterは常に確定用キー
+  -- （Insert中でも改行にならず即確定。モード遷移を意識させない）
+  vim.keymap.set({ 'i', 'n' }, '<CR>', function() finish(true) end, { buffer = buf, nowait = true, silent = true })
+  vim.keymap.set({ 'i', 'n' }, '<Esc>', function() finish(false) end, { buffer = buf, nowait = true, silent = true })
   vim.keymap.set('n', 'q', function() finish(false) end, { buffer = buf, nowait = true, silent = true })
 
   vim.cmd('startinsert')

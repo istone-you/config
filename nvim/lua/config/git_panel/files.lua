@@ -120,6 +120,14 @@ local function current_entry()
   return line_entries[row]
 end
 
+--- 明示的な操作を伴わないrefresh（自動更新・Rキー）の直前に呼ばれ、今カーソルが
+--- 乗っている項目をcursor_memに反映する。個別の操作関数が意図的にcursor_mem
+--- を設定/nil化した直後にrefresh()する場合はこれを経由しないので上書きされない
+function M.remember_cursor()
+  local node = current_entry()
+  if node then cursor_mem = node.path end
+end
+
 local function show_diff_for(node, prefer_staged)
   if not node then ctx.set_right_lines({}); return end
   if node.is_dir then
@@ -149,14 +157,24 @@ local function show_diff_for(node, prefer_staged)
   end)
 end
 
+--- lazygit本体(pkg/gui/presentation/files.go formatFileStatus)と同じ配色:
+--- 1文字目(index=staged側)は緑、ただし'?'(untracked)は赤、空白は無色。
+--- 2文字目(worktree=unstaged側)は常に赤、空白は無色。
+--- M/A/D等の文字の「意味」では色分けしない。あくまで列の位置だけで決まる
+local function status_char_hl(ch, is_staged_col)
+  if ch == ' ' then return nil end
+  if is_staged_col and ch ~= '?' then return 'GitPanelStatusStaged' end
+  return 'GitPanelStatusUnstaged'
+end
+
 local function render()
   local lines, hl_queue = {}, {}
   line_entries = {}
 
-  local function push(text, entry, hlgroup)
+  local function push(text, entry, hlgroup, col_start, col_end)
     table.insert(lines, text)
     line_entries[#lines] = entry
-    if hlgroup then table.insert(hl_queue, { #lines - 1, hlgroup }) end
+    if hlgroup then table.insert(hl_queue, { #lines - 1, hlgroup, col_start, col_end }) end
   end
 
   push('  ' .. (branch ~= '' and branch or '(no branch)'), nil, 'GitPanelHeader')
@@ -169,9 +187,11 @@ local function render()
     local is_root = node.path == ''
     local display_name = is_root and '/' or node.name
     local s, u = node_flags(node)
-    local color
-    if s and not u then color = 'GitPanelAdded'
-    elseif s and u then color = 'GitPanelModified'
+    -- ファイル名(+アイコン/ディレクトリの矢印)の色: 実物のnameColorと同じ
+    -- staged onlyなら緑、staged+unstagedなら黄、それ以外は無色
+    local name_color
+    if s and not u then name_color = 'GitPanelAdded'
+    elseif s then name_color = 'GitPanelModified'
     end
     local indent = string.rep('  ', depth)
     local status_str
@@ -181,8 +201,24 @@ local function render()
       status_str = node.file.x .. node.file.y
     end
     local icon = get_icon(display_name, node.is_dir)
-    push(string.format('  %s%s %s %s', indent, status_str, icon, display_name), node, color)
+    local status_prefix = '  ' .. indent
+    local before_name = status_prefix .. status_str .. ' '
+    local line = before_name .. icon .. ' ' .. display_name
+    -- name_colorはアイコン+ファイル名部分だけに適用する（ステータス文字は別配色）
+    push(line, node, name_color, #before_name, #line)
     if cursor_mem == node.path then remembered_row = #lines end
+
+    local status_base = #status_prefix
+    if node.is_dir then
+      if name_color then
+        table.insert(hl_queue, { #lines - 1, name_color, status_base, status_base + #status_str })
+      end
+    else
+      local c1 = status_char_hl(node.file.x, true)
+      local c2 = status_char_hl(node.file.y, false)
+      if c1 then table.insert(hl_queue, { #lines - 1, c1, status_base, status_base + 1 }) end
+      if c2 then table.insert(hl_queue, { #lines - 1, c2, status_base + 1, status_base + 2 }) end
+    end
 
     if node.is_dir and not collapsed[node.path] then
       for _, c in ipairs(node.children) do

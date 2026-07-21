@@ -11,6 +11,24 @@ local line_entries = {}
 local total_rows = 0
 local cursor_mem = nil
 
+--- lazygit本体(pkg/gui/presentation/branches.go BranchStatus)と同じマーカー。
+--- 本物にはアップストリーム名自体を表示する機能は無く、状態マーカーのみが表示される。
+--- 同期済み=緑✓ / 乖離あり=黄↓behind↑ahead / アップストリーム削除済み=赤(upstream gone)
+--- ※ RemoteBranchNotStoredLocally（設定はあるがfetch未実施で追跡refが無い）の判定は
+---   git config側を見る必要があり、for-each-refベースの現在のデータ取得方法では
+---   「アップストリーム未設定」と区別できないため未実装
+local function branch_status(b)
+  if not b.upstream or b.upstream == '' then return nil end
+  if b.track == '[gone]' then return { text = ' (upstream gone)', hl = 'GitPanelUnpushed' } end
+  local ahead = b.track and b.track:match('ahead (%d+)')
+  local behind = b.track and b.track:match('behind (%d+)')
+  if not ahead and not behind then return { text = ' ✓', hl = 'GitPanelMerged' } end
+  local parts = {}
+  if behind then table.insert(parts, '↓' .. behind) end
+  if ahead then table.insert(parts, '↑' .. ahead) end
+  return { text = ' ' .. table.concat(parts), hl = 'GitPanelPushed' }
+end
+
 local function current_entry()
   local win = ctx.get_left_win()
   if not win then return nil end
@@ -18,11 +36,18 @@ local function current_entry()
   return line_entries[row]
 end
 
+--- 明示的な操作を伴わないrefresh（自動更新・Rキー）の直前に呼ばれ、今カーソルが
+--- 乗っている項目をcursor_memに反映する
+function M.remember_cursor()
+  local entry = current_entry()
+  if entry then cursor_mem = entry.name end
+end
+
 local function show_detail(entry)
   if not entry then ctx.set_right_lines({}); return end
   git.run({ 'log', '-n', '20', '--pretty=format:%h %s (%ar)', entry.name }, function(res)
     ctx.set_right_lines(vim.split(res.stdout or '', '\n', { plain = true }), '')
-  end)
+  end, { dont_log = true })
 end
 
 local function render()
@@ -40,11 +65,14 @@ local function render()
   local remembered_row = nil
   for _, b in ipairs(branches) do
     local marker = b.current and '* ' or '  '
-    local track = ''
-    if b.upstream and b.upstream ~= '' then
-      track = '  -> ' .. b.upstream .. (b.track ~= '' and (' ' .. b.track) or '')
+    local prefix = '  ' .. marker .. b.name
+    local status = branch_status(b)
+    push(prefix .. (status and status.text or ''), b, b.current and 'GitPanelCurrent' or nil)
+    if status then
+      -- current行のGitPanelCurrent(全体緑)より後に積むことで、乖離時の黄/赤マーカーを
+      -- ステータス部分だけ確実に上書き表示する
+      table.insert(hl_queue, { #lines - 1, status.hl, #prefix, #prefix + #status.text })
     end
-    push('  ' .. marker .. b.name .. track, b, b.current and 'GitPanelCurrent' or nil)
     if cursor_mem == b.name then remembered_row = #lines end
   end
   if #branches == 0 then push('  (ブランチなし)', nil) end
@@ -88,11 +116,72 @@ local function checkout()
   git.checkout_branch(entry.name, done_refresh('チェックアウト'))
 end
 
+--- refs_helper.go CheckoutRef の OnRefNotFound 相当:
+--- 指定したref/名前が存在しなければ、パネルでカーソルが乗っていたブランチを起点に
+--- 新規ブランチとして作成するか確認する
+local function checkout_ref_or_create(ref, base_entry)
+  git.checkout_by_name(ref, function(res)
+    ctx.render_cmdlog()
+    if res.code == 0 then
+      cursor_mem = ref
+      M.refresh()
+      return
+    end
+    local base_name = base_entry and base_entry.name or 'HEAD'
+    ctx.confirm(
+      'ブランチ/refが見つかりません。\n"' .. ref .. '" を ' .. base_name .. ' から新規ブランチとして作成しますか？',
+      function(ok)
+        if not ok then return end
+        git.run({ 'checkout', '-b', ref, base_name }, function(res2)
+          ctx.render_cmdlog()
+          if res2.code ~= 0 then
+            vim.notify('作成失敗: ' .. (res2.stderr or ''), vim.log.levels.ERROR)
+            return
+          end
+          cursor_mem = ref
+          M.refresh()
+        end)
+      end
+    )
+  end)
+end
+
+--- branches_controller.go checkoutByName相当。lazygit本体はPrompt+FindSuggestionsFunc
+--- (GetRefsSuggestionsFunc: リモート追跡ブランチ+ローカルブランチ+タグ+HEAD系ref)で
+--- 入力中にリアルタイム候補を出す。"remote/branch"形式で選んだ場合はParseRemoteBranchName+
+--- CheckoutRemoteBranch相当（ローカルに同名ブランチが既にあればそれをチェックアウト、
+--- 無ければ--trackで新規作成）
 local function checkout_by_name()
-  ctx.input('チェックアウト (名前 / "-"で直前)', '', function(name)
-    if not name or name == '' then return end
-    cursor_mem = name ~= '-' and name or nil
-    git.checkout_by_name(name, done_refresh('チェックアウト'))
+  local base_entry = current_entry()
+  git.ref_candidates(function(candidates)
+    ctx.suggest_input('チェックアウト (ref名)', function(input)
+      if input == '' then return candidates end
+      return vim.fn.matchfuzzy(candidates, input)
+    end, function(text)
+      if not text or text == '' then return end
+      local remote, branch_part = text:match('^([^/]+)/(.+)$')
+      if not remote then
+        checkout_ref_or_create(text, base_entry)
+        return
+      end
+      git.remote_names(function(remotes)
+        if not vim.tbl_contains(remotes, remote) then
+          checkout_ref_or_create(text, base_entry)
+          return
+        end
+        local has_local = false
+        for _, b in ipairs(branches) do
+          if b.name == branch_part then has_local = true end
+        end
+        if has_local then
+          cursor_mem = branch_part
+          git.checkout_branch(branch_part, done_refresh('チェックアウト'))
+        else
+          cursor_mem = branch_part
+          git.run({ 'checkout', '-b', branch_part, '--track', text }, done_refresh('チェックアウト'))
+        end
+      end)
+    end)
   end)
 end
 
