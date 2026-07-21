@@ -431,7 +431,8 @@
       <tr><td><kbd>Space</kbd> <kbd>y</kbd></td><td class="desc">yaziを開く（カレントファイルのdir）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>c</kbd> <kbd>w</kbd></td><td class="desc">yaziを開く（Neovimのcwd）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>e</kbd></td><td class="desc">ファイラーを開閉（右パネル、詳細は下のセクション）</td></tr>
-      <tr><td><kbd>Space</kbd> <kbd>g</kbd></td><td class="desc">lazygitを開く</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>g</kbd></td><td class="desc">gitパネルを開閉（自作、詳細は下のセクション）</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>l</kbd> <kbd>g</kbd></td><td class="desc">lazygitを開く（ターミナル版）</td></tr>
       <tr><td><kbd>Tab</kbd></td><td class="desc">次のバッファへ</td></tr>
       <tr><td><kbd>Shift-Tab</kbd></td><td class="desc">前のバッファへ</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>q</kbd></td><td class="desc">現在のバッファを閉じる</td></tr>
@@ -482,6 +483,46 @@
       <tr><td><kbd>/</kbd></td><td class="desc">現在フォルダ内をファイル名でフィルタ（Escでクリア）</td></tr>
       <tr><td><kbd>s</kbd></td><td class="desc">fd+fzfで再帰検索して移動/開く</td></tr>
       <tr><td><kbd>q</kbd></td><td class="desc">ファイラーを閉じる</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-buffer">🌱 gitパネル（Space g で開閉、1-5でパネル切替）</div>
+    <table>
+      <tr><td><kbd>1</kbd>-<kbd>5</kbd></td><td class="desc">Files / Branches / Commits / Stash / Worktree へ切替</td></tr>
+      <tr><td><kbd>P</kbd> / <kbd>p</kbd></td><td class="desc">push / pull（どのパネルでも共通）</td></tr>
+      <tr><td><kbd>R</kbd></td><td class="desc">現在のパネルを再取得</td></tr>
+      <tr><td><kbd>z</kbd></td><td class="desc">直前のコミットを取り消す（soft reset、確認あり）</td></tr>
+      <tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td class="desc">閉じる</td></tr>
+      <tr><td class="section-divider" colspan="2">Files</td></tr>
+      <tr><td><kbd>Space</kbd></td><td class="desc">ステージ / アンステージ（ディレクトリは配下全て）</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td class="desc">ディレクトリの折り畳み / ファイルはhunkステージへ</td></tr>
+      <tr><td><kbd>a</kbd></td><td class="desc">全ステージ / 全アンステージ切替</td></tr>
+      <tr><td><kbd>c</kbd> / <kbd>w</kbd></td><td class="desc">コミット / フックなしコミット</td></tr>
+      <tr><td><kbd>A</kbd></td><td class="desc">直前コミットをamend（ステージ済み変更で）</td></tr>
+      <tr><td><kbd>d</kbd></td><td class="desc">破棄（確認あり）</td></tr>
+      <tr><td><kbd>s</kbd></td><td class="desc">全変更をスタッシュ</td></tr>
+      <tr><td><kbd>i</kbd> / <kbd>y</kbd></td><td class="desc">ignoreに追加 / パスをコピー</td></tr>
+      <tr><td class="section-divider" colspan="2">hunkステージング（Enterで進入）</td></tr>
+      <tr><td><kbd>h</kbd>/<kbd>l</kbd>, <kbd>Tab</kbd></td><td class="desc">前後のhunkへ, ステージ済み/未ステージを切替</td></tr>
+      <tr><td><kbd>Space</kbd> / <kbd>d</kbd></td><td class="desc">hunkをステージ/アンステージ / 破棄</td></tr>
+      <tr><td class="section-divider" colspan="2">Branches</td></tr>
+      <tr><td><kbd>Space</kbd></td><td class="desc">チェックアウト</td></tr>
+      <tr><td><kbd>n</kbd> / <kbd>d</kbd></td><td class="desc">新規作成 / 削除</td></tr>
+      <tr><td><kbd>M</kbd> / <kbd>r</kbd></td><td class="desc">マージ / リベース</td></tr>
+      <tr><td><kbd>R</kbd> / <kbd>f</kbd></td><td class="desc">リネーム / fast-forward</td></tr>
+      <tr><td><kbd>c</kbd> / <kbd>F</kbd> / <kbd>-</kbd></td><td class="desc">名前指定 / 強制チェックアウト / 直前のブランチへ</td></tr>
+      <tr><td class="section-divider" colspan="2">Commits</td></tr>
+      <tr><td><kbd>g</kbd></td><td class="desc">resetメニュー（soft/mixed/hard）</td></tr>
+      <tr><td><kbd>t</kbd></td><td class="desc">revert</td></tr>
+      <tr><td><kbd>n</kbd></td><td class="desc">このコミットから新規ブランチ</td></tr>
+      <tr><td><kbd>Space</kbd></td><td class="desc">detached HEADでチェックアウト</td></tr>
+      <tr><td class="section-divider" colspan="2">Stash</td></tr>
+      <tr><td><kbd>Space</kbd> / <kbd>g</kbd></td><td class="desc">apply / pop</td></tr>
+      <tr><td><kbd>d</kbd> / <kbd>n</kbd></td><td class="desc">削除 / このスタッシュから新規ブランチ</td></tr>
+      <tr><td class="section-divider" colspan="2">Worktree</td></tr>
+      <tr><td><kbd>Space</kbd></td><td class="desc">移動（cd）</td></tr>
+      <tr><td><kbd>n</kbd> / <kbd>d</kbd></td><td class="desc">新規作成 / 削除</td></tr>
     </table>
   </div>
 

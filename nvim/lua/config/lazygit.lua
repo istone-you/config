@@ -40,6 +40,6 @@ function M.open()
   end)
 end
 
-vim.keymap.set('n', '<leader>g', function() M.open() end, { desc = 'Open lazygit' })
+vim.keymap.set('n', '<leader>lg', function() M.open() end, { desc = 'Open lazygit (terminal)' })
 
 return M

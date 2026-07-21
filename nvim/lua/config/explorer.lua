@@ -13,6 +13,12 @@ local clipboard = nil
 local show_hidden = true
 local filter = ''
 
+local git_status = {}      -- [リポジトリルート相対path] = GIT_CODES（git statusは常にルート相対で返るため）
+local git_status_cwd = nil -- git_statusがどのcwdのものか
+local git_repo_root = nil  -- git_statusに対応するリポジトリルート（絶対path）
+local git_status_dirty = false
+local render -- 前方宣言（gitステータス取得の非同期コールバックから参照するため）
+
 local hl_ns = vim.api.nvim_create_namespace('explorer_hl')
 local augrp = vim.api.nvim_create_augroup('explorer', { clear = true })
 
@@ -67,6 +73,87 @@ local function get_icon(name, isdir)
 end
 
 -- ══════════════════════════════════════════════
+-- gitステータス（yazi/plugins/git.yazi と同じ判定・表示ロジック）
+-- ══════════════════════════════════════════════
+
+local GIT_CODES = {
+  ignored = 6, untracked = 5, modified = 4, added = 3, deleted = 2, updated = 1, clean = 0,
+}
+local GIT_PATTERNS = {
+  { '!$', GIT_CODES.ignored },
+  { '?$', GIT_CODES.untracked },
+  { '[MT]', GIT_CODES.modified },
+  { '[AC]', GIT_CODES.added },
+  { 'D', GIT_CODES.deleted },
+  { 'U', GIT_CODES.updated },
+  { '[AD][AD]', GIT_CODES.updated },
+}
+local GIT_SIGNS = {
+  [GIT_CODES.ignored] = '  ', [GIT_CODES.untracked] = '? ', [GIT_CODES.modified] = 'M ',
+  [GIT_CODES.added] = 'A ', [GIT_CODES.deleted] = 'D ', [GIT_CODES.updated] = 'U ',
+}
+local GIT_HL = {
+  [GIT_CODES.ignored] = 'ExplorerGitIgnored', [GIT_CODES.untracked] = 'ExplorerGitUntracked',
+  [GIT_CODES.modified] = 'ExplorerGitModified', [GIT_CODES.added] = 'ExplorerGitAdded',
+  [GIT_CODES.deleted] = 'ExplorerGitDeleted', [GIT_CODES.updated] = 'ExplorerGitUpdated',
+}
+
+local function match_status_line(line)
+  local signs = line:sub(1, 2)
+  for _, p in ipairs(GIT_PATTERNS) do
+    if signs:find(p[1]) then
+      local path = line:sub(4, 4) == '"' and line:sub(5, -2) or line:sub(4)
+      return p[2], path
+    end
+  end
+  return nil, nil
+end
+
+--- git statusは常にリポジトリルート相対パスで返るため、entry.pathをルート相対に
+--- 変換してから比較する。ファイルは完全一致、ディレクトリは配下(prefix一致)の
+--- 最悪ステータスを継承する
+local function entry_git_code(entry)
+  if not git_repo_root then return nil end
+  local rel = entry.path:sub(#git_repo_root + 2)
+  if not entry.isdir then return git_status[rel] end
+  local prefix = rel .. '/'
+  local best = nil
+  for path, code in pairs(git_status) do
+    if path == prefix or path:sub(1, #prefix) == prefix then
+      if not best or code > best then best = code end
+    end
+  end
+  return best
+end
+
+local function refresh_git_status(target_cwd)
+  vim.system({ 'git', 'rev-parse', '--show-toplevel' }, { cwd = target_cwd, text = true }, function(root_res)
+    vim.schedule(function()
+      if root_res.code ~= 0 then
+        git_status, git_status_cwd, git_repo_root = {}, target_cwd, nil
+        if cwd == target_cwd then render() end
+        return
+      end
+      local repo_root = vim.trim(root_res.stdout or '')
+      vim.system({
+        'git', '--no-optional-locks', '-c', 'core.quotePath=', 'status',
+        '--porcelain', '-unormal', '--no-renames', '--ignored=matching', '.',
+      }, { cwd = target_cwd, text = true }, function(res)
+        vim.schedule(function()
+          local map = {}
+          for line in (res.stdout or ''):gmatch('[^\r\n]+') do
+            local code, path = match_status_line(line)
+            if code and path then map[path] = code end
+          end
+          git_status, git_status_cwd, git_repo_root = map, target_cwd, repo_root
+          if cwd == target_cwd then render() end
+        end)
+      end)
+    end)
+  end)
+end
+
+-- ══════════════════════════════════════════════
 -- 一覧取得・表示
 -- ══════════════════════════════════════════════
 
@@ -110,10 +197,16 @@ local function status_text()
   return '  [' .. table.concat(parts, ' | ') .. ']'
 end
 
-local function render()
+function render()
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
 
   rows = list_dir(cwd)
+
+  if git_status_cwd ~= cwd or git_status_dirty then
+    git_status_dirty = false
+    refresh_git_status(cwd)
+  end
+  local git_ready = git_status_cwd == cwd
 
   local lines = {}
   local hl_queue = {}
@@ -127,7 +220,13 @@ local function render()
 
   for _, entry in ipairs(rows) do
     local icon = get_icon(entry.name, entry.isdir)
-    table.insert(lines, '  ' .. icon .. '  ' .. entry.name)
+    local line = '  ' .. icon .. '  ' .. entry.name
+    local git_code = git_ready and entry_git_code(entry) or nil
+    local sign = git_code and GIT_SIGNS[git_code]
+    if sign and sign ~= '' then
+      line = line .. '  ' .. sign
+    end
+    table.insert(lines, line)
     local lnum = #lines - 1
     if selection[entry.path] then
       hl(lnum, 'ExplorerSelected')
@@ -140,6 +239,9 @@ local function render()
       for _, p in ipairs(clipboard.paths) do
         if p == entry.path then hl(lnum, 'ExplorerCut') end
       end
+    end
+    if sign and sign ~= '' and GIT_HL[git_code] then
+      hl(lnum, GIT_HL[git_code], #line - #sign, #line)
     end
   end
 
@@ -371,6 +473,7 @@ local function create()
       end
     end
     cursor_mem[cwd] = name:match('^([^/]+)') or name
+    git_status_dirty = true
     render()
     refocus_panel()
   end)
@@ -403,6 +506,7 @@ local function rename()
       vim.api.nvim_buf_call(bufnr, function() vim.cmd('silent! write!') end)
     end
     cursor_mem[cwd] = input
+    git_status_dirty = true
     render()
     refocus_panel()
   end)
@@ -480,6 +584,7 @@ local function delete()
         vim.api.nvim_buf_delete(bufnr, { force = true })
       end
     end
+    git_status_dirty = true
     render()
     refocus_panel()
   end)
@@ -540,6 +645,7 @@ local function paste(overwrite)
   end
   if clipboard.mode == 'cut' then clipboard = nil end
   selection = {}
+  git_status_dirty = true
   render()
 end
 
@@ -671,6 +777,8 @@ local function open(fullscreen)
     vim.wo[win].winfixwidth = true
   end
 
+  require('config.hidden_cursor').mark_buffer(buf)
+
   vim.wo[win].wrap           = false
   vim.wo[win].number         = true
   vim.wo[win].relativenumber = true
@@ -770,6 +878,12 @@ local function setup_hl()
   vim.api.nvim_set_hl(0, 'ExplorerConfirmBorder', { bg = '#1a1b26', fg = '#f7768e' })
   vim.api.nvim_set_hl(0, 'ExplorerInputBg',       { bg = '#1a1b26', fg = '#c0caf5' })
   vim.api.nvim_set_hl(0, 'ExplorerInputBorder',   { bg = '#1a1b26', fg = '#7aa2f7' })
+  vim.api.nvim_set_hl(0, 'ExplorerGitIgnored',    { fg = '#565f89' })
+  vim.api.nvim_set_hl(0, 'ExplorerGitUntracked',  { fg = '#bb9af7' })
+  vim.api.nvim_set_hl(0, 'ExplorerGitModified',   { fg = '#e0af68' })
+  vim.api.nvim_set_hl(0, 'ExplorerGitAdded',      { fg = '#9ece6a' })
+  vim.api.nvim_set_hl(0, 'ExplorerGitDeleted',    { fg = '#f7768e' })
+  vim.api.nvim_set_hl(0, 'ExplorerGitUpdated',    { fg = '#e0af68' })
 end
 
 setup_hl()
