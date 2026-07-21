@@ -97,6 +97,25 @@ function M.find_root(cb)
   end)
 end
 
+--- lazygit(pkg/commands/git_commands/git_command_builder.go OptionalLocksEnvVar)と
+--- 同じ対応: gitは"読み取り専用"のstatus等でもstat-cache更新のためオプショナルに
+--- .git/index.lockを取ることがある。これが自パネルの2秒おきバックグラウンド自動更新
+--- (git status)と、discard等のインデックス変更コマンドの間で稀に競合し、
+--- 後者が失敗する(実際に大量ファイルのdiscardをストレステストして再現した)。
+--- 本体は全コマンドへ既定でGIT_OPTIONAL_LOCKS=0を付けてそもそもロックを取らせない
+--- ようにしているので、それに合わせる
+local GIT_ENV = { GIT_OPTIONAL_LOCKS = '0' }
+
+--- lazygit(pkg/commands/git_cmd_obj_runner.go isRetryableError/retryOnLockError)と
+--- 同じ判定・再試行ロジック: 上のGIT_OPTIONAL_LOCKS=0だけでは自分以外(ユーザーが
+--- 別ターミナルで叩いたgit等)との競合は防げないため、"index.lock"/"cannot lock ref"
+--- を含むエラーだけを対象に、指数バックオフで再試行する(初回20ms、最大7回で合計約1秒強)
+local LOCK_RETRY_DELAYS_MS = { 20, 40, 80, 160, 320, 640, 1280 }
+
+local function is_lock_error(stderr)
+  return stderr ~= nil and (stderr:find('index.lock', 1, true) ~= nil or stderr:find('cannot lock ref', 1, true) ~= nil)
+end
+
 --- lazygit(pkg/commands/oscommands/cmd_obj.go DontLog)と同じ方針:
 --- git状態を変えないコマンド(status/diff/logなど)はコマンドログに出さない。
 --- 状態を変えるコマンド(add/commit/checkoutなど)は出す。opts.dont_log=trueで前者を指定する。
@@ -105,19 +124,28 @@ end
 function M.run(args, cb, opts)
   local cmd = vim.list_extend({ 'git' }, args)
   if not (opts and opts.dont_log) then log_command(args) end
-  local sys_opts = { cwd = M.root, text = true }
-  local get_stdout, get_stderr
-  if opts and opts.stream_output then
-    local stdout_feed, stdout_get = make_streamer()
-    local stderr_feed, stderr_get = make_streamer()
-    sys_opts.stdout, sys_opts.stderr = stdout_feed, stderr_feed
-    get_stdout, get_stderr = stdout_get, stderr_get
+
+  local function attempt(retry_idx)
+    local sys_opts = { cwd = M.root, text = true, env = GIT_ENV }
+    local get_stdout, get_stderr
+    if opts and opts.stream_output then
+      local stdout_feed, stdout_get = make_streamer()
+      local stderr_feed, stderr_get = make_streamer()
+      sys_opts.stdout, sys_opts.stderr = stdout_feed, stderr_feed
+      get_stdout, get_stderr = stdout_get, stderr_get
+    end
+    vim.system(cmd, sys_opts, function(res)
+      if get_stdout then res.stdout = get_stdout() end
+      if get_stderr then res.stderr = get_stderr() end
+      local retry_delay = res.code ~= 0 and is_lock_error(res.stderr) and LOCK_RETRY_DELAYS_MS[retry_idx]
+      if retry_delay then
+        vim.defer_fn(function() attempt(retry_idx + 1) end, retry_delay)
+        return
+      end
+      vim.schedule(function() cb(res) end)
+    end)
   end
-  vim.system(cmd, sys_opts, function(res)
-    if get_stdout then res.stdout = get_stdout() end
-    if get_stderr then res.stderr = get_stderr() end
-    vim.schedule(function() cb(res) end)
-  end)
+  attempt(1)
 end
 
 -- ══════════════════════════════════════════════
