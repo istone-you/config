@@ -1,5 +1,6 @@
 require("config.options")
 require("config.hidden_cursor")
+require("config.auto_quit")
 require("config.lsp")
 require("config.tabline")
 require("config.yazi")

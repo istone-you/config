@@ -439,6 +439,7 @@ local function open()
   vim.cmd('botright ' .. PANEL_WIDTH .. 'vsplit')
   win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, buf)
+  require('config.hidden_cursor').mark_buffer(buf)
 
   vim.wo[win].wrap           = false
   vim.wo[win].number         = false

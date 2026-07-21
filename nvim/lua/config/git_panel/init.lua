@@ -201,12 +201,21 @@ end
 -- グローバルキー（push/pull/refresh, パネル切替, 閉じる）
 -- ══════════════════════════════════════════════
 
+local function notify_result(res, ok_msg, fail_prefix)
+  if res.code == 0 then
+    local detail = vim.trim((res.stdout or '') .. (res.stderr or ''))
+    vim.notify(detail ~= '' and (ok_msg .. '\n' .. detail) or ok_msg, vim.log.levels.INFO)
+  else
+    vim.notify(fail_prefix .. ': ' .. (res.stderr or ''), vim.log.levels.ERROR)
+  end
+end
+
 local function do_push()
   git.has_upstream(function(ok)
     if ok then
       git.push(function(res)
         ctx.render_cmdlog()
-        if res.code ~= 0 then vim.notify('push失敗: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
+        notify_result(res, 'push完了', 'push失敗')
         require(PANELS[current_panel_idx].mod).refresh()
       end)
       return
@@ -216,7 +225,7 @@ local function do_push()
         if not yes then return end
         git.push_set_upstream('origin', branch, function(res)
           ctx.render_cmdlog()
-          if res.code ~= 0 then vim.notify('push失敗: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
+          notify_result(res, 'push完了（アップストリーム設定済み）', 'push失敗')
           require(PANELS[current_panel_idx].mod).refresh()
         end)
       end)
@@ -227,7 +236,7 @@ end
 local function do_pull()
   git.pull(function(res)
     ctx.render_cmdlog()
-    if res.code ~= 0 then vim.notify('pull失敗: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
+    notify_result(res, 'pull完了', 'pull失敗')
     require(PANELS[current_panel_idx].mod).refresh()
   end)
 end
