@@ -9,12 +9,15 @@ Neovim・yazi・lazygit の設定ファイル群。
 | ツール | 用途 |
 |---|---|
 | `git` | git_panel, github_permalink, terminal など git 操作全般 |
+| `gh` | `git_panel`（branches.lua/git.lua）の GitHub PR 取得・認証（`gh auth token`） |
+| `curl` | `git_panel/git.lua` の GitHub GraphQL API 呼び出し（PR情報取得） |
+| `delta` | `git_panel` の diff 色付き表示（任意、無くても素のテキストにフォールバック） |
 | `rg` (ripgrep) | `rg_fzf.lua` の全文検索・置換 |
 | `fzf` | `rg_fzf.lua`（検索UI）、`explorer.lua`（ファイル検索） |
 | `fd` | `explorer.lua` のファイル検索（`fd`/`fzf` の両方が必要） |
+| `bat` | `rg_fzf.lua` のプレビュー表示（任意、無くても動作する） |
 | `lazygit` | `lazygit.lua`（`<leader>lg` でターミナル起動） |
 | `yazi` (>= 0.2.5) | `yazi.lua`（`--chooser-file` 利用、`<leader>y` / `<leader>cw`） |
-| `bat` | `rg_fzf.lua` のプレビュー表示（任意、無くても動作する） |
 
 ## ローカル設定
 

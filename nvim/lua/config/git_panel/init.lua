@@ -20,6 +20,17 @@ local augrp = vim.api.nvim_create_augroup('git_panel', { clear = true })
 local hl_ns = vim.api.nvim_create_namespace('git_panel_hl')
 local current_panel_idx = 1
 local refresh_timer = nil
+--- 右パネルに今実際に描画されている内容（key+内容）。同じなら再描画自体をスキップして
+--- ちらつき/スクロールリセットを防ぐ。パネル切替時にnilへ戻し、必ず最初の1回は描画する
+local last_right_key = nil
+local last_right_content = nil
+--- set_right_diffが「delta実行前のraw diffテキスト」の変化なしを判定するための別キャッシュ
+--- （set_right_ansi/set_right_linesのキャッシュとは別に、deltaサブプロセス自体の起動も省く）
+local last_right_raw_key = nil
+local last_right_raw_text = nil
+-- recreate_right_buf(ctx.set_right_lines/set_right_ansiより上で必要)がbind_click
+-- (パネル切替セクションで定義)を使うための前方宣言
+local bind_click
 
 -- lazygit本体(pkg/gui/background.go)は10秒ごとのFiles再取得+2秒ごとの外部変更検知(reflog等)
 -- を別々のタイマーで走らせているが、こちらは常に1パネルだけを表示する構成なので
@@ -32,12 +43,14 @@ local AUTO_REFRESH_INTERVAL_MS = 2000
 --- 乗っている項目」を記録してからrefresh()する。これをしないと、ユーザーが単に
 --- j/kで見ているだけの項目情報が古いまま(あるいは無いまま)再描画されてカーソルが
 --- 先頭などに戻ってしまう
+--- refresh(true)を渡すと、各パネルモジュールは非同期取得が完了してrender()する直前という
+--- 一番遅いタイミングで現在のカーソル位置を捕捉する。ここ(呼び出し前)で捕捉すると、
+--- 非同期のgitコマンドが完了するまでの間にユーザーがj/kで動かした分を取りこぼして
+--- カーソルが古い位置に戻ってしまうため、タイミングを意図的に遅らせている
 local function refresh_current_panel()
   local spec = PANELS[current_panel_idx]
   if not spec then return end
-  local panel = require(spec.mod)
-  if panel.remember_cursor then panel.remember_cursor() end
-  panel.refresh()
+  require(spec.mod).refresh(true)
 end
 
 local function start_auto_refresh()
@@ -128,8 +141,47 @@ function ctx.menu(title, items, on_choice)
   ui.menu(title, items, { refocus_win = win.left_win }, on_choice)
 end
 
-function ctx.set_right_lines(lines, filetype, hl_queue)
+--- delta表示(set_right_ansi)はterminalバッファを使うため、通常のプレーンテキスト表示に
+--- 戻す時/ANSI表示に切り替える時はバッファを作り直す必要がある（terminalバッファは
+--- nvim_buf_set_linesで書き換えられない・逆にプレーンバッファはchansendを受け付けない）
+local function recreate_right_buf(as_terminal)
+  local old_buf = win.right_buf
+  win.right_buf = vim.api.nvim_create_buf(false, true)
+  if not as_terminal then
+    vim.bo[win.right_buf].buftype = 'nofile'
+    vim.bo[win.right_buf].buflisted = false
+  end
+  -- 新しいバッファをウィンドウへ差し込んでから古いバッファを消す。逆順（先に削除）だと、
+  -- 特にterminalバッファを表示中に削除した時、Neovimがwin.right_win自体を閉じてしまうことが
+  -- あり、そのウィンドウIDを監視しているWinClosedハンドラでgitパネル全体が閉じてしまっていた
+  if win.right_win and vim.api.nvim_win_is_valid(win.right_win) then
+    vim.api.nvim_win_set_buf(win.right_win, win.right_buf)
+  end
+  if old_buf and vim.api.nvim_buf_is_valid(old_buf) then
+    pcall(vim.api.nvim_buf_delete, old_buf, { force = true })
+  end
+  require('config.hidden_cursor').mark_buffer(win.right_buf)
+  bind_click(win.right_buf)
+end
+
+--- 内容が前回と全く同じなら右パネルに一切触れない（プレーンバッファへのnvim_buf_set_lines
+--- は同一内容の再設定ならスクロール位置を動かさないので元々問題無いが、
+--- set_right_ansi(delta表示)はterminalバッファを毎回作り直すため、内容が同じでも
+--- 呼ぶたびに先頭に戻る/自動追従でちらつく。key+内容が変わっていない時は描画自体を
+--- スキップすることで、スクロール位置の復元を頑張る必要も無く両方解決する
+local function unchanged(key, content_sig)
+  if key == nil then return false end
+  local same = key == last_right_key and content_sig == last_right_content
+  last_right_key, last_right_content = key, content_sig
+  return same
+end
+
+--- key: 今表示している内容の識別子（ファイルpath/コミットhash等）。省略時(nil)は
+--- 変化なし判定の対象外（静的なメッセージ表示などで使う）
+function ctx.set_right_lines(lines, filetype, hl_queue, key)
   if not (win.right_buf and vim.api.nvim_buf_is_valid(win.right_buf)) then return end
+  if unchanged(key, table.concat(lines, '\n')) then return end
+  if vim.bo[win.right_buf].buftype == 'terminal' then recreate_right_buf(false) end
   vim.bo[win.right_buf].modifiable = true
   vim.bo[win.right_buf].filetype = filetype or 'diff'
   vim.api.nvim_buf_set_lines(win.right_buf, 0, -1, false, lines)
@@ -139,6 +191,67 @@ function ctx.set_right_lines(lines, filetype, hl_queue)
     vim.api.nvim_buf_add_highlight(win.right_buf, hl_ns, h[2], h[1], h[3] or 0, h[4] or -1)
   end
 end
+
+--- delta等が出力する生ANSIテキストをそのまま色付きで表示する（nvim_open_termでlibvtermに
+--- 解釈させる。実プロセスは繋がず、静的な色付きテキストの表示器として使うだけ）
+function ctx.set_right_ansi(ansi_text, key)
+  if not (win.right_win and vim.api.nvim_win_is_valid(win.right_win)) then return end
+  if unchanged(key, ansi_text) then return end
+  recreate_right_buf(true)
+  local chan = vim.api.nvim_open_term(win.right_buf, {})
+  vim.api.nvim_chan_send(chan, ansi_text)
+end
+
+--- deltaが使えれば自動で通して色付き表示、無ければ素のテキスト表示にフォールバックする。
+--- ファイルdiff・commit show・stash show -pなど「diffテキストを右パネルに出す」処理は
+--- files.lua/commits.lua/stash.luaで同じ内容だったのでここに一本化した。
+--- rawの生diffが前回と同じならdeltaへ渡すことすらしない（無駄なサブプロセス起動も省く）
+function ctx.set_right_diff(text, key)
+  if key ~= nil and key == last_right_raw_key and text == last_right_raw_text then
+    return
+  end
+  last_right_raw_key, last_right_raw_text = key, text
+  if not git.delta_available then
+    ctx.set_right_lines(vim.split(text, '\n', { plain = true }), 'diff', nil, key)
+    return
+  end
+  local width = (win.right_win and vim.api.nvim_win_is_valid(win.right_win))
+    and vim.api.nvim_win_get_width(win.right_win) or 80
+  git.run_delta(text, width, function(ansi)
+    if ansi then
+      ctx.set_right_ansi(ansi, key)
+    else
+      ctx.set_right_lines(vim.split(text, '\n', { plain = true }), 'diff', nil, key)
+    end
+  end)
+end
+
+--- 各パネルモジュールのcurrent_entry()が全て同じ内容（left_winのカーソル行を
+--- line_entriesから引く）だったのでここに一本化した。呼び出し側は自分の
+--- line_entriesを返すクロージャを渡す
+--- side-by-side切替等、キャッシュ済みの内容と無関係に右パネルを強制再描画したい時に使う
+function ctx.invalidate_right_cache()
+  last_right_key, last_right_content = nil, nil
+  last_right_raw_key, last_right_raw_text = nil, nil
+end
+
+function ctx.current_entry(get_line_entries)
+  if not (win.left_win and vim.api.nvim_win_is_valid(win.left_win)) then return nil end
+  local row = vim.api.nvim_win_get_cursor(win.left_win)[1]
+  return get_line_entries()[row]
+end
+
+--- git操作後の定型パターン(コマンドログ更新→失敗時のみ通知→再取得)を共通化。
+--- refresh_fnは各パネルのM.refresh（呼び出し側が事前にcursor_memを設定していれば
+--- そこへ着地する。auto_captureは渡さない＝明示的操作の結果として呼ばれるため）
+function ctx.done_refresh(refresh_fn, label)
+  return function(res)
+    ctx.render_cmdlog()
+    if res.code ~= 0 then vim.notify(label .. '失敗: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
+    refresh_fn()
+  end
+end
+
 
 function ctx.set_left_lines(lines, hl_queue)
   if not (win.left_buf and vim.api.nvim_buf_is_valid(win.left_buf)) then return end
@@ -284,7 +397,7 @@ local function handle_panel_click()
   end
 end
 
-local function bind_click(buf)
+function bind_click(buf)
   if buf and vim.api.nvim_buf_is_valid(buf) then
     vim.keymap.set('n', '<LeftMouse>', handle_panel_click, { buffer = buf, nowait = true, silent = true })
   end
@@ -330,6 +443,8 @@ end
 
 function activate_panel(idx)
   current_panel_idx = idx
+  last_right_key, last_right_content = nil, nil
+  last_right_raw_key, last_right_raw_text = nil, nil
   local spec = PANELS[idx]
   local panel = require(spec.mod)
 
@@ -489,6 +604,12 @@ GLOBAL_KEYS = {
   ['p'] = do_pull,
   ['z'] = do_undo,
   ['R'] = refresh_current_panel,
+  ['v'] = function()
+    local on = git.toggle_side_by_side()
+    ctx.invalidate_right_cache()
+    refresh_current_panel()
+    vim.notify('delta side-by-side: ' .. (on and 'ON' or 'OFF'), vim.log.levels.INFO)
+  end,
   ['@'] = toggle_cmdlog_focus,
   ['q'] = function() M.close() end,
   ['<Esc>'] = function() M.close() end,

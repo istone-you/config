@@ -9,6 +9,43 @@ local MAX_LOG = 200
 --- init.luaがrender_cmdlog相当を差し込むためのフック（コマンドログに変化があるたびに呼ぶ）
 M.on_log_update = function() end
 
+--- lazygit本体は独自のpager設定(git.pagers、core.pagerとは別物)でdeltaを呼ぶが、ここでは
+--- 単純化してdeltaコマンドが存在する時だけ自動的に使う。gitはstdoutがTTYでないとpagerを
+--- 一切起動しないため、素のgit diff等をそのままキャプチャしてもdeltaは通らない。
+--- なので生のdiffテキストを自分でdeltaの標準入力へ渡し、色付きANSI出力を受け取る
+M.delta_available = vim.fn.executable('delta') == 1
+
+--- deltaのside-by-side表示(--side-by-side)のオン/オフ。lazygit本体はpager設定の
+--- コマンド文字列自体を静的に変える(delta --side-by-side)ことでしか切り替えられないが、
+--- ここではワンキーで動的に切り替えられるようにする
+M.side_by_side = false
+
+function M.toggle_side_by_side()
+  M.side_by_side = not M.side_by_side
+  return M.side_by_side
+end
+
+--- diff_text(生のunified diff)をdeltaに通して色付きANSI出力を返す。
+--- deltaが無い/失敗した場合はcb(nil)（呼び出し側は素のテキスト表示にフォールバックする）
+function M.run_delta(diff_text, width, cb)
+  if not M.delta_available or not diff_text or diff_text == '' then
+    cb(nil)
+    return
+  end
+  local args = {
+    'delta', '--paging=never', '--width=' .. tostring(width or 80),
+    '--line-numbers', '--keep-plus-minus-markers',
+  }
+  if M.side_by_side then table.insert(args, '--side-by-side') end
+  vim.system(
+    args,
+    { stdin = diff_text, text = true },
+    function(res)
+      vim.schedule(function() cb(res.code == 0 and res.stdout or nil) end)
+    end
+  )
+end
+
 --- lazygit本体(command_log_panel.go)と同じく、古い→新しいの順で末尾に追記する
 --- （表示側でビューを一番下へスクロールすることで最新行を見せる。Autoscroll相当）
 local function push_log(text)

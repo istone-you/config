@@ -17,10 +17,7 @@ local unmerged = nil      -- nil=mainブランチ不明（判定しない）。�
 local cursor_mem = nil    -- 直前に選択していたコミットのhash（refresh後もカーソル位置を保つため）
 
 local function current_entry()
-  local win = ctx.get_left_win()
-  if not win then return nil end
-  local row = vim.api.nvim_win_get_cursor(win)[1]
-  return line_entries[row]
+  return ctx.current_entry(function() return line_entries end)
 end
 
 --- 明示的な操作を伴わないrefresh（自動更新・Rキー）の直前に呼ばれ、今カーソルが
@@ -33,7 +30,7 @@ end
 local function show_detail(entry)
   if not entry then ctx.set_right_lines({}); return end
   git.show_commit(entry.hash, function(text)
-    ctx.set_right_lines(vim.split(text, '\n', { plain = true }), 'diff')
+    ctx.set_right_diff(text, entry.hash)
   end)
 end
 
@@ -88,11 +85,16 @@ end
 -- commit_loader.go GetCommits()と同じ: unpushedCommitHashes = getReachableHashes(HEAD, [HEAD@{u}, mainBranches...])
 -- mainBranchesも除外に含めるのは、アップストリーム未追跡だがmainには取り込まれているコミットを
 -- 誤って未pushと判定しないため
-local function fetch_push_status(main_refs)
+--- auto_capture: 自動更新(2秒おき)/Rキーからの汎用refreshの時だけtrueで渡される。
+--- render()の直前というできるだけ遅いタイミングで今のカーソル位置を捕捉することで、
+--- 非同期処理中にユーザーがj/kで動かした分を取りこぼさないようにする。
+--- チェックアウト等の明示的操作は自分でcursor_memを設定済みなので、ここでは上書きしない
+local function fetch_push_status(main_refs, auto_capture)
   git.has_upstream(function(ok)
     has_upstream = ok
     if not ok then
       unpushed = {}
+      if auto_capture then M.remember_cursor() end
       render()
       return
     end
@@ -102,18 +104,19 @@ local function fetch_push_status(main_refs)
       local set = {}
       for line in (res.stdout or ''):gmatch('[^\r\n]+') do set[line] = true end
       unpushed = set
+      if auto_capture then M.remember_cursor() end
       render()
     end, { dont_log = true })
   end)
 end
 
-function M.refresh()
+function M.refresh(auto_capture)
   git.log(function(list)
     commits = list
     git.resolve_main_branches(function(main_refs)
       if #main_refs == 0 then
         unmerged = nil
-        fetch_push_status(main_refs)
+        fetch_push_status(main_refs, auto_capture)
         return
       end
       -- git rev-list HEAD ^main1 ^main2...: mainブランチにまだ入っていないコミット
@@ -123,7 +126,7 @@ function M.refresh()
         local set = {}
         for line in (res.stdout or ''):gmatch('[^\r\n]+') do set[line] = true end
         unmerged = set
-        fetch_push_status(main_refs)
+        fetch_push_status(main_refs, auto_capture)
       end, { dont_log = true })
     end)
   end)
@@ -140,11 +143,7 @@ local function reset()
     if not mode then return end
     ctx.confirm(string.format('%s の %s へ %s リセットしますか？', entry.short, entry.subject, mode), function(ok)
       if not ok then return end
-      git.reset(entry.hash, mode, function(res)
-        ctx.render_cmdlog()
-        if res.code ~= 0 then vim.notify('resetに失敗しました: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
-        M.refresh()
-      end)
+      git.reset(entry.hash, mode, ctx.done_refresh(M.refresh, 'reset'))
     end)
   end)
 end
@@ -154,11 +153,7 @@ local function revert()
   if not entry then return end
   ctx.confirm('このコミットをrevertしますか？\n' .. entry.short .. ' ' .. entry.subject, function(ok)
     if not ok then return end
-    git.revert_commit(entry.hash, function(res)
-      ctx.render_cmdlog()
-      if res.code ~= 0 then vim.notify('revertに失敗しました（コンフリクトの可能性）: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
-      M.refresh()
-    end)
+    git.revert_commit(entry.hash, ctx.done_refresh(M.refresh, 'revert'))
   end)
 end
 
@@ -167,11 +162,7 @@ local function checkout_commit()
   if not entry then return end
   ctx.confirm('detached HEADとしてチェックアウトしますか？\n' .. entry.short .. ' ' .. entry.subject, function(ok)
     if not ok then return end
-    git.checkout_commit(entry.hash, function(res)
-      ctx.render_cmdlog()
-      if res.code ~= 0 then vim.notify('チェックアウトに失敗しました: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
-      M.refresh()
-    end)
+    git.checkout_commit(entry.hash, ctx.done_refresh(M.refresh, 'チェックアウト'))
   end)
 end
 
@@ -180,11 +171,7 @@ local function new_branch_from_commit()
   if not entry then return end
   ctx.input('新規ブランチ名 (from ' .. entry.short .. ')', '', function(name)
     if not name or name == '' then return end
-    git.new_branch_from_commit(entry.hash, name, function(res)
-      ctx.render_cmdlog()
-      if res.code ~= 0 then vim.notify('作成失敗: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
-      M.refresh()
-    end)
+    git.new_branch_from_commit(entry.hash, name, ctx.done_refresh(M.refresh, '作成'))
   end)
 end
 

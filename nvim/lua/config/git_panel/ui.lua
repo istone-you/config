@@ -264,6 +264,11 @@ function M.menu(title, items, opts, on_choice)
     width = math.max(width, vim.fn.strdisplaywidth(l))
   end
   width = width + 4
+  -- タイトル(破棄対象のファイルパス等で長くなりうる)がウィンドウ幅を超えると、
+  -- Neovimがボーダーのタイトル文字列を変な位置で切り詰めて表示してしまうため、
+  -- タイトルも含めて幅を決める。画面幅の90%を上限にして極端に長い場合は
+  -- (それでも切られるが)そこで妥協する
+  width = math.max(width, math.min(vim.fn.strdisplaywidth(title) + 4, math.floor(vim.o.columns * 0.9)))
   local height = #lines
   local col = math.floor((vim.o.columns - width) / 2)
   local row = math.floor((vim.o.lines - height) / 2) - 1

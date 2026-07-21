@@ -11,10 +11,7 @@ local total_rows = 0
 local cursor_mem = nil  -- 直前に選択していたワークツリーのpath
 
 local function current_entry()
-  local win = ctx.get_left_win()
-  if not win then return nil end
-  local row = vim.api.nvim_win_get_cursor(win)[1]
-  return line_entries[row]
+  return ctx.current_entry(function() return line_entries end)
 end
 
 --- 明示的な操作を伴わないrefresh（自動更新・Rキー）の直前に呼ばれ、今カーソルが
@@ -30,7 +27,7 @@ local function show_detail(entry)
   if entry.branch then table.insert(lines, 'branch: ' .. entry.branch) end
   if entry.detached then table.insert(lines, '(detached HEAD)') end
   if entry.head then table.insert(lines, 'HEAD:   ' .. entry.head) end
-  ctx.set_right_lines(lines, '')
+  ctx.set_right_lines(lines, '', nil, entry.path)
 end
 
 local function render()
@@ -71,9 +68,13 @@ local function render()
   end
 end
 
-function M.refresh()
+--- auto_captureはinit.luaの自動更新/Rキーから汎用refresh扱いの時だけtrueで渡される。
+--- render()の直前で今のカーソル位置を捕捉することで、非同期処理中にユーザーがj/kで
+--- 動かした分を取りこぼさないようにする
+function M.refresh(auto_capture)
   git.worktrees(function(list)
     worktrees = list
+    if auto_capture then M.remember_cursor() end
     render()
   end)
 end
@@ -97,11 +98,7 @@ local function create()
     local suggested = git.root .. '-' .. branch_name:gsub('[/\\]', '-')
     ctx.input('作成先パス', suggested, function(path)
       if not path or path == '' then return end
-      git.worktree_add(path, branch_name, true, function(res)
-        ctx.render_cmdlog()
-        if res.code ~= 0 then vim.notify('作成失敗: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
-        M.refresh()
-      end)
+      git.worktree_add(path, branch_name, true, ctx.done_refresh(M.refresh, '作成'))
     end)
   end)
 end
@@ -120,11 +117,7 @@ local function delete()
       if res.code == 0 then M.refresh(); return end
       ctx.confirm('未コミットの変更がある可能性があります。強制削除しますか？', function(force_ok)
         if not force_ok then return end
-        git.worktree_remove(entry.path, true, function(res2)
-          ctx.render_cmdlog()
-          if res2.code ~= 0 then vim.notify('削除失敗: ' .. (res2.stderr or ''), vim.log.levels.ERROR) end
-          M.refresh()
-        end)
+        git.worktree_remove(entry.path, true, ctx.done_refresh(M.refresh, '削除'))
       end)
     end)
   end)

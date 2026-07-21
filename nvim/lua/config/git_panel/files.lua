@@ -114,10 +114,7 @@ end
 -- ══════════════════════════════════════════════
 
 local function current_entry()
-  local win = ctx.get_left_win()
-  if not win then return nil end
-  local row = vim.api.nvim_win_get_cursor(win)[1]
-  return line_entries[row]
+  return ctx.current_entry(function() return line_entries end)
 end
 
 --- 明示的な操作を伴わないrefresh（自動更新・Rキー）の直前に呼ばれ、今カーソルが
@@ -131,29 +128,29 @@ end
 local function show_diff_for(node, prefer_staged)
   if not node then ctx.set_right_lines({}); return end
   if node.is_dir then
-    ctx.set_right_lines({ '  ' .. #collect_files(node) .. ' 個のファイル' })
+    ctx.set_right_lines({ '  ' .. #collect_files(node) .. ' 個のファイル' }, nil, nil, node.path)
     return
   end
   local f = node.file
   if is_untracked(f) then
     local full = ctx.get_root() .. '/' .. f.path
     if vim.fn.isdirectory(full) == 1 then
-      ctx.set_right_lines({ '(ディレクトリ: ' .. f.path .. ')' })
+      ctx.set_right_lines({ '(ディレクトリ: ' .. f.path .. ')' }, nil, nil, node.path)
       return
     end
     local ok, content = pcall(vim.fn.readfile, full)
     if ok then
       local lines = { '+++ ' .. f.path, '' }
       for _, l in ipairs(content) do table.insert(lines, '+' .. l) end
-      ctx.set_right_lines(lines, 'diff')
+      ctx.set_right_diff(table.concat(lines, '\n'), node.path)
     else
-      ctx.set_right_lines({ '(バイナリまたは読み込み不可)' })
+      ctx.set_right_lines({ '(バイナリまたは読み込み不可)' }, nil, nil, node.path)
     end
     return
   end
   local section = (prefer_staged and has_staged(f)) and 'staged' or (has_unstaged(f) and 'unstaged' or 'staged')
   git.diff_file({ path = f.path, section = section }, function(diff_text)
-    ctx.set_right_lines(vim.split(diff_text, '\n', { plain = true }), 'diff')
+    ctx.set_right_diff(diff_text, node.path)
   end)
 end
 
@@ -245,12 +242,16 @@ local function render()
   end
 end
 
-function M.refresh()
+--- auto_captureはinit.luaの自動更新/Rキーから汎用refresh扱いの時だけtrueで渡される。
+--- render()の直前で今のカーソル位置を捕捉することで、非同期処理中にユーザーがj/kで
+--- 動かした分を取りこぼさないようにする
+function M.refresh(auto_capture)
   local pending = 2
   local function done()
     pending = pending - 1
     if pending == 0 then
       tree_root = build_tree(files)
+      if auto_capture then M.remember_cursor() end
       render()
     end
   end
@@ -428,22 +429,66 @@ local function stage_all_toggle()
   if any_unstaged then git.stage_all(done) else git.unstage_all(done) end
 end
 
+--- files_controller.go remove()相当の並列実行ヘルパー。per_file(f, done)が各対象への
+--- 実処理、doneを呼んだ回数が対象数に達したらon_all_doneを呼ぶ
+local function run_discard(targets, per_file, on_all_done)
+  cursor_mem = nil
+  local pending = #targets
+  local function done()
+    pending = pending - 1
+    if pending == 0 then ctx.render_cmdlog(); on_all_done() end
+  end
+  for _, f in ipairs(targets) do
+    per_file(f, done)
+  end
+end
+
+--- DiscardAllFileChanges相当: ステージ済みならreset(unstage)してから、
+--- 元々untracked/新規追加(A)だったファイルはディスクから削除、それ以外はcheckoutでHEADへ戻す
+local function discard_all_targets(targets)
+  run_discard(targets, function(f, done)
+    local was_added = f.x == 'A' or is_untracked(f)
+    if has_staged(f) then
+      git.run({ 'reset', '--', f.path }, function()
+        if was_added then git.clean_file(f.path, done) else git.discard_file(f.path, done) end
+      end)
+    elseif was_added then
+      git.clean_file(f.path, done)
+    else
+      git.discard_file(f.path, done)
+    end
+  end, M.refresh)
+end
+
+--- DiscardUnstagedFileChanges相当: indexには触れず、作業ツリーの差分だけを戻す。
+--- ステージ済みの内容はそのまま残る
+local function discard_unstaged_targets(targets)
+  run_discard(targets, function(f, done)
+    if is_untracked(f) then git.clean_file(f.path, done) else git.discard_file(f.path, done) end
+  end, M.refresh)
+end
+
+--- files_controller.go remove()相当: すべての変更を破棄 / ステージされていない変更を破棄
+--- の2択メニュー。後者はステージ済み+未ステージが両方ある対象を含む時だけ意味があるため、
+--- そうでなければ選択肢自体を出さない(本体はグレーアウト、こちらは項目自体を省く簡略化)
 local function discard()
   local node = current_entry()
   if not node then return end
   local targets = collect_files(node)
   if #targets == 0 then return end
   local label = node.is_dir and (node.path .. '/ 配下 ' .. #targets .. '件') or node.file.path
-  ctx.confirm('破棄しますか？\n' .. label, function(ok)
-    if not ok then return end
-    cursor_mem = nil
-    local pending = #targets
-    local function done()
-      pending = pending - 1
-      if pending == 0 then ctx.render_cmdlog(); M.refresh() end
-    end
-    for _, f in ipairs(targets) do
-      if is_untracked(f) then git.clean_file(f.path, done) else git.discard_file(f.path, done) end
+  local any_staged, any_unstaged = false, false
+  for _, f in ipairs(targets) do
+    if has_staged(f) then any_staged = true end
+    if has_unstaged(f) then any_unstaged = true end
+  end
+  local items = { { key = 'x', label = 'すべての変更を破棄', value = 'all' } }
+  if any_staged and any_unstaged then
+    table.insert(items, { key = 'u', label = 'ステージされていない変更を破棄', value = 'unstaged' })
+  end
+  ctx.menu('破棄: ' .. label, items, function(choice)
+    if choice == 'all' then discard_all_targets(targets)
+    elseif choice == 'unstaged' then discard_unstaged_targets(targets)
     end
   end)
 end
@@ -475,24 +520,14 @@ local function commit(no_verify)
       vim.notify('コミットメッセージが空です', vim.log.levels.WARN)
       return
     end
-    git.commit(msg_lines, no_verify, function(res)
-      ctx.render_cmdlog()
-      if res.code ~= 0 then vim.notify('コミット失敗: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
-      cursor_mem = nil
-      M.refresh()
-    end)
+    git.commit(msg_lines, no_verify, ctx.done_refresh(function() cursor_mem = nil; M.refresh() end, 'コミット'))
   end)
 end
 
 local function amend()
   ctx.confirm('ステージ済みの変更でHEADをamendしますか？', function(ok)
     if not ok then return end
-    git.amend(function(res)
-      ctx.render_cmdlog()
-      if res.code ~= 0 then vim.notify('amendに失敗しました: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
-      cursor_mem = nil
-      M.refresh()
-    end)
+    git.amend(ctx.done_refresh(function() cursor_mem = nil; M.refresh() end, 'amend'))
   end)
 end
 
@@ -518,12 +553,7 @@ end
 local function stash_all()
   ctx.input('スタッシュメッセージ', '', function(msg)
     if msg == nil then return end
-    git.stash_save(msg, function(res)
-      ctx.render_cmdlog()
-      if res.code ~= 0 then vim.notify('スタッシュに失敗しました: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
-      cursor_mem = nil
-      M.refresh()
-    end)
+    git.stash_save(msg, ctx.done_refresh(function() cursor_mem = nil; M.refresh() end, 'スタッシュ'))
   end)
 end
 

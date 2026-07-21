@@ -10,3 +10,5 @@ Neovim・yazi・lazygit などの設定ファイル群。
 - `lua/config/shortcuts.lua` の `🔧 カスタムキーマップ` セクション（`Space ?` で開くパネル）
 
 Neovim の設定はプラグインを使わず、Lua で自作すること。
+
+nvim の自作機能が新たに CLI ツールに依存するようになったときは、必ず `README.md` の「nvim が依存する CLI ツール」セクションに追記すること。

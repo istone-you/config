@@ -66,10 +66,7 @@ local function truncate_name(name, max_width)
 end
 
 local function current_entry()
-  local win = ctx.get_left_win()
-  if not win then return nil end
-  local row = vim.api.nvim_win_get_cursor(win)[1]
-  return line_entries[row]
+  return ctx.current_entry(function() return line_entries end)
 end
 
 --- 明示的な操作を伴わないrefresh（自動更新・Rキー）の直前に呼ばれ、今カーソルが
@@ -97,7 +94,7 @@ local function show_detail(entry)
       table.insert(lines, 1, header)
       hl_queue = { { 0, PR_HL[pr.state], 0, #(PR_STATE_LABEL[pr.state] or pr.state) } }
     end
-    ctx.set_right_lines(lines, '', hl_queue)
+    ctx.set_right_lines(lines, '', hl_queue, entry.name)
   end, { dont_log = true })
 end
 
@@ -159,9 +156,13 @@ local function render()
   end
 end
 
-function M.refresh()
+--- auto_capture: 自動更新(2秒おき)/Rキーからの汎用refreshの時だけtrueで渡される。
+--- render()の直前というできるだけ遅いタイミングで今のカーソル位置を捕捉することで、
+--- 非同期処理中にユーザーがj/kで動かした分を取りこぼさないようにする
+function M.refresh(auto_capture)
   git.branches(function(list)
     branches = list
+    if auto_capture then M.remember_cursor() end
     render()
   end)
 end
@@ -217,19 +218,11 @@ function M.refresh_prs()
   end)
 end
 
-local function done_refresh(label)
-  return function(res)
-    ctx.render_cmdlog()
-    if res.code ~= 0 then vim.notify(label .. '失敗: ' .. (res.stderr or ''), vim.log.levels.ERROR) end
-    M.refresh()
-  end
-end
-
 local function checkout()
   local entry = current_entry()
   if not entry then return end
   cursor_mem = entry.name
-  git.checkout_branch(entry.name, done_refresh('チェックアウト'))
+  git.checkout_branch(entry.name, ctx.done_refresh(M.refresh, 'チェックアウト'))
 end
 
 --- refs_helper.go CheckoutRef の OnRefNotFound 相当:
@@ -291,10 +284,10 @@ local function checkout_by_name()
         end
         if has_local then
           cursor_mem = branch_part
-          git.checkout_branch(branch_part, done_refresh('チェックアウト'))
+          git.checkout_branch(branch_part, ctx.done_refresh(M.refresh, 'チェックアウト'))
         else
           cursor_mem = branch_part
-          git.run({ 'checkout', '-b', branch_part, '--track', text }, done_refresh('チェックアウト'))
+          git.run({ 'checkout', '-b', branch_part, '--track', text }, ctx.done_refresh(M.refresh, 'チェックアウト'))
         end
       end)
     end)
@@ -302,14 +295,14 @@ local function checkout_by_name()
 end
 
 local function checkout_previous()
-  git.checkout_previous(done_refresh('チェックアウト'))
+  git.checkout_previous(ctx.done_refresh(M.refresh, 'チェックアウト'))
 end
 
 local function create()
   ctx.input('新規ブランチ名', '', function(name)
     if not name or name == '' then return end
     cursor_mem = name
-    git.create_branch(name, done_refresh('作成'))
+    git.create_branch(name, ctx.done_refresh(M.refresh, '作成'))
   end)
 end
 
@@ -328,7 +321,7 @@ local function delete()
       ctx.confirm('マージされていません。強制削除しますか？\n' .. entry.name, function(force_ok)
         if not force_ok then return end
         cursor_mem = nil
-        git.delete_branch(entry.name, true, done_refresh('削除'))
+        git.delete_branch(entry.name, true, ctx.done_refresh(M.refresh, '削除'))
       end)
     end)
   end)
@@ -340,7 +333,7 @@ local function force_checkout()
   ctx.confirm('作業ツリーの変更をすべて破棄して "' .. entry.name .. '" を強制チェックアウトしますか？', function(ok)
     if not ok then return end
     cursor_mem = entry.name
-    git.force_checkout(entry.name, done_refresh('強制チェックアウト'))
+    git.force_checkout(entry.name, ctx.done_refresh(M.refresh, '強制チェックアウト'))
   end)
 end
 
@@ -349,7 +342,7 @@ local function merge()
   if not entry then return end
   ctx.confirm('現在のブランチに "' .. entry.name .. '" をマージしますか？', function(ok)
     if not ok then return end
-    git.merge_branch(entry.name, done_refresh('マージ'))
+    git.merge_branch(entry.name, ctx.done_refresh(M.refresh, 'マージ'))
   end)
 end
 
@@ -358,7 +351,7 @@ local function rebase()
   if not entry then return end
   ctx.confirm('現在のブランチを "' .. entry.name .. '" にリベースしますか？', function(ok)
     if not ok then return end
-    git.rebase_branch(entry.name, done_refresh('リベース'))
+    git.rebase_branch(entry.name, ctx.done_refresh(M.refresh, 'リベース'))
   end)
 end
 
@@ -368,7 +361,7 @@ local function rename()
   ctx.input('リネーム', entry.name, function(new_name)
     if not new_name or new_name == '' or new_name == entry.name then return end
     cursor_mem = new_name
-    git.rename_branch(entry.name, new_name, done_refresh('リネーム'))
+    git.rename_branch(entry.name, new_name, ctx.done_refresh(M.refresh, 'リネーム'))
   end)
 end
 
@@ -379,7 +372,7 @@ local function fast_forward()
     vim.notify('アップストリームが設定されていません', vim.log.levels.WARN)
     return
   end
-  git.fast_forward(entry.name, done_refresh('fast-forward'))
+  git.fast_forward(entry.name, ctx.done_refresh(M.refresh, 'fast-forward'))
 end
 
 local function set_upstream()
@@ -387,7 +380,7 @@ local function set_upstream()
   if not entry then return end
   ctx.input('アップストリームに設定 (remote)', 'origin', function(remote)
     if not remote or remote == '' then return end
-    git.set_upstream(remote, entry.name, done_refresh('アップストリーム設定'))
+    git.set_upstream(remote, entry.name, ctx.done_refresh(M.refresh, 'アップストリーム設定'))
   end)
 end
 
