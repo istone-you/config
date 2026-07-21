@@ -156,7 +156,7 @@ function M.branches(cb)
   end, { dont_log = true })
 end
 
-function M.checkout_branch(name, cb) M.run({ 'checkout', '--', name }, cb) end
+function M.checkout_branch(name, cb) M.run({ 'checkout', name }, cb) end
 function M.checkout_by_name(name, cb) M.run({ 'checkout', name }, cb) end
 function M.checkout_previous(cb) M.run({ 'checkout', '-' }, cb) end
 function M.create_branch(name, cb) M.run({ 'checkout', '-b', name }, cb) end
@@ -316,6 +316,81 @@ function M.ref_candidates(cb)
       end, { dont_log = true })
     end, { dont_log = true })
   end, { dont_log = true })
+end
+
+-- ══════════════════════════════════════════════
+-- GitHub PR (pkg/commands/git_commands/github.go相当。GitHub以外のホスティングは未対応、
+-- forkからのPR判定(headRepositoryOwnerの突き合わせ)も自分のリポジトリ運用を想定して省略)
+-- ══════════════════════════════════════════════
+
+--- originのURLからgithub.com上のowner/repoを判定する。github.com以外は非対応でnilを返す
+function M.github_repo_info(cb)
+  M.run({ 'remote', 'get-url', 'origin' }, function(res)
+    if res.code ~= 0 then cb(nil); return end
+    local url = vim.trim(res.stdout or '')
+    local owner, repo = url:match('github%.com[:/]([^/]+)/([^/]+)')
+    if not owner then cb(nil); return end
+    cb({ owner = owner, repo = (repo:gsub('%.git$', '')) })
+  end, { dont_log = true })
+end
+
+--- 自前でトークンを保存/管理せず、gh CLIが保持している認証情報をそのまま使う。
+--- ghが未インストール/未認証なら黒く失敗してnilを返す（PR表示機能が黙って無効になる）
+function M.gh_auth_token(cb)
+  vim.system({ 'gh', 'auth', 'token' }, { text = true }, function(res)
+    vim.schedule(function() cb(res.code == 0 and vim.trim(res.stdout or '') or nil) end)
+  end)
+end
+
+--- pkg/commands/git_commands/github.go fetchPullRequestsQueryと同じ形
+--- (ブランチ1つにつきheadRefNameで絞ったサブクエリを1本、まとめて1リクエストにする)
+--- でGitHub GraphQL APIに問い合わせ、node一覧を返す。isDraftはsetCommitStatuses同様に
+--- state側へ畳み込む(state=DRAFT)。取得失敗時は空配列を返すだけで、エラー通知はしない
+--- （PR表示は本体でも失敗時にログだけでUIを止めない補助情報という位置づけ）
+function M.fetch_prs(owner, repo, token, branch_names, cb)
+  if #branch_names == 0 then cb({}); return end
+  local var_decls = { '$owner: String!', '$repo: String!' }
+  local variables = { owner = owner, repo = repo }
+  local queries = {}
+  for i, name in ipairs(branch_names) do
+    local field, var = 'a' .. i, 'branch' .. i
+    variables[var] = name
+    table.insert(var_decls, '$' .. var .. ': String!')
+    table.insert(queries, string.format(
+      '%s: pullRequests(first: 5, headRefName: $%s, orderBy: {field: CREATED_AT, direction: DESC}) '
+        .. '{ edges { node { title headRefName state number url isDraft headRepositoryOwner { login } } } }',
+      field, var))
+  end
+  local query = string.format('query(%s) { repository(owner: $owner, name: $repo) { %s } }',
+    table.concat(var_decls, ', '), table.concat(queries, ' '))
+
+  local tmp = vim.fn.tempname()
+  vim.fn.writefile({ vim.json.encode({ query = query, variables = variables }) }, tmp)
+  vim.system({
+    'curl', '-s', '-X', 'POST', 'https://api.github.com/graphql',
+    '-H', 'Authorization: token ' .. token,
+    '-H', 'Content-Type: application/json',
+    '--max-time', '10',
+    '-d', '@' .. tmp,
+  }, { text = true }, function(res)
+    vim.schedule(function()
+      vim.fn.delete(tmp)
+      if res.code ~= 0 or not res.stdout or res.stdout == '' then cb({}); return end
+      local ok, decoded = pcall(vim.json.decode, res.stdout)
+      local repository = ok and decoded and decoded.data and decoded.data.repository
+      if not repository then cb({}); return end
+      local prs = {}
+      for i = 1, #branch_names do
+        local pr_list = repository['a' .. i]
+        for _, edge in ipairs((pr_list and pr_list.edges) or {}) do
+          local node = edge.node
+          node.state = (node.isDraft and node.state ~= 'CLOSED') and 'DRAFT' or node.state
+          table.insert(prs, node)
+        end
+      end
+      cb(prs)
+    end)
+  end)
 end
 
 -- ══════════════════════════════════════════════

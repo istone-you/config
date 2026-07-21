@@ -10,6 +10,8 @@ local branches = {}
 local line_entries = {}
 local total_rows = 0
 local cursor_mem = nil
+local prs_by_branch = {}  -- [branch_name] = { number, state, url, ... }
+local MAIN_BRANCH_NAMES = { master = true, main = true }
 
 --- lazygit本体(pkg/gui/presentation/branches.go BranchStatus)と同じマーカー。
 --- 本物にはアップストリーム名自体を表示する機能は無く、状態マーカーのみが表示される。
@@ -27,6 +29,19 @@ local function branch_status(b)
   if behind then table.insert(parts, '↓' .. behind) end
   if ahead then table.insert(parts, '↑' .. ahead) end
   return { text = ' ' .. table.concat(parts), hl = 'GitPanelPushed' }
+end
+
+--- lazygit本体(presentation/branches.go ShouldShowPrForBranch)と同じ:
+--- main/master自身に紐づくPRは、CLOSED/MERGEDなら表示しない（もう関係ないとみなす）
+local function pr_marker(name)
+  local pr = prs_by_branch[name]
+  if not pr then return nil end
+  if MAIN_BRANCH_NAMES[name] and (pr.state == 'CLOSED' or pr.state == 'MERGED') then return nil end
+  local hl = ({
+    OPEN = 'GitPanelPrOpen', CLOSED = 'GitPanelPrClosed',
+    MERGED = 'GitPanelPrMerged', DRAFT = 'GitPanelPrDraft',
+  })[pr.state]
+  return { text = ' ● #' .. pr.number, hl = hl }
 end
 
 local function current_entry()
@@ -67,11 +82,16 @@ local function render()
     local marker = b.current and '* ' or '  '
     local prefix = '  ' .. marker .. b.name
     local status = branch_status(b)
-    push(prefix .. (status and status.text or ''), b, b.current and 'GitPanelCurrent' or nil)
+    local pr = pr_marker(b.name)
+    push(prefix .. (status and status.text or '') .. (pr and pr.text or ''), b, b.current and 'GitPanelCurrent' or nil)
     if status then
       -- current行のGitPanelCurrent(全体緑)より後に積むことで、乖離時の黄/赤マーカーを
       -- ステータス部分だけ確実に上書き表示する
       table.insert(hl_queue, { #lines - 1, status.hl, #prefix, #prefix + #status.text })
+    end
+    if pr then
+      local pr_base = #prefix + (status and #status.text or 0)
+      table.insert(hl_queue, { #lines - 1, pr.hl, pr_base, pr_base + #pr.text })
     end
     if cursor_mem == b.name then remembered_row = #lines end
   end
@@ -94,10 +114,56 @@ local function render()
   end
 end
 
-function M.refresh()
+--- after: branchesデータが実際に届いた後に呼ぶコールバック（PR取得はactivate時だけ
+--- 続けて行いたいが、branches取得自体は非同期なので完了を待たないとリストが空/古いままになる）
+local function do_refresh(after)
   git.branches(function(list)
     branches = list
     render()
+    if after then after() end
+  end)
+end
+
+function M.refresh() do_refresh() end
+
+--- GitHub PR取得(pkg/commands/git_commands/github.go相当)。gh CLI未認証やGitHub以外の
+--- リモートなら黒く諦めて何も表示しない。API呼び出しを毎回の自動更新(2秒おき)で叩くのは
+--- 負荷/レート制限的に良くないので、Branchesパネルに入った時(activate)だけ取得する
+local function refresh_prs()
+  git.github_repo_info(function(repo_info)
+    if not repo_info then return end
+    git.gh_auth_token(function(token)
+      if not token then return end
+      local branch_names = {}
+      for _, b in ipairs(branches) do
+        if b.upstream and b.upstream ~= '' then
+          local short = b.upstream:match('^[^/]+/(.+)$')
+          if short then table.insert(branch_names, short) end
+        end
+      end
+      git.fetch_prs(repo_info.owner, repo_info.repo, token, branch_names, function(prs)
+        -- prByKey相当: owner(大小無視)+headRefNameで最新の1件のみ採用（forkは非対応、
+        -- 同オーナーのリポジトリへの直接PRのみ扱う）
+        local by_ref = {}
+        for _, pr in ipairs(prs) do
+          if pr.headRepositoryOwner and pr.headRepositoryOwner.login
+            and pr.headRepositoryOwner.login:lower() == repo_info.owner:lower()
+            and not by_ref[pr.headRefName]
+          then
+            by_ref[pr.headRefName] = pr
+          end
+        end
+        local map = {}
+        for _, b in ipairs(branches) do
+          if b.upstream and b.upstream ~= '' then
+            local short = b.upstream:match('^[^/]+/(.+)$')
+            if short and by_ref[short] then map[b.name] = by_ref[short] end
+          end
+        end
+        prs_by_branch = map
+        render()
+      end)
+    end)
   end)
 end
 
@@ -298,7 +364,7 @@ function M.activate(c)
     function() return total_rows end,
     show_detail
   )
-  M.refresh()
+  do_refresh(refresh_prs)
 end
 
 return M

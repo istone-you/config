@@ -2,13 +2,19 @@
 
 Neovim・yazi・lazygit の設定ファイル群。
 
-## 必要なインストール
+## nvim が依存する CLI ツール
 
-LSP サーバーを含むすべてのツールは mise.toml で管理されているため、以下を実行するだけでよい。
+`nvim/` 配下の自作機能が内部で呼び出しているツール。
 
-```bash
-mise install
-```
+| ツール | 用途 |
+|---|---|
+| `git` | git_panel, github_permalink, terminal など git 操作全般 |
+| `rg` (ripgrep) | `rg_fzf.lua` の全文検索・置換 |
+| `fzf` | `rg_fzf.lua`（検索UI）、`explorer.lua`（ファイル検索） |
+| `fd` | `explorer.lua` のファイル検索（`fd`/`fzf` の両方が必要） |
+| `lazygit` | `lazygit.lua`（`<leader>lg` でターミナル起動） |
+| `yazi` (>= 0.2.5) | `yazi.lua`（`--chooser-file` 利用、`<leader>y` / `<leader>cw`） |
+| `bat` | `rg_fzf.lua` のプレビュー表示（任意、無くても動作する） |
 
 ## ローカル設定
 
