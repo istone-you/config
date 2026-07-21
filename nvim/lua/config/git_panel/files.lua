@@ -431,41 +431,54 @@ end
 
 --- files_controller.go remove()相当の並列実行ヘルパー。per_file(f, done)が各対象への
 --- 実処理、doneを呼んだ回数が対象数に達したらon_all_doneを呼ぶ
-local function run_discard(targets, per_file, on_all_done)
-  cursor_mem = nil
-  local pending = #targets
-  local function done()
-    pending = pending - 1
-    if pending == 0 then ctx.render_cmdlog(); on_all_done() end
-  end
-  for _, f in ipairs(targets) do
-    per_file(f, done)
+--- ファイルごとに個別のgitプロセスを並行実行すると、複数プロセスが同時に
+--- .git/index.lockを取り合って一部だけ失敗することがある(実際に対象ファイルが
+--- 複数ある時に再現した)。lazygit本体のDiscardAllDirChanges/DiscardUnstagedDirChanges
+--- も同じ理由でパスを種別ごとに集めてバッチで1回のgitコマンドにまとめているので、
+--- それに合わせる(removeFilesはgitを介さない直接のファイル削除なのでロック競合が無い)
+local function remove_from_disk(paths)
+  for _, p in ipairs(paths) do
+    vim.fn.delete(git.root .. '/' .. p)
   end
 end
 
---- DiscardAllFileChanges相当: ステージ済みならreset(unstage)してから、
---- 元々untracked/新規追加(A)だったファイルはディスクから削除、それ以外はcheckoutでHEADへ戻す
+local function batched(args_prefix, paths, cb)
+  if #paths == 0 then cb(); return end
+  git.run(vim.list_extend(vim.deepcopy(args_prefix), paths), cb)
+end
+
+--- DiscardAllDirChanges相当: ステージ済みのパスはまとめてreset(unstage)してから、
+--- 元々untracked/新規追加(A)だったパスはディスクから直接削除、それ以外はまとめてcheckout
 local function discard_all_targets(targets)
-  run_discard(targets, function(f, done)
+  cursor_mem = nil
+  local to_reset, to_remove, to_checkout = {}, {}, {}
+  for _, f in ipairs(targets) do
     local was_added = f.x == 'A' or is_untracked(f)
-    if has_staged(f) then
-      git.run({ 'reset', '--', f.path }, function()
-        if was_added then git.clean_file(f.path, done) else git.discard_file(f.path, done) end
-      end)
-    elseif was_added then
-      git.clean_file(f.path, done)
-    else
-      git.discard_file(f.path, done)
-    end
-  end, M.refresh)
+    if has_staged(f) then table.insert(to_reset, f.path) end
+    table.insert(was_added and to_remove or to_checkout, f.path)
+  end
+  batched({ 'reset', '--' }, to_reset, function()
+    remove_from_disk(to_remove)
+    batched({ 'checkout', '--' }, to_checkout, function()
+      ctx.render_cmdlog()
+      M.refresh()
+    end)
+  end)
 end
 
---- DiscardUnstagedFileChanges相当: indexには触れず、作業ツリーの差分だけを戻す。
+--- DiscardUnstagedDirChanges相当: indexには触れず、まとめて作業ツリーの差分だけを戻す。
 --- ステージ済みの内容はそのまま残る
 local function discard_unstaged_targets(targets)
-  run_discard(targets, function(f, done)
-    if is_untracked(f) then git.clean_file(f.path, done) else git.discard_file(f.path, done) end
-  end, M.refresh)
+  cursor_mem = nil
+  local to_remove, to_checkout = {}, {}
+  for _, f in ipairs(targets) do
+    table.insert(is_untracked(f) and to_remove or to_checkout, f.path)
+  end
+  remove_from_disk(to_remove)
+  batched({ 'checkout', '--' }, to_checkout, function()
+    ctx.render_cmdlog()
+    M.refresh()
+  end)
 end
 
 --- files_controller.go remove()相当: すべての変更を破棄 / ステージされていない変更を破棄

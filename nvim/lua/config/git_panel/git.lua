@@ -144,8 +144,6 @@ function M.stage(path, cb) M.run({ 'add', '--', path }, cb) end
 function M.unstage(path, cb) M.run({ 'reset', 'HEAD', '--', path }, cb) end
 function M.stage_all(cb) M.run({ 'add', '-A' }, cb) end
 function M.unstage_all(cb) M.run({ 'reset', 'HEAD' }, cb) end
-function M.discard_file(path, cb) M.run({ 'checkout', '--', path }, cb) end
-function M.clean_file(path, cb) M.run({ 'clean', '-f', '--', path }, cb) end
 function M.ignore_file(path, cb)
   local ok = pcall(function()
     vim.fn.writefile({ path }, M.root .. '/.gitignore', 'a')
