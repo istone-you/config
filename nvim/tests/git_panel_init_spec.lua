@@ -290,6 +290,51 @@ T.describe('git_panel init', function()
     T.rmrf(dir)
   end)
 
+  T.it('auto-refresh (2s timer) picks up an out-of-band git change while the left pane is focused, keeping the cursor', function()
+    local dir = T.tmp_git_repo()
+    GP.git(dir, { 'branch', 'existing' })
+
+    GP.open(dir, false)
+    GP.press('3') -- Branchesパネル(cursor_memの挙動が分かりやすい)
+    vim.wait(300)
+    local left = GP.left_win()
+    vim.api.nvim_set_current_win(left)
+    GP.goto_row(left, GP.find_row(left, 'existing'))
+
+    -- タイマーの外(別プロセス相当)でブランチを増やす
+    GP.git(dir, { 'branch', 'added-out-of-band' })
+    T.wait_until(function()
+      return table.concat(GP.lines(GP.left_win()), '\n'):find('added%-out%-of%-band') ~= nil
+    end, 3500)
+
+    local cur = GP.left_win()
+    local cursor_row = vim.api.nvim_win_get_cursor(cur)[1]
+    T.contains(GP.lines(cur)[cursor_row], 'existing',
+      'cursor should stay on the previously-selected branch across the auto refresh')
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+
+  T.it('auto-refresh does not fire while focus is away from the left pane (e.g. the diff/right pane)', function()
+    local dir = T.tmp_git_repo()
+    GP.git(dir, { 'branch', 'existing' })
+
+    GP.open(dir, false)
+    GP.press('3')
+    vim.wait(300)
+    vim.api.nvim_set_current_win(GP.right_win()) -- 左パネルからフォーカスを外す
+
+    GP.git(dir, { 'branch', 'added-while-unfocused' })
+    vim.wait(3200) -- 2秒タイマーを跨いでも反映されないはず
+
+    T.ok(not table.concat(GP.lines(GP.left_win()), '\n'):find('added%-while%-unfocused'),
+      'auto-refresh should be skipped while the left pane is not focused')
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+
   T.it('v toggles delta side-by-side (only takes effect if delta is installed)', function()
     local git = require('config.git_panel.git')
     if not git.delta_available then

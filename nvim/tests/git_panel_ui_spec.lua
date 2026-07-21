@@ -52,6 +52,37 @@ T.describe('git_panel.ui', function()
     T.eq(result, nil)
   end)
 
+  T.it('suggest_input: typing narrows the candidate list via fuzzy match, <CR> submits the top match', function()
+    local result
+    ui.suggest_input('ref', {}, function(query)
+      if query == '' then return { 'aaa-other', 'feature-target', 'main' } end
+      return vim.fn.matchfuzzy({ 'aaa-other', 'feature-target', 'main' }, query)
+    end, function(r) result = r end)
+    feed('ifeature-target')
+    -- ヘッドレス(-l)実行ではfeedkeys経由の編集でTextChangedIが自動発火しないため、
+    -- 手動で発火させて候補の絞り込み(render_list)を反映させる(既知の制約)
+    vim.api.nvim_exec_autocmds('TextChangedI', { buffer = vim.api.nvim_get_current_buf() })
+    feed('<CR>')
+    T.eq(result, 'feature-target')
+  end)
+
+  T.it('suggest_input: <Esc> cancels with nil, and submits the raw text when there is no match', function()
+    local result = 'unset'
+    ui.suggest_input('ref', {}, function() return { 'main' } end, function(r) result = r end)
+    feed('<Esc>')
+    T.eq(result, nil)
+
+    result = 'unset'
+    ui.suggest_input('ref', {}, function(query)
+      if query == '' then return {} end
+      return vim.fn.matchfuzzy({ 'main' }, query)
+    end, function(r) result = r end)
+    feed('ino-such-branch')
+    vim.api.nvim_exec_autocmds('TextChangedI', { buffer = vim.api.nvim_get_current_buf() })
+    feed('<CR>')
+    T.eq(result, 'no-such-branch', 'falls back to the raw typed text when nothing matches')
+  end)
+
   T.it('multiline_input: Enter always confirms immediately (no newline insertion), Esc cancels', function()
     local result
     ui.multiline_input({ title = 'コミットメッセージ' }, function(r) result = r end)

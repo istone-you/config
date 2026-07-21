@@ -154,7 +154,10 @@ end
 
 function M.status(cb)
   -- --untracked-files=all: 未追跡ディレクトリを1行にまとめず配下ファイルを個別に列挙する
-  M.run({ 'status', '--porcelain=v1', '--untracked-files=all' }, function(res) cb(res.stdout or '') end, { dont_log = true })
+  -- -z: NUL区切りの生バイト出力(lazygit file_loader.goのgitStatus()と同じ)。
+  -- これが無いと空白/特殊文字を含むパスがダブルクォートで囲われてエスケープされ、
+  -- リネームの旧パスも"old -> new"の human-readable表記に埋め込まれて分離できない
+  M.run({ 'status', '--porcelain=v1', '--untracked-files=all', '-z' }, function(res) cb(res.stdout or '') end, { dont_log = true })
 end
 
 function M.branch_name(cb)
@@ -278,8 +281,24 @@ function M.force_checkout(name, cb) M.run({ 'checkout', '-f', name }, cb) end
 function M.merge_branch(name, cb) M.run({ 'merge', name }, cb, { stream_output = true }) end
 function M.rebase_branch(name, cb) M.run({ 'rebase', name }, cb, { stream_output = true }) end
 function M.rename_branch(old, new, cb) M.run({ 'branch', '-m', old, new }, cb) end
-function M.fast_forward(name, cb) M.run({ 'fetch', 'origin', name .. ':' .. name }, cb) end
-function M.set_upstream(remote, branch_name, cb) M.run({ 'branch', '-u', remote .. '/' .. branch_name }, cb) end
+-- lazygit(branches_controller.go fastForward)と同じ分岐: 現在チェックアウト中の
+-- ブランチは`git fetch origin <name>:<name>`では更新できない(checkout中のrefへの
+-- 直接fetchはgitに拒否される)ため、その場合だけ`git pull --ff-only`を使う
+function M.fast_forward(name, cb)
+  M.branch_name(function(current)
+    if current == name then
+      M.run({ 'pull', '--ff-only' }, cb, { stream_output = true })
+    else
+      M.run({ 'fetch', 'origin', name .. ':' .. name }, cb)
+    end
+  end)
+end
+-- lazygit(branch.go SetUpstream)と同じく、対象のブランチ名を明示する。
+-- ブランチ名を省略すると現在チェックアウト中のブランチにしか効かず、
+-- カーソル位置のブランチ(必ずしもcurrentではない)へ設定できないため
+function M.set_upstream(remote, branch_name, cb)
+  M.run({ 'branch', '--set-upstream-to=' .. remote .. '/' .. branch_name, branch_name }, cb)
+end
 
 -- ══════════════════════════════════════════════
 -- ログ / コミット操作
@@ -397,6 +416,7 @@ end
 
 function M.push(cb) M.run({ 'push' }, cb, { stream_output = true }) end
 function M.push_force_with_lease(cb) M.run({ 'push', '--force-with-lease' }, cb, { stream_output = true }) end
+function M.push_force(cb) M.run({ 'push', '--force' }, cb, { stream_output = true }) end
 function M.push_set_upstream(remote, branch_name, cb) M.run({ 'push', '-u', remote, branch_name }, cb, { stream_output = true }) end
 function M.pull(cb) M.run({ 'pull' }, cb, { stream_output = true }) end
 function M.fetch(cb) M.run({ 'fetch' }, cb, { stream_output = true }) end

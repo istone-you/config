@@ -52,6 +52,35 @@ T.describe('shortcuts', function()
     vim.wait(50)
   end)
 
+  T.it('<Tab>/<S-Tab> cycle through tabs (wrapping at both ends)', function()
+    local win = open_fresh()
+    vim.api.nvim_set_current_win(win)
+    local function tab_line() return vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, 1, false)[1] end
+
+    T.contains(tab_line(), 'Neovim') -- 初期タブ
+    feed('<Tab>')
+    vim.wait(30)
+    T.contains(tab_line(), 'yazi')
+    feed('<Tab>')
+    vim.wait(30)
+    T.contains(tab_line(), 'lazygit')
+    feed('<Tab>')
+    vim.wait(30)
+    T.contains(tab_line(), 'herdr')
+    feed('<Tab>') -- 末尾から先頭へ折り返す
+    vim.wait(30)
+    T.contains(tab_line(), 'Neovim')
+
+    feed('<S-Tab>') -- 先頭から末尾へ折り返す(逆回り)
+    vim.wait(30)
+    T.contains(tab_line(), 'herdr')
+
+    feed('1') -- cur_tabはモジュール内で保持され次のitへ持ち越るため、必ず1へ戻す
+    vim.wait(30)
+    feed('q')
+    vim.wait(50)
+  end)
+
   T.it('/ filters rows by key or description substring, <BS> clears it', function()
     -- '/'はvim.ui.input()(既定実装はvim.fn.input()でコマンドラインの実対話入力を使う)
     -- 経由で、-lヘッドレス実行では実入力ストリームが無くブロックしてfeedkeysで駆動

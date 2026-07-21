@@ -20,19 +20,30 @@ local function is_untracked(f) return f.x == '?' and f.y == '?' end
 local function has_staged(f) return f.x ~= ' ' and f.x ~= '?' end
 local function has_unstaged(f) return f.y ~= ' ' or is_untracked(f) end
 
+--- git.status()の`-z`出力(lazygit file_loader.goのgitStatus()と同形式)をパースする。
+--- NUL区切りなのでスペース/特殊文字を含むパスもクォート無しの生バイトのまま渡ってくる。
+--- Rename/Copy(先頭が'R'か'C')は次の要素が旧パス(単体、"old -> new"のような
+--- human-readable表記ではない)になるので、そこだけ2要素消費してprevious_pathへ入れる
 local function parse_status(output)
+  local records = vim.split(output or '', '\0', { plain = true })
   local list = {}
-  for _, line in ipairs(vim.split(output or '', '\n', { plain = true })) do
-    if line ~= '' then
-      local x, y, path = line:sub(1, 1), line:sub(2, 2), line:sub(4)
-      local arrow_at = path:find(' %-> ')
-      if arrow_at then path = path:sub(arrow_at + 4) end
+  local i = 1
+  while i <= #records do
+    local rec = records[i]
+    if rec ~= '' then
+      local x, y, path = rec:sub(1, 1), rec:sub(2, 2), rec:sub(4)
+      local previous_path = nil
+      if x == 'R' or x == 'C' then
+        previous_path = records[i + 1]
+        i = i + 1
+      end
       -- ネストしたgitリポジトリ(.gitを含む未追跡ディレクトリ)等、gitが展開せず
       -- "dir/"の形で1行にまとめて返すことがある。末尾の"/"が残るとbuild_treeで
       -- ファイル名抽出(name:match('([^/]+)$'))に失敗してnilになるため、ここで落とす
       path = path:gsub('/$', '')
-      table.insert(list, { path = path, x = x, y = y })
+      table.insert(list, { path = path, x = x, y = y, previous_path = previous_path })
     end
+    i = i + 1
   end
   return list
 end
@@ -483,7 +494,9 @@ end
 --- それに合わせる(removeFilesはgitを介さない直接のファイル削除なのでロック競合が無い)
 local function remove_from_disk(paths)
   for _, p in ipairs(paths) do
-    vim.fn.delete(git.root .. '/' .. p)
+    -- 'rf'必須: 未追跡ディレクトリ(nested git repo等、--untracked-files=allでも
+    -- 展開されず1行になるものがある)は非再帰のdeleteだと空でない限り削除できない
+    vim.fn.delete(git.root .. '/' .. p, 'rf')
   end
 end
 
@@ -494,13 +507,23 @@ end
 
 --- DiscardAllDirChanges相当: ステージ済みのパスはまとめてreset(unstage)してから、
 --- 元々untracked/新規追加(A)だったパスはディスクから直接削除、それ以外はまとめてcheckout
+--- lazygit(working_tree.go DiscardAllFileChanges)と同じく、renameは
+--- 「旧パスの削除」+「新パスの追加」の2つに分解して扱う: 旧パスはindexを戻して
+--- checkoutで復元、新パスはindexから外してディスクから削除する(=リネームを完全に取り消す)
 local function discard_all_targets(targets)
   cursor_mem = nil
   local to_reset, to_remove, to_checkout = {}, {}, {}
   for _, f in ipairs(targets) do
-    local was_added = f.x == 'A' or is_untracked(f)
-    if has_staged(f) then table.insert(to_reset, f.path) end
-    table.insert(was_added and to_remove or to_checkout, f.path)
+    if f.previous_path then
+      table.insert(to_reset, f.previous_path)
+      table.insert(to_reset, f.path)
+      table.insert(to_checkout, f.previous_path)
+      table.insert(to_remove, f.path)
+    else
+      local was_added = f.x == 'A' or is_untracked(f)
+      if has_staged(f) then table.insert(to_reset, f.path) end
+      table.insert(was_added and to_remove or to_checkout, f.path)
+    end
   end
   batched({ 'reset', '--' }, to_reset, function()
     remove_from_disk(to_remove)

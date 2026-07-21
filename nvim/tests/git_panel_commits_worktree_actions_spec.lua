@@ -1,0 +1,126 @@
+-- commits.lua(t=revert, Space=checkout_commit)とworktree.lua(Space=checkout, d=delete)の
+-- 未テストキー。既存specはg(reset)/n(new branch)/一覧表示しか検証していなかった
+
+local T = dofile(TESTS_DIR .. '/helpers.lua')
+local GP = dofile(TESTS_DIR .. '/git_panel_helpers.lua')
+
+T.describe('git_panel Commits panel: revert/checkout-commit', function()
+  T.it('t reverts the selected commit, creating a new commit that undoes it', function()
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/a.txt', { 'a' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'add a.txt' })
+    end)
+    GP.open(dir, false)
+    GP.press('2')
+    vim.wait(200)
+    local left = GP.left_win()
+    local row = GP.find_row(left, 'add a.txt')
+    GP.goto_row(left, row)
+    GP.press('t')
+    vim.wait(80)
+    GP.press_modal('y') -- 「revertしますか」確認
+    T.wait_until(function() return vim.fn.filereadable(dir .. '/a.txt') == 0 end)
+    T.eq(vim.fn.filereadable(dir .. '/a.txt'), 0, 'revert should remove what the commit added')
+    T.contains(vim.trim(GP.git(dir, { 'log', '-1', '--format=%s' }).stdout), 'Revert')
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+
+  T.it('Space checks out the selected commit as a detached HEAD', function()
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/a.txt', { 'a' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first' })
+    end)
+    T.write_file(dir .. '/b.txt', { 'b' })
+    GP.git(dir, { 'add', '.' })
+    GP.git(dir, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'second' })
+    local first_hash = vim.trim(GP.git(dir, { 'log', '--format=%H', '--grep=first' }).stdout)
+
+    GP.open(dir, false)
+    GP.press('2')
+    vim.wait(200)
+    local left = GP.left_win()
+    GP.goto_row(left, GP.find_row(left, 'first'))
+    GP.press('<Space>')
+    vim.wait(80)
+    GP.press_modal('y') -- 「detached HEADとしてチェックアウトしますか」確認
+    T.wait_until(function()
+      return vim.trim(GP.git(dir, { 'rev-parse', 'HEAD' }).stdout) == first_hash
+    end)
+    T.eq(vim.trim(GP.git(dir, { 'rev-parse', 'HEAD' }).stdout), first_hash)
+    T.eq(GP.git(dir, { 'symbolic-ref', '-q', 'HEAD' }).code, 1, 'HEAD should be detached (no symbolic ref)')
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+end)
+
+T.describe('git_panel Worktree panel: checkout(Space)/delete(d)', function()
+  T.it('Space cds into the worktree path under the cursor', function()
+    local dir = T.tmp_git_repo()
+    local wt_path = vim.fn.tempname()
+    GP.git(dir, { 'worktree', 'add', '-q', '-b', 'wt-branch', wt_path })
+
+    GP.open(dir, false)
+    GP.press('5')
+    vim.wait(200)
+    local left = GP.left_win()
+    local row = GP.find_row(left, 'wt-branch')
+    T.ok(row ~= nil, 'the new worktree should be listed')
+    GP.goto_row(left, row)
+    GP.press('<Space>')
+    vim.wait(80)
+    GP.press_modal('y') -- 「このワークツリーに移動しますか」確認
+    T.wait_until(function() return vim.fn.resolve(vim.fn.getcwd()) == vim.fn.resolve(wt_path) end)
+    T.eq(vim.fn.resolve(vim.fn.getcwd()), vim.fn.resolve(wt_path))
+
+    GP.close()
+    T.rmrf(dir); T.rmrf(wt_path)
+  end)
+
+  T.it('d removes the worktree under the cursor', function()
+    local dir = T.tmp_git_repo()
+    local wt_path = vim.fn.tempname()
+    GP.git(dir, { 'worktree', 'add', '-q', '-b', 'wt-branch', wt_path })
+
+    GP.open(dir, false)
+    GP.press('5')
+    vim.wait(200)
+    local left = GP.left_win()
+    GP.goto_row(left, GP.find_row(left, 'wt-branch'))
+    GP.press('d')
+    vim.wait(80)
+    GP.press_modal('y') -- 「削除しますか」確認
+    T.wait_until(function()
+      return not GP.git(dir, { 'worktree', 'list' }).stdout:find(wt_path, 1, true)
+    end)
+    T.ok(not GP.git(dir, { 'worktree', 'list' }).stdout:find(wt_path, 1, true), 'worktree should be gone')
+
+    GP.close()
+    T.rmrf(dir); T.rmrf(wt_path)
+  end)
+
+  T.it('d refuses to delete the worktree that is currently in use', function()
+    local dir = T.tmp_git_repo()
+    GP.open(dir, false)
+    GP.press('5')
+    vim.wait(200)
+    local left = GP.left_win()
+    local row = GP.find_row(left, '*') -- カレントワークツリーの目印
+    T.ok(row ~= nil)
+    GP.goto_row(left, row)
+    GP.press('d')
+    vim.wait(100)
+    -- 確認モーダルすら出さずに拒否されること(警告のみ、パネルは操作可能なまま)
+    T.ok(GP.left_win() ~= nil)
+    T.eq(GP.git(dir, { 'worktree', 'list' }).stdout:find('%(bare%)') == nil, true) -- sanity: 壊れていない
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+end)
+
+T.summary()

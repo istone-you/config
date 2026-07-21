@@ -160,6 +160,86 @@ T.describe('git_panel Files panel', function()
     T.rmrf(dir)
   end)
 
+  T.it('handles quoted paths (spaces/special chars) via -z, not the human-readable quoted porcelain text', function()
+    -- 回帰テスト: -z無しの--porcelain=v1はスペースを含むパスを`"a b.txt"`のように
+    -- ダブルクォートで返し、内部pathがクォート付きのまま残ると
+    -- previewが空になりSpaceでのstageも `pathspec '"a b.txt"' did not match` で失敗していた
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/a b.txt', { 'a' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'seed' })
+    end)
+    T.write_file(dir .. '/a b.txt', { 'a', 'changed' })
+
+    GP.open(dir, false)
+    local left = GP.left_win()
+    local row = GP.find_row(left, 'a b.txt')
+    T.ok(row ~= nil, '"a b.txt" should be listed')
+    GP.goto_row(left, row)
+    vim.wait(50)
+    local diff_text = table.concat(GP.lines(GP.right_win()), '\n')
+    T.contains(diff_text, 'changed', 'preview should show the real diff, not be empty')
+
+    GP.press('<Space>')
+    T.wait_until(function() return GP.status(dir):find('M  "?a b%.txt"?', 1) ~= nil end)
+    T.contains(GP.status(dir), 'a b.txt', 'staging a space-containing path should succeed, not fail with a pathspec error')
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+
+  T.it('discarding a staged rename restores the original file and removes the new one', function()
+    -- 回帰テスト: 旧実装はrename行の旧パスを捨てており、discard allしても
+    -- 実際には D old.txt / ?? new.txt が残る不完全な破棄になっていた
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/old.txt', { 'original content' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'seed' })
+    end)
+    vim.uv.fs_rename(dir .. '/old.txt', dir .. '/new.txt')
+    GP.git(dir, { 'add', '-A' })
+    T.contains(GP.status(dir), 'R  old.txt -> new.txt', 'sanity check: git should detect this as a rename')
+
+    GP.open(dir, false)
+    local left = GP.left_win()
+    local row = GP.find_row(left, 'new.txt')
+    T.ok(row ~= nil, 'the renamed file should be listed under its new name')
+    GP.goto_row(left, row)
+    GP.press('d')
+    GP.press_modal('x') -- 「すべての変更を破棄」
+    T.wait_until(function() return vim.trim(GP.status(dir)) == '' end, 3000)
+
+    T.eq(vim.trim(GP.status(dir)), '', 'no leftover status (not "D old.txt" / "?? new.txt")')
+    T.eq(vim.fn.filereadable(dir .. '/old.txt'), 1, 'old.txt should be restored')
+    T.eq(vim.fn.filereadable(dir .. '/new.txt'), 0, 'new.txt should be gone')
+    T.eq(vim.fn.readfile(dir .. '/old.txt'), { 'original content' })
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+
+  T.it('discarding a nested git repo shown as a single untracked "dir/" entry removes it entirely', function()
+    -- 回帰テスト: remove_from_diskがvim.fn.delete()を非再帰(flags無し)で呼んでおり、
+    -- 非空ディレクトリ(nested git repo等)を削除できず残ってしまっていた
+    local dir = T.tmp_git_repo()
+    GP.git(dir, { 'init', '-q', 'nestedrepo' })
+    T.write_file(dir .. '/nestedrepo/x.txt', { 'x' })
+    T.contains(GP.status(dir), '?? nestedrepo/')
+
+    GP.open(dir, false)
+    local left = GP.left_win()
+    local row = GP.find_row(left, 'nestedrepo')
+    T.ok(row ~= nil)
+    GP.goto_row(left, row)
+    GP.press('d')
+    GP.press_modal('x') -- 未追跡のみなのでメニューの選択肢は「すべての変更を破棄」1つだけ
+    T.wait_until(function() return vim.fn.isdirectory(dir .. '/nestedrepo') == 0 end, 3000)
+    T.eq(vim.fn.isdirectory(dir .. '/nestedrepo'), 0, 'the nested repo directory should be fully removed')
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+
   T.it('discard menu: "all" fully reverts staged+unstaged, batched (no index.lock race with many files)', function()
     local dir = T.tmp_git_repo(function(d)
       for i = 1, 8 do T.write_file(d .. ('/f%d.txt'):format(i), { 'line' .. i }) end

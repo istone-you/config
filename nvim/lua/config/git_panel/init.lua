@@ -596,7 +596,12 @@ end
 ctx.set_loading = set_loading
 ctx.clear_loading = clear_loading
 
-local function attempt_push(force)
+-- modeはnil(通常push)|'lease'(behind事前検知からのforce-with-lease)|'force'(reject後の素のforce)。
+-- lazygit(sync_controller.go pushAux)と同じく、reject後のリトライには--force-with-leaseではなく
+-- 素の--forceを使う: force-with-leaseはローカルが知るリモートの状態が最新であることが前提の安全
+-- 機構であり、rejectされる状況(=ローカルがリモートの現在地を知らない)ではその前提自体が崩れていて
+-- 「stale info」で再度失敗するため
+local function attempt_push(mode)
   local function on_done(res)
     clear_loading()
     ctx.render_cmdlog()
@@ -606,17 +611,19 @@ local function attempt_push(force)
       return
     end
     local err = res.stderr or ''
-    if not force and err:find('rejected', 1, true) then
-      ctx.confirm('リモートに新しいコミットがあり、通常のpushは拒否されました。\nforce pushしますか？(--force-with-lease)', function(yes)
-        if yes then attempt_push(true) end
+    if not mode and err:find('rejected', 1, true) then
+      ctx.confirm('リモートに新しいコミットがあり、通常のpushは拒否されました。\nforce pushしますか？(--force)', function(yes)
+        if yes then attempt_push('force') end
       end)
       return
     end
     vim.notify('push失敗: ' .. err, vim.log.levels.ERROR)
   end
   set_loading('Pushing')
-  if force then
+  if mode == 'lease' then
     git.push_force_with_lease(on_done)
+  elseif mode == 'force' then
+    git.push_force(on_done)
   else
     git.push(on_done)
   end
@@ -648,11 +655,11 @@ local function do_push()
       local behind = current and current.track and current.track:match('behind (%d+)')
       if behind then
         ctx.confirm('リモートより ' .. behind .. ' コミット遅れています。\nforce pushしますか？(--force-with-lease)', function(yes)
-          if yes then attempt_push(true) end
+          if yes then attempt_push('lease') end
         end)
         return
       end
-      attempt_push(false)
+      attempt_push()
     end)
   end)
 end

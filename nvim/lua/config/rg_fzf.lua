@@ -37,7 +37,7 @@ local function visual_text()
   return lines[1] or ''
 end
 
-local function open_match(line)
+function M.open_match(line)
   line = line:gsub('\27%[[0-9;]*m', '')
   -- rg --column 形式: path:line:col:text
   local path, lnum, col = line:match('^([^:]+):(%d+):(%d+):')
@@ -55,7 +55,7 @@ local function open_match(line)
   vim.cmd('normal! zz')
 end
 
-local function parse_path(line)
+function M.parse_path(line)
   line = line:gsub('\27%[[0-9;]*m', '') -- rg --color の ANSI を除去
   local path = line:match('^([^:]+):%d+:%d+:')
   if not path then
@@ -65,7 +65,7 @@ local function parse_path(line)
 end
 
 --- 固定文字列の置換（パターンではなくリテラル）
-local function replace_literal(text, old, new)
+function M.replace_literal(text, old, new)
   if old == '' then
     return text, 0
   end
@@ -86,20 +86,20 @@ local function replace_literal(text, old, new)
   return table.concat(out), count
 end
 
-local function resolve_path(cwd, path)
-  if vim.fn.fnamemodify(path, ':p') == path or path:sub(1, 1) == '/' then
+function M.resolve_path(cwd, path)
+  if path:sub(1, 1) == '/' then
     return path
   end
   return cwd .. '/' .. path
 end
 
 --- 開いているバッファがあればバッファ上で置換、なければファイルを直接書き換え
-local function apply_replace_to_path(abs_path, search, replace)
+function M.apply_replace_to_path(abs_path, search, replace)
   local bufnr = vim.fn.bufnr(abs_path)
   if bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr) then
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local text = table.concat(lines, '\n')
-    local new_text, count = replace_literal(text, search, replace)
+    local new_text, count = M.replace_literal(text, search, replace)
     if count == 0 then
       return 0
     end
@@ -114,17 +114,19 @@ local function apply_replace_to_path(abs_path, search, replace)
     return count
   end
 
+  -- readfile()はNULバイトをNLへ置き換えて返すため(:h readfile()参照)、
+  -- そこでNUL判定しても常にfalseになり検出できない。readblob()で生バイトを見る
+  local blob_ok, blob = pcall(vim.fn.readblob, abs_path)
+  if not blob_ok or type(blob) ~= 'string' or blob:find('\0', 1, true) then
+    return 0
+  end
+
   local ok, content = pcall(vim.fn.readfile, abs_path, 'b')
   if not ok or type(content) ~= 'table' then
     return 0
   end
-  for _, chunk in ipairs(content) do
-    if chunk:find('\0', 1, true) then
-      return 0
-    end
-  end
   local text = table.concat(content, '\n')
-  local new_text, count = replace_literal(text, search, replace)
+  local new_text, count = M.replace_literal(text, search, replace)
   if count == 0 then
     return 0
   end
@@ -229,26 +231,26 @@ function M.open(initial_query)
     if #lines == 0 then
       return
     end
-    open_match(lines[1])
+    M.open_match(lines[1])
   end)
 end
 
 --- 選択されたマッチ行のファイルに対して、検索文字列をすべて置換する
 ---@return integer file_count
 ---@return integer replace_count
-local function replace_selected(cwd, selected_lines, search, replace)
+function M.replace_selected(cwd, selected_lines, search, replace)
   local paths = {}
   for _, line in ipairs(selected_lines) do
-    local path = parse_path(line)
+    local path = M.parse_path(line)
     if path and path ~= '' then
-      paths[resolve_path(cwd, path)] = true
+      paths[M.resolve_path(cwd, path)] = true
     end
   end
 
   local file_count = 0
   local replace_count = 0
   for abs_path in pairs(paths) do
-    local n = apply_replace_to_path(abs_path, search, replace)
+    local n = M.apply_replace_to_path(abs_path, search, replace)
     if n > 0 then
       file_count = file_count + 1
       replace_count = replace_count + n
@@ -476,7 +478,7 @@ function M.replace(initial_query, initial_replace)
           return
         end
 
-        local file_count, replace_count = replace_selected(cwd, selected, search, replace_text)
+        local file_count, replace_count = M.replace_selected(cwd, selected, search, replace_text)
         vim.notify(
           string.format('置換完了: %d ファイル / %d 箇所', file_count, replace_count),
           vim.log.levels.INFO

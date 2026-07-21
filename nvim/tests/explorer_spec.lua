@@ -226,6 +226,253 @@ T.describe('explorer', function()
     T.rmrf(dir)
   end)
 
+  T.it('. toggles hidden dotfiles; R refreshes after an out-of-band filesystem change', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/.hidden', { 'x' })
+    T.write_file(dir .. '/visible.txt', { 'x' })
+
+    local res = run_child(string.format([[
+      vim.fn.chdir(%s)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+
+      -- 既定は表示ありなので、まず非表示に切り替える
+      feed('.')
+      vim.wait(50)
+      local text = table.concat(lines(win), '\n')
+      assert_eq(text:find('.hidden', 1, true) == nil, true, 'dotfile should be hidden after .')
+      feed('.')
+      vim.wait(50)
+      text = table.concat(lines(win), '\n')
+      assert_eq(text:find('.hidden', 1, true) ~= nil, true, 'dotfile should reappear after . again')
+
+      vim.fn.writefile({'x'}, %s .. '/added-outside.txt')
+      feed('R')
+      vim.wait(80)
+      text = table.concat(lines(win), '\n')
+      assert_eq(text:find('added-outside.txt', 1, true) ~= nil, true, 'R should pick up the new file')
+    ]], vim.inspect(dir), vim.inspect(dir)))
+
+    T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
+    T.rmrf(dir)
+  end)
+
+  T.it('Tab toggles multi-select; delete/copy act on the whole selection, not just the cursor row', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/a.txt', { 'x' })
+    T.write_file(dir .. '/b.txt', { 'x' })
+    T.write_file(dir .. '/c.txt', { 'x' })
+
+    local res = run_child(string.format([[
+      vim.fn.chdir(%s)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+
+      -- a.txtとb.txtだけ選択(<Tab>2回、c.txtは選ばない)して削除 -> c.txtだけ残る
+      vim.api.nvim_win_set_cursor(win, { find_row(win, 'a.txt'), 0 })
+      feed('<Tab>')
+      vim.wait(30)
+      feed('<Tab>') -- カーソルが進んでb.txtの上にいるはず
+      vim.wait(30)
+      feed('d')
+      vim.wait(50)
+      feed('y') -- 確認モーダル
+      vim.wait(80)
+      assert_eq(vim.fn.filereadable(%s .. '/a.txt'), 0, 'selected a.txt should be deleted')
+      assert_eq(vim.fn.filereadable(%s .. '/b.txt'), 0, 'selected b.txt should be deleted')
+      assert_eq(vim.fn.filereadable(%s .. '/c.txt'), 1, 'unselected c.txt should remain')
+    ]], vim.inspect(dir), vim.inspect(dir), vim.inspect(dir), vim.inspect(dir)))
+    T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
+    T.rmrf(dir)
+  end)
+
+  T.it('<C-a> selects everything and <C-r> inverts the selection before deleting', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/a.txt', { 'x' })
+    T.write_file(dir .. '/b.txt', { 'x' })
+
+    local res = run_child(string.format([[
+      vim.fn.chdir(%s)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+
+      feed('<C-a>') -- 全選択
+      vim.wait(30)
+      feed('<C-r>') -- 反転 -> 全解除
+      vim.wait(30)
+      feed('<Esc>') -- 選択が空ならフィルタ解除/パネルクローズに落ちる。
+                     -- ここは選択0件のはずなのでパネルが閉じてしまう前に確認する
+    ]], vim.inspect(dir)))
+    T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
+
+    -- <C-a>で全選択し、そのまま削除すると全ファイルが消えることを確認する
+    res = run_child(string.format([[
+      vim.fn.chdir(%s)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+      feed('<C-a>')
+      vim.wait(30)
+      feed('d')
+      vim.wait(50)
+      feed('y')
+      vim.wait(80)
+      assert_eq(vim.fn.filereadable(%s .. '/a.txt'), 0)
+      assert_eq(vim.fn.filereadable(%s .. '/b.txt'), 0)
+    ]], vim.inspect(dir), vim.inspect(dir), vim.inspect(dir)))
+    T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
+    T.rmrf(dir)
+  end)
+
+  T.it('<Esc> priority: clears selection first, then the filter, only closing the panel once both are empty', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/apple.txt', { 'x' })
+    T.write_file(dir .. '/banana.txt', { 'x' })
+
+    local res = run_child(string.format([[
+      vim.fn.chdir(%s)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+
+      feed('/apple<CR>')
+      vim.wait(50)
+      vim.api.nvim_win_set_cursor(win, { find_row(win, 'apple.txt'), 0 })
+      feed('<Tab>') -- フィルタされた状態で選択もする
+      vim.wait(50)
+
+      feed('<Esc>') -- 1回目: 選択解除が先
+      vim.wait(50)
+      assert_eq(list_win() ~= nil, true, 'panel should still be open (selection was cleared, not the panel)')
+      local text = table.concat(lines(win), '\n')
+      assert_eq(text:find('banana.txt', 1, true), nil, 'filter should still be active (selection was cleared, not the filter)')
+
+      feed('<Esc>') -- 2回目: 選択は既に空なので、今度はフィルタが解除される
+      vim.wait(50)
+      assert_eq(list_win() ~= nil, true, 'panel should still be open (filter was cleared, not the panel)')
+      text = table.concat(lines(win), '\n')
+      assert_eq(text:find('banana.txt', 1, true) ~= nil, true, 'filter should be cleared now')
+
+      feed('<Esc>') -- 3回目: 選択・フィルタとも空なので、今度こそパネルを閉じる
+      vim.wait(50)
+      assert_eq(list_win(), nil, 'panel should close once selection and filter are both empty')
+    ]], vim.inspect(dir)))
+    T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
+    T.rmrf(dir)
+  end)
+
+  T.it('P (overwrite paste) replaces an existing same-named file instead of creating a "_2" copy', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir .. '/dest', 'p')
+    T.write_file(dir .. '/src.txt', { 'new content' })
+    T.write_file(dir .. '/dest/src.txt', { 'old content' })
+
+    local res = run_child(string.format([[
+      vim.fn.chdir(%s)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+
+      vim.api.nvim_win_set_cursor(win, { find_row(win, 'src.txt'), 0 })
+      feed('y') -- copy
+      vim.wait(50)
+      vim.api.nvim_win_set_cursor(win, { find_row(win, 'dest'), 0 })
+      feed('l') -- dest/ へ入る
+      vim.wait(50)
+      feed('P') -- 上書き貼り付け(名前が衝突しても別名にしない)
+      vim.wait(80)
+      local names = {}
+      for _, l in ipairs(lines(win)) do table.insert(names, l) end
+      local joined = table.concat(names, '\n')
+      assert_eq(joined:find('src_2', 1, true), nil, 'overwrite paste should not create a "_2" copy')
+      local content = vim.fn.readfile(%s .. '/dest/src.txt')
+      assert_eq(content[1], 'new content', "overwrite paste should replace the existing file's content")
+    ]], vim.inspect(dir), vim.inspect(dir)))
+    T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
+    T.rmrf(dir)
+  end)
+
+  T.it('a plain paste (p) onto a name collision creates a "_2" copy instead of overwriting', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir .. '/dest', 'p')
+    T.write_file(dir .. '/src.txt', { 'new content' })
+    T.write_file(dir .. '/dest/src.txt', { 'old content' })
+
+    local res = run_child(string.format([[
+      vim.fn.chdir(%s)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+
+      vim.api.nvim_win_set_cursor(win, { find_row(win, 'src.txt'), 0 })
+      feed('y')
+      vim.wait(50)
+      vim.api.nvim_win_set_cursor(win, { find_row(win, 'dest'), 0 })
+      feed('l')
+      vim.wait(50)
+      feed('p') -- 通常貼り付け: 衝突時は別名になるはず
+      vim.wait(80)
+      local old_content = vim.fn.readfile(%s .. '/dest/src.txt')
+      assert_eq(old_content[1], 'old content', 'the original file at the destination should be untouched')
+    ]], vim.inspect(dir), vim.inspect(dir)))
+    T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
+    T.rmrf(dir)
+  end)
+
+  T.it('s (fd search) warns when fd or fzf is missing, without opening a terminal', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+
+    local res = run_child(string.format([[
+      vim.fn.chdir(%s)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+
+      local orig_executable = vim.fn.executable
+      vim.fn.executable = function(name)
+        if name == 'fd' then return 0 end
+        return orig_executable(name)
+      end
+      local notified
+      local orig_notify = vim.notify
+      vim.notify = function(msg) notified = msg end
+      local wins_before = #vim.api.nvim_list_wins()
+      feed('s')
+      vim.wait(80)
+      vim.fn.executable = orig_executable
+      vim.notify = orig_notify
+      assert_eq(notified ~= nil, true, 'should notify about the missing dependency')
+      assert_eq(#vim.api.nvim_list_wins(), wins_before, 'no terminal window should open')
+    ]], vim.inspect(dir)))
+
+    T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
+    T.rmrf(dir)
+  end)
+
   T.it('fullscreen: q key and native :q both quit Neovim; sidebar mode only closes the panel', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir, 'p')
