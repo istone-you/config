@@ -8,8 +8,8 @@ local M = {}
 
 local PANELS = {
   { key = '1', name = 'files',    title = 'Files',    mod = 'config.git_panel.files' },
-  { key = '2', name = 'branches', title = 'Branches', mod = 'config.git_panel.branches' },
-  { key = '3', name = 'commits',  title = 'Commits',  mod = 'config.git_panel.commits' },
+  { key = '2', name = 'commits',  title = 'Commits',  mod = 'config.git_panel.commits' },
+  { key = '3', name = 'branches', title = 'Branches', mod = 'config.git_panel.branches' },
   { key = '4', name = 'stash',    title = 'Stash',    mod = 'config.git_panel.stash' },
   { key = '5', name = 'worktree', title = 'Worktree', mod = 'config.git_panel.worktree' },
 }

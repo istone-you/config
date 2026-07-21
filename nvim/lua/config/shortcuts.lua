@@ -170,7 +170,7 @@ DATA[1] = {
     { 'q',               'ファイラーを閉じる' },
   }},
   { header = '🌱 gitパネル（Space g で開閉、1-5/←→/タブクリックでパネル切替）', color = 'ShortcutsBuffer', rows = {
-    { '1-5',             'Files / Branches / Commits / Stash / Worktree へ切替' },
+    { '1-5',             'Files / Commits / Branches / Stash / Worktree へ切替' },
     { '← / →',           '前後のパネルへ切替（タブバーはクリックでも切替可）' },
     { 'P / p',           'push / pull（どのパネルでも共通）' },
     { 'R',               '現在のパネルを再取得' },

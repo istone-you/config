@@ -895,9 +895,24 @@ vim.api.nvim_create_user_command('Explorer', function(cmd_opts)
   M.toggle(cmd_opts.bang)
 end, { bang = true, desc = 'ファイラーを開閉（!で全画面表示）' })
 
+--- 起動時に -c/--cmd/+cmd で明示的なコマンドが指定されていた場合は、
+--- そちらを優先してexplorerの自動起動をしない（例: nvim +Git でGitパネルを
+--- 開いたのに、VimEnterの自動起動が後からフォーカスを奪ってしまうのを防ぐ）
+local function has_explicit_startup_command()
+  for _, arg in ipairs(vim.v.argv) do
+    if arg == '-c' or arg == '--cmd' or arg:sub(1, 1) == '+' then
+      return true
+    end
+  end
+  return false
+end
+
 vim.api.nvim_create_autocmd('VimEnter', {
   once = true,
-  callback = function() M.open() end,
+  callback = function()
+    if has_explicit_startup_command() then return end
+    M.open()
+  end,
 })
 
 return M
