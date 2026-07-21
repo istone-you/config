@@ -1,5 +1,5 @@
 -- 非同期git操作レイヤー（vim.system + on_exitコールバック、UIをブロックしない）
--- コマンドの実選択は lazygit本体(pkg/commands/git_commands) を参照して合わせている
+-- コマンドの実選択は lazygit(pkg/commands/git_commands) を参照して合わせている
 
 local M = {}
 
@@ -9,15 +9,13 @@ local MAX_LOG = 200
 --- init.luaがrender_cmdlog相当を差し込むためのフック（コマンドログに変化があるたびに呼ぶ）
 M.on_log_update = function() end
 
---- lazygit本体は独自のpager設定(git.pagers、core.pagerとは別物)でdeltaを呼ぶが、ここでは
+--- lazygitは独自のpager設定(git.pagers、core.pagerとは別物)でdeltaを呼ぶが、ここでは
 --- 単純化してdeltaコマンドが存在する時だけ自動的に使う。gitはstdoutがTTYでないとpagerを
 --- 一切起動しないため、素のgit diff等をそのままキャプチャしてもdeltaは通らない。
 --- なので生のdiffテキストを自分でdeltaの標準入力へ渡し、色付きANSI出力を受け取る
 M.delta_available = vim.fn.executable('delta') == 1
 
---- deltaのside-by-side表示(--side-by-side)のオン/オフ。lazygit本体はpager設定の
---- コマンド文字列自体を静的に変える(delta --side-by-side)ことでしか切り替えられないが、
---- ここではワンキーで動的に切り替えられるようにする
+--- deltaのside-by-side表示(--side-by-side)のオン/オフ
 M.side_by_side = false
 
 function M.toggle_side_by_side()
@@ -46,7 +44,7 @@ function M.run_delta(diff_text, width, cb)
   )
 end
 
---- lazygit本体(command_log_panel.go)と同じく、古い→新しいの順で末尾に追記する
+--- lazygit(command_log_panel.go)と同じく、古い→新しいの順で末尾に追記する
 --- （表示側でビューを一番下へスクロールすることで最新行を見せる。Autoscroll相当）
 local function push_log(text)
   table.insert(M.command_log, text)
@@ -62,7 +60,7 @@ local function log_command(args)
   push_log('git ' .. table.concat(args, ' '))
 end
 
---- lazygit本体のStreamOutput()相当。標準出力/エラーを完了を待たず1行ずつコマンドログへ
+--- lazygitのStreamOutput()相当。標準出力/エラーを完了を待たず1行ずつコマンドログへ
 --- 流し込む（lefthook/hk等のpre-commitフックの出力や、push/pullの進捗メッセージが
 --- 見えるようにする）。vim.systemはstdout/stderrにコールバックを渡すと最終res.stdout/
 --- res.stderrをnilにしてしまうため、ここで全文も別途累積して呼び出し元に渡せるようにする
@@ -99,11 +97,11 @@ function M.find_root(cb)
   end)
 end
 
---- lazygit本体(pkg/commands/oscommands/cmd_obj.go DontLog)と同じ方針:
+--- lazygit(pkg/commands/oscommands/cmd_obj.go DontLog)と同じ方針:
 --- git状態を変えないコマンド(status/diff/logなど)はコマンドログに出さない。
 --- 状態を変えるコマンド(add/commit/checkoutなど)は出す。opts.dont_log=trueで前者を指定する。
 --- opts.stream_output=trueなら、そのコマンドの標準出力/エラーもコマンドログへ流し込む
---- （本体がcommit/push/pull/merge/rebase等でStreamOutput()するのと同じ対象）
+--- （lazygitがcommit/push/pull/merge/rebase等でStreamOutput()するのと同じ対象）
 function M.run(args, cb, opts)
   local cmd = vim.list_extend({ 'git' }, args)
   if not (opts and opts.dont_log) then log_command(args) end
@@ -285,12 +283,12 @@ function M.reset(hash, mode, cb) M.run({ 'reset', '--' .. mode, hash }, cb) end
 function M.revert_commit(hash, cb) M.run({ 'revert', '--no-edit', hash }, cb, { stream_output = true }) end
 function M.new_branch_from_commit(hash, name, cb) M.run({ 'checkout', '-b', name, hash }, cb) end
 
---- Undo(z): 直前のコミット1つだけをsoft resetで取り消す（lazygit本体のreflog Undoの
+--- Undo(z): 直前のコミット1つだけをsoft resetで取り消す（lazygitのreflog Undoの
 --- 「直前の操作がコミットだった」場合の挙動を再現。checkout/rebaseのUndoは対象外）
 function M.undo_last_commit(cb) M.run({ 'reset', '--soft', 'HEAD@{1}' }, cb) end
 function M.checkout_commit(hash, cb) M.run({ 'checkout', hash }, cb) end
 
---- lazygit本体のGit.MainBranches既定値("master","main")に合わせ、
+--- lazygitのGit.MainBranches既定値("master","main")に合わせ、
 --- pkg/commands/git_commands/main_branches.go の determineMainBranches と同じ優先順位で解決する:
 --- 1. ローカルブランチのアップストリーム（<name>@{u}。例: main@{u} -> origin/main）
 --- 2. アップストリーム未設定ならorigin配下のリモート追跡ブランチ（refs/remotes/origin/<name>）
@@ -435,7 +433,7 @@ end
 --- (ブランチ1つにつきheadRefNameで絞ったサブクエリを1本、まとめて1リクエストにする)
 --- でGitHub GraphQL APIに問い合わせ、node一覧を返す。isDraftはsetCommitStatuses同様に
 --- state側へ畳み込む(state=DRAFT)。取得失敗時は空配列を返すだけで、エラー通知はしない
---- （PR表示は本体でも失敗時にログだけでUIを止めない補助情報という位置づけ）
+--- （PR表示はlazygitでも失敗時にログだけでUIを止めない補助情報という位置づけ）
 function M.fetch_prs(owner, repo, token, branch_names, cb)
   if #branch_names == 0 then cb({}); return end
   local var_decls = { '$owner: String!', '$repo: String!' }

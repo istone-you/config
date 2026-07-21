@@ -79,7 +79,6 @@ function M.input(title, default, opts, on_submit)
     if done then return end
     done = true
     -- インサートモードのまま閉じるとフォーカス移動後もインサートモードが引き継がれる
-    -- （lazygit本体にはvimのようなモード概念が無いため、閉じたら必ずノーマル相当に戻す）
     vim.cmd('stopinsert')
     if vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
     refocus(opts.refocus_win)
@@ -234,14 +233,13 @@ function M.multiline_input(opts, on_submit)
     done = true
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     -- インサートモードのまま閉じるとフォーカス移動後もインサートモードが引き継がれる
-    -- （lazygit本体にはvimのようなモード概念が無いため、閉じたら必ずノーマル相当に戻す）
     vim.cmd('stopinsert')
     if vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
     refocus(opts.refocus_win)
     on_submit(save and lines or nil)
   end
 
-  -- lazygit本体(commit_message_controller.go)と同じくEnterは常に確定用キー
+  -- lazygit(commit_message_controller.go)と同じくEnterは常に確定用キー
   -- （Insert中でも改行にならず即確定。モード遷移を意識させない）
   vim.keymap.set({ 'i', 'n' }, '<CR>', function() finish(true) end, { buffer = buf, nowait = true, silent = true })
   vim.keymap.set({ 'i', 'n' }, '<Esc>', function() finish(false) end, { buffer = buf, nowait = true, silent = true })

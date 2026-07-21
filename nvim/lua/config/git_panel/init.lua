@@ -32,7 +32,7 @@ local last_right_raw_text = nil
 -- (パネル切替セクションで定義)を使うための前方宣言
 local bind_click
 
--- lazygit本体(pkg/gui/background.go)は10秒ごとのFiles再取得+2秒ごとの外部変更検知(reflog等)
+-- lazygit(pkg/gui/background.go)は10秒ごとのFiles再取得+2秒ごとの外部変更検知(reflog等)
 -- を別々のタイマーで走らせているが、こちらは常に1パネルだけを表示する構成なので
 -- 「表示中のパネルを2秒おきに再取得」だけに単純化して同じ体感（外部でのgit操作が
 -- 自動的に反映される）を再現する
@@ -89,7 +89,7 @@ local function render_cmdlog()
   vim.bo[win.cmdlog_buf].modifiable = true
   vim.api.nvim_buf_set_lines(win.cmdlog_buf, 0, -1, false, lines)
   vim.bo[win.cmdlog_buf].modifiable = false
-  -- lazygit本体のAutoscroll相当: 末尾に追記していく分、ビューを常に一番下へ追従させる
+  -- lazygitのAutoscroll相当: 末尾に追記していく分、ビューを常に一番下へ追従させる
   if win.cmdlog_win and vim.api.nvim_win_is_valid(win.cmdlog_win) then
     pcall(vim.api.nvim_win_set_cursor, win.cmdlog_win, { #lines, 0 })
   end
@@ -403,7 +403,7 @@ function bind_click(buf)
   end
 end
 
--- lazygit本体(pkg/gui/controllers/helpers/window_arrangement_helper.go getExtrasWindowSize)相当:
+-- lazygit(pkg/gui/controllers/helpers/window_arrangement_helper.go getExtrasWindowSize)相当:
 -- コマンドログにフォーカスすると、通常の固定行数(CommandLogSize)ではなく利用可能な
 -- 領域いっぱいに広がる。ここではFiles/Diffが占めていた領域も含めて丸ごと専有させる
 
@@ -478,7 +478,7 @@ end
 -- グローバルキー（push/pull/refresh, パネル切替, 閉じる）
 -- ══════════════════════════════════════════════
 
---- lazygit本体(sync_controller.go pushAux/pullWithLock)と同じく、成功時は
+--- lazygit(sync_controller.go pushAux/pullWithLock)と同じく、成功時は
 --- 何も通知しない（パネルの再描画自体が結果を表す）。失敗時のみ通知する
 local function notify_result(res, fail_prefix)
   if res.code ~= 0 then
@@ -486,10 +486,10 @@ local function notify_result(res, fail_prefix)
   end
 end
 
--- lazygit本体(sync_controller.go)と同じ分岐:
+-- lazygit(sync_controller.go)と同じ分岐:
 -- ・追跡中でbehindと分かっていれば事前にforce push確認
 -- ・そうでなければ通常push→rejectされたら事後にforce push確認（--force-with-lease）
--- lazygit本体(WithInlineStatus/WithWaitingStatus)は実行中のパネルにインラインで
+-- lazygit(WithInlineStatus/WithWaitingStatus)は実行中のパネルにインラインで
 -- "Pushing.../Pulling..."を出す。左パネルのタイトルを一時的に書き換えて同じ役割を持たせる
 -- （通信中に何も表示が変わらず「動いているのか分からない」状態を防ぐ）
 local function set_loading(label)
@@ -804,7 +804,7 @@ local function setup_hl()
   vim.api.nvim_set_hl(0, 'GitPanelUnpushed',     { fg = '#f7768e' })
   vim.api.nvim_set_hl(0, 'GitPanelPushed',       { fg = '#e0af68' })
   vim.api.nvim_set_hl(0, 'GitPanelMerged',       { fg = '#9ece6a' })
-  -- lazygit本体(presentation/branches.go WithPrColor)と同じ配色
+  -- lazygit(presentation/branches.go WithPrColor)と同じ配色
   vim.api.nvim_set_hl(0, 'GitPanelPrOpen',       { fg = '#438440' })
   vim.api.nvim_set_hl(0, 'GitPanelPrClosed',     { fg = '#C9453C' })
   vim.api.nvim_set_hl(0, 'GitPanelPrMerged',     { fg = '#8259DD' })

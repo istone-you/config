@@ -191,6 +191,7 @@ DATA[1] = {
     { '[hunk] Space/d',  'hunkをステージ/アンステージ / 破棄' },
     { '[Branches] Space','チェックアウト' },
     { '[Branches] n/d',  '新規作成 / 削除' },
+    { '[Branches] D',    'PRがMergedのブランチを一括削除（force delete、確認あり）' },
     { '[Branches] M/r',  'マージ / リベース' },
     { '[Branches] R/f',  'リネーム / fast-forward' },
     { '[Branches] c/F/-','名前指定 / 強制チェックアウト / 直前のブランチへ' },

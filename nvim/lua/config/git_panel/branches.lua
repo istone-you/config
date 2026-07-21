@@ -13,7 +13,7 @@ local cursor_mem = nil
 local prs_by_branch = {}  -- [branch_name] = { number, state, url, ... }
 local MAIN_BRANCH_NAMES = { master = true, main = true }
 
---- lazygit本体(pkg/gui/presentation/branches.go BranchStatus)と同じマーカー。
+--- lazygit(pkg/gui/presentation/branches.go BranchStatus)と同じマーカー。
 --- 本物にはアップストリーム名自体を表示する機能は無く、状態マーカーのみが表示される。
 --- 同期済み=緑✓ / 乖離あり=黄↓behind↑ahead / アップストリーム削除済み=赤(upstream gone)
 --- ※ RemoteBranchNotStoredLocally（設定はあるがfetch未実施で追跡refが無い）の判定は
@@ -36,7 +36,7 @@ local PR_HL = {
   MERGED = 'GitPanelPrMerged', DRAFT = 'GitPanelPrDraft',
 }
 
---- lazygit本体(presentation/branches.go ShouldShowPrForBranch)と同じ:
+--- lazygit(presentation/branches.go ShouldShowPrForBranch)と同じ:
 --- main/master自身に紐づくPRは、CLOSED/MERGEDなら表示しない（もう関係ないとみなす）
 local function visible_pr(name)
   local pr = prs_by_branch[name]
@@ -168,7 +168,7 @@ function M.refresh(auto_capture)
 end
 
 --- GitHub PR取得(pkg/commands/git_commands/github.go相当)。gh CLI未認証やGitHub以外の
---- リモートなら黒く諦めて何も表示しない。lazygit本体はfetch完了時(PostFetchRefresh)に
+--- リモートなら黒く諦めて何も表示しない。lazygitはfetch完了時(PostFetchRefresh)に
 --- これを行うので、Branchesパネルに入った時(activate)に加えてfiles.luaのfetch()完了時にも
 --- 外部から呼べるよう公開関数にしている。branchesは呼び出し時点でのものを取り直す
 --- （外部から呼ばれる場合、モジュール内のbranchesがまだ古い/空のことがあるため）
@@ -255,7 +255,7 @@ local function checkout_ref_or_create(ref, base_entry)
   end)
 end
 
---- branches_controller.go checkoutByName相当。lazygit本体はPrompt+FindSuggestionsFunc
+--- branches_controller.go checkoutByName相当。lazygitはPrompt+FindSuggestionsFunc
 --- (GetRefsSuggestionsFunc: リモート追跡ブランチ+ローカルブランチ+タグ+HEAD系ref)で
 --- 入力中にリアルタイム候補を出す。"remote/branch"形式で選んだ場合はParseRemoteBranchName+
 --- CheckoutRemoteBranch相当（ローカルに同名ブランチが既にあればそれをチェックアウト、
@@ -327,6 +327,48 @@ local function delete()
   end)
 end
 
+--- GitHub PRステータスがMergedになっているローカルブランチをまとめて削除する。
+--- squash/rebase mergeだとローカルの履歴からはマージ済みと判定できず
+--- `git branch -d`が失敗するため、PRステータスを根拠に最初からforce delete(-D)する
+local function delete_merged_prs()
+  local targets = {}
+  for _, b in ipairs(branches) do
+    if not b.current then
+      local pr = visible_pr(b.name)
+      if pr and pr.state == 'MERGED' then table.insert(targets, b.name) end
+    end
+  end
+  if #targets == 0 then
+    vim.notify('PRがMergedのブランチはありません', vim.log.levels.INFO)
+    return
+  end
+  ctx.confirm(
+    '次の' .. #targets .. '件を削除しますか？(PRがMerged, force delete)\n' .. table.concat(targets, '\n'),
+    function(ok)
+      if not ok then return end
+      cursor_mem = nil
+      local pending = #targets
+      local failed = {}
+      local function done()
+        pending = pending - 1
+        if pending == 0 then
+          ctx.render_cmdlog()
+          if #failed > 0 then
+            vim.notify('削除に失敗: ' .. table.concat(failed, ', '), vim.log.levels.ERROR)
+          end
+          M.refresh()
+        end
+      end
+      for _, name in ipairs(targets) do
+        git.delete_branch(name, true, function(res)
+          if res.code ~= 0 then table.insert(failed, name) end
+          done()
+        end)
+      end
+    end
+  )
+end
+
 local function force_checkout()
   local entry = current_entry()
   if not entry then return end
@@ -391,6 +433,7 @@ function M.keymaps()
     ['-'] = checkout_previous,
     n = create,
     d = delete,
+    D = delete_merged_prs,
     F = force_checkout,
     M = merge,
     r = rebase,

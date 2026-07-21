@@ -154,7 +154,7 @@ local function show_diff_for(node, prefer_staged)
   end)
 end
 
---- lazygit本体(pkg/gui/presentation/files.go formatFileStatus)と同じ配色:
+--- lazygit(pkg/gui/presentation/files.go formatFileStatus)と同じ配色:
 --- 1文字目(index=staged側)は緑、ただし'?'(untracked)は赤、空白は無色。
 --- 2文字目(worktree=unstaged側)は常に赤、空白は無色。
 --- M/A/D等の文字の「意味」では色分けしない。あくまで列の位置だけで決まる
@@ -177,7 +177,7 @@ local function render()
   push('  ' .. (branch ~= '' and branch or '(no branch)'), nil, 'GitPanelHeader')
   push('', nil)
 
-  -- lazygit本体のShowRootItemInFileTree(デフォルトtrue)に合わせ、ルートを"/"として
+  -- lazygitのShowRootItemInFileTree(デフォルトtrue)に合わせ、ルートを"/"として
   -- 選択可能な1行にする。ここでSpaceを押すと全ファイルがステージ/アンステージされる
   local remembered_row = nil
   local function walk(node, depth)
@@ -470,7 +470,7 @@ end
 
 --- files_controller.go remove()相当: すべての変更を破棄 / ステージされていない変更を破棄
 --- の2択メニュー。後者はステージ済み+未ステージが両方ある対象を含む時だけ意味があるため、
---- そうでなければ選択肢自体を出さない(本体はグレーアウト、こちらは項目自体を省く簡略化)
+--- そうでなければ選択肢自体を出さない(lazygitはグレーアウト、こちらは項目自体を省く簡略化)
 local function discard()
   local node = current_entry()
   if not node then return end
@@ -533,7 +533,7 @@ end
 
 --- files_controller.go fetch()相当（KeybindingFilesConfig.Fetch既定"f"）。
 --- 成功時は無通知（push/pullと同じくパネル再描画自体が結果を表す）。
---- 本体のPostFetchRefreshと同じく、fetch完了時にBranchesパネルのPR状態も更新する
+--- lazygitのPostFetchRefreshと同じく、fetch完了時にBranchesパネルのPR状態も更新する
 local function fetch()
   ctx.set_loading('Fetching')
   git.fetch(function(res)

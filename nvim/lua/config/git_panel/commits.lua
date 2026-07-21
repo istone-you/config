@@ -49,7 +49,7 @@ local function render()
   local remembered_row = nil
   for i, c in ipairs(commits) do
     local marker = (i == 1) and '* ' or '  '
-    -- lazygit本体(pkg/gui/presentation/commits.go)と同じ配色:
+    -- lazygit(pkg/gui/presentation/commits.go)と同じ配色:
     -- 色が付くのはハッシュ部分だけ。main等に既に取り込まれていれば緑(Merged)が最優先、
     -- そうでなければ 未push=赤 / push済み=黄、アップストリーム無しなら通常色
     local hl = nil
