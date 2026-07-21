@@ -68,6 +68,145 @@ T.describe('git_panel init', function()
     T.rmrf(dir)
   end)
 
+  T.it('+ expands the diff panel (like @ expands the command log), q/+ collapse it, and the two are mutually exclusive', function()
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/a.txt', { 'a' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'seed' })
+    end)
+    T.write_file(dir .. '/a.txt', { 'a', 'changed' })
+
+    GP.open(dir, false)
+    local left, right = GP.left_win(), GP.right_win()
+    local normal_width = vim.api.nvim_win_get_config(right).width
+
+    GP.press('+')
+    vim.wait(80)
+    T.ok(vim.api.nvim_win_get_config(right).width > normal_width, 'diff panel should widen')
+    T.eq(vim.api.nvim_get_current_win(), right, 'focus should move into the diff panel')
+    T.ok(vim.api.nvim_win_is_valid(left), 'the left panel window must still exist (just resized away, not closed)')
+
+    -- @(コマンドログ拡大)と同じ領域を専有するため、片方を有効にすると
+    -- もう片方は自動的に元へ戻る(排他)
+    vim.api.nvim_set_current_win(left)
+    GP.press('@')
+    vim.wait(80)
+    T.eq(vim.api.nvim_win_get_config(right).width, normal_width, '@ should collapse the expanded diff panel')
+    GP.press('@') -- コマンドログの拡大を戻す
+    vim.wait(50)
+
+    -- 拡大中にq/Escを押すとパネル自体は閉じず折り畳まれるだけ
+    GP.press('+')
+    vim.wait(80)
+    vim.api.nvim_set_current_win(right)
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('q', true, false, true), 'x', false)
+    vim.wait(80)
+    T.eq(vim.api.nvim_win_get_config(right).width, normal_width, 'q while expanded should collapse, not close')
+    T.ok(vim.api.nvim_win_is_valid(left) and vim.api.nvim_win_is_valid(right), 'panel should still be open')
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+
+  T.it('+ re-renders delta output at the new panel width, not just resizing the window around stale text', function()
+    local git = require('config.git_panel.git')
+    if not git.delta_available then
+      print('  (skipped: delta not installed)')
+      return
+    end
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/a.txt', { 'a' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'seed' })
+    end)
+    T.write_file(dir .. '/a.txt', { 'a', 'changed' })
+
+    local widths_used = {}
+    local orig_run_delta = git.run_delta
+    git.run_delta = function(text, width, cb)
+      table.insert(widths_used, width)
+      return orig_run_delta(text, width, cb)
+    end
+
+    GP.open(dir, false)
+    T.wait_until(function() return #widths_used >= 1 end)
+    local normal_width = widths_used[#widths_used]
+
+    GP.press('+')
+    T.wait_until(function() return #widths_used >= 2 end)
+    T.ok(widths_used[#widths_used] > normal_width,
+      'expanding should re-run delta at the wider panel width, not leave it at the old width')
+
+    GP.press('+')
+    T.wait_until(function() return #widths_used >= 3 end)
+    T.eq(widths_used[#widths_used], normal_width, 'collapsing should re-run delta back at the normal width')
+
+    git.run_delta = orig_run_delta
+    GP.close()
+    T.rmrf(dir)
+  end)
+
+  T.it('v (delta side-by-side toggle) still works while the diff panel is expanded via +', function()
+    local git = require('config.git_panel.git')
+    if not git.delta_available then
+      print('  (skipped: delta not installed)')
+      return
+    end
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/a.txt', { 'a' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'seed' })
+    end)
+    T.write_file(dir .. '/a.txt', { 'a', 'changed' })
+
+    GP.open(dir, false)
+    local right = GP.right_win()
+    local before = git.side_by_side
+
+    GP.press('+') -- expand + focus moves into the diff panel
+    vim.wait(80)
+    T.eq(vim.api.nvim_get_current_win(), right)
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('v', true, false, true), 'x', false)
+    vim.wait(300)
+    T.eq(git.side_by_side, not before, 'v should toggle side-by-side even while focused on the expanded diff panel')
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+
+  T.it('regression: the cursor stays hidden across tab switches and diff-panel expand/collapse', function()
+    -- 実際に踏んだバグ: activate_panel()のwin.left_buf差し込みと、recreate_right_buf()の
+    -- win.right_buf差し込みが、どちらもnvim_win_set_bufをhidden_cursorのmark_bufferより
+    -- 先に呼んでいた。+でdiffパネルに実際にフォーカスが移るようになったことで、
+    -- そのタイミングのズレがカーソル復活として初めて表面化した
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/a.txt', { 'a' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'seed' })
+    end)
+    T.write_file(dir .. '/a.txt', { 'a', 'changed' })
+
+    GP.open(dir, false)
+    T.contains(vim.o.guicursor, 'HiddenCursor', 'hidden right after open')
+
+    GP.press('2') -- switch tabs (activate_panel re-creates+swaps win.left_buf)
+    vim.wait(100)
+    T.contains(vim.o.guicursor, 'HiddenCursor', 'hidden after switching to another panel')
+    GP.press('1')
+    vim.wait(100)
+    T.contains(vim.o.guicursor, 'HiddenCursor', 'hidden after switching back')
+
+    GP.press('+') -- expand diff (recreate_right_buf while right_win is the focused window)
+    vim.wait(100)
+    T.contains(vim.o.guicursor, 'HiddenCursor', 'hidden while the diff panel is expanded and focused')
+    GP.press('+')
+    vim.wait(100)
+    T.contains(vim.o.guicursor, 'HiddenCursor', 'hidden after collapsing the diff panel again')
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+
   T.it('1-5 and arrow keys switch panels, updating the tabbar highlight/title', function()
     local dir = T.tmp_git_repo()
     GP.open(dir, false)

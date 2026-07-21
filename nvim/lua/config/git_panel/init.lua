@@ -29,9 +29,10 @@ local last_right_content = nil
 --- （set_right_ansi/set_right_linesのキャッシュとは別に、deltaサブプロセス自体の起動も省く）
 local last_right_raw_key = nil
 local last_right_raw_text = nil
--- recreate_right_buf(ctx.set_right_lines/set_right_ansiより上で必要)がbind_click
--- (パネル切替セクションで定義)を使うための前方宣言
+-- recreate_right_buf(ctx.set_right_lines/set_right_ansiより上で必要)がbind_click/
+-- bind_diff_keys(パネル切替セクションで定義)を使うための前方宣言
 local bind_click
+local bind_diff_keys
 
 -- lazygit(pkg/gui/background.go)は10秒ごとのFiles再取得+2秒ごとの外部変更検知(reflog等)
 -- を別々のタイマーで走らせているが、こちらは常に1パネルだけを表示する構成なので
@@ -75,6 +76,15 @@ local function stop_auto_refresh()
 end
 
 local ctx = {}
+
+--- vキー(delta side-by-side切替)相当。left_buf(GLOBAL_KEYS経由)と、diffパネルを
+--- +で拡大してフォーカスが移った時(bind_diff_keys)の両方から使うため共通化する
+local function toggle_side_by_side_key()
+  local on = git.toggle_side_by_side()
+  ctx.invalidate_right_cache()
+  refresh_current_panel()
+  vim.notify('delta side-by-side: ' .. (on and 'ON' or 'OFF'), vim.log.levels.INFO)
+end
 
 -- ══════════════════════════════════════════════
 -- コマンドログ
@@ -152,6 +162,13 @@ local function recreate_right_buf(as_terminal)
     vim.bo[win.right_buf].buftype = 'nofile'
     vim.bo[win.right_buf].buflisted = false
   end
+  -- nvim_win_set_bufはフォーカスしていなくてもBufEnterを発火し、その一瞬だけ
+  -- 「カレントバッファ」がこのバッファとして扱われる。hidden_cursorの判定
+  -- (vim.b.hide_cursor)がその瞬間に走るため、ウィンドウへ差し込む前に必ずマークする
+  -- (explorer.luaで踏んだのと同じ順序バグ。+でdiffパネルに実際にフォーカスが
+  -- 移るようになったことで、今まで気にならなかったこのタイミングのズレが
+  -- カーソル復活として表面化した)
+  require('config.hidden_cursor').mark_buffer(win.right_buf)
   -- 新しいバッファをウィンドウへ差し込んでから古いバッファを消す。逆順（先に削除）だと、
   -- 特にterminalバッファを表示中に削除した時、Neovimがwin.right_win自体を閉じてしまうことが
   -- あり、そのウィンドウIDを監視しているWinClosedハンドラでgitパネル全体が閉じてしまっていた
@@ -161,8 +178,8 @@ local function recreate_right_buf(as_terminal)
   if old_buf and vim.api.nvim_buf_is_valid(old_buf) then
     pcall(vim.api.nvim_buf_delete, old_buf, { force = true })
   end
-  require('config.hidden_cursor').mark_buffer(win.right_buf)
   bind_click(win.right_buf)
+  bind_diff_keys(win.right_buf)
 end
 
 --- 内容が前回と全く同じなら右パネルに一切触れない（プレーンバッファへのnvim_buf_set_lines
@@ -324,6 +341,10 @@ local layout
 -- switch_to内でタブ切替時に拡大状態を戻すため、collapse_cmdlog(下で定義)を先に使えるようにする
 local cmdlog_focused = false
 local collapse_cmdlog
+-- diffパネルの拡大とコマンドログの拡大は同じ領域を専有するため、互いに排他制御する
+-- 必要がある。定義順の都合で先に前方宣言しておく
+local diff_focused = false
+local collapse_diff_focus
 
 -- render_tabbarで再計算するタブごとのクリック判定用バイト列範囲: { {start_col,end_col,idx}, ... }
 local tab_click_ranges = {}
@@ -357,6 +378,7 @@ local function switch_to(idx)
   -- 拡大解除とleft_winへのフォーカス復帰は行う（キー/クリックどちらの経路でも
   -- 一貫して「拡大表示から抜けてそのパネルを見る」動きになるようにする）
   collapse_cmdlog()
+  collapse_diff_focus()
   if idx ~= current_panel_idx then activate_panel(idx) end
   if win.left_win and vim.api.nvim_win_is_valid(win.left_win) then
     vim.api.nvim_set_current_win(win.left_win)
@@ -425,6 +447,7 @@ end
 local function toggle_cmdlog_focus()
   if not (win.cmdlog_win and vim.api.nvim_win_is_valid(win.cmdlog_win)) then return end
   if not cmdlog_focused then
+    collapse_diff_focus() -- 同じ領域を専有するため排他
     local L = layout()
     cmdlog_focused = true
     vim.api.nvim_win_set_config(win.cmdlog_win, {
@@ -442,6 +465,68 @@ local function toggle_cmdlog_focus()
   end
 end
 
+--- Diffパネルの拡大表示。lazygit本体は+/_でNORMAL/HALF/FULLの3段階の画面モードを
+--- 切り替え、main(diff)にフォーカスがある時だけ左の一覧が縮む/消えるという仕組み
+--- (window_arrangement_helper.go getMidSectionWeights)だが、ここではコマンドログの
+--- @トグルと揃えたシンプルな2状態トグルにしている。cmdlog拡大と同じ領域(タブバーの
+--- 下、Files/Diff/コマンドログが占めていた範囲全体)を専有する
+--- 拡大表示を元の大きさに戻す（フォーカスの移動はしない）。switch_toからも呼ぶため、
+--- toggle_diff_focusのelse分岐から切り出している
+function collapse_diff_focus()
+  if not diff_focused then return end
+  diff_focused = false
+  if not (win.right_win and vim.api.nvim_win_is_valid(win.right_win)) then return end
+  local L = layout()
+  vim.api.nvim_win_set_config(win.right_win, {
+    relative = 'editor', row = L.top_row, col = L.right_col,
+    width = L.right_w, height = L.box_h,
+  })
+  -- delta出力は生成時の幅で固定されているため、ウィンドウ幅が変わっただけでは
+  -- 見た目が追従しない。キャッシュを無効化して同じ内容を新しい幅で再描画させる
+  ctx.invalidate_right_cache()
+  refresh_current_panel()
+end
+
+local function toggle_diff_focus()
+  if not (win.right_win and vim.api.nvim_win_is_valid(win.right_win)) then return end
+  if not diff_focused then
+    collapse_cmdlog() -- 同じ領域を専有するため排他
+    local L = layout()
+    diff_focused = true
+    vim.api.nvim_win_set_config(win.right_win, {
+      relative = 'editor', row = L.top_row, col = L.outer_col,
+      width = L.tabbar_w, height = L.box_h + L.cmdlog_h + 2,
+    })
+    vim.api.nvim_set_current_win(win.right_win)
+    -- 同じ理由で、拡大した新しい幅でdelta出力を再生成する
+    ctx.invalidate_right_cache()
+    refresh_current_panel()
+  else
+    collapse_diff_focus()
+    if win.left_win and vim.api.nvim_win_is_valid(win.left_win) then
+      vim.api.nvim_set_current_win(win.left_win)
+    end
+  end
+end
+
+--- diffパネルはrecreate_right_buf()で内容更新のたびにバッファが作り直されるため、
+--- bind_clickと同様、作り直すたびに呼んで再設定する必要がある
+function bind_diff_keys(buf)
+  if not (buf and vim.api.nvim_buf_is_valid(buf)) then return end
+  vim.keymap.set('n', '+', toggle_diff_focus, { buffer = buf, nowait = true, silent = true })
+  vim.keymap.set('n', 'v', toggle_side_by_side_key, { buffer = buf, nowait = true, silent = true })
+  for _, key in ipairs({ 'q', '<Esc>' }) do
+    vim.keymap.set('n', key, function()
+      if diff_focused then toggle_diff_focus() else M.close() end
+    end, { buffer = buf, nowait = true, silent = true })
+  end
+  for _, k in ipairs({ '1', '2', '3', '4', '5' }) do
+    vim.keymap.set('n', k, function() switch_to(tonumber(k)) end, { buffer = buf, nowait = true, silent = true })
+  end
+  vim.keymap.set('n', '<Left>', function() switch_relative(-1) end, { buffer = buf, nowait = true, silent = true })
+  vim.keymap.set('n', '<Right>', function() switch_relative(1) end, { buffer = buf, nowait = true, silent = true })
+end
+
 function activate_panel(idx)
   current_panel_idx = idx
   last_right_key, last_right_content = nil, nil
@@ -456,8 +541,10 @@ function activate_panel(idx)
   vim.bo[win.left_buf].buflisted  = false
   vim.bo[win.left_buf].modifiable = false
   vim.bo[win.left_buf].filetype   = 'gitpanel'
-  vim.api.nvim_win_set_buf(win.left_win, win.left_buf)
+  -- ウィンドウへ差し込む前に必ずマークする(recreate_right_bufと同じ理由:
+  -- nvim_win_set_bufはフォーカスしていなくてもBufEnterを発火するため)
   require('config.hidden_cursor').mark_buffer(win.left_buf)
+  vim.api.nvim_win_set_buf(win.left_win, win.left_buf)
   bind_click(win.left_buf)
   vim.wo[win.left_win].wrap         = false
   vim.wo[win.left_win].number       = false
@@ -605,13 +692,9 @@ GLOBAL_KEYS = {
   ['p'] = do_pull,
   ['z'] = do_undo,
   ['R'] = refresh_current_panel,
-  ['v'] = function()
-    local on = git.toggle_side_by_side()
-    ctx.invalidate_right_cache()
-    refresh_current_panel()
-    vim.notify('delta side-by-side: ' .. (on and 'ON' or 'OFF'), vim.log.levels.INFO)
-  end,
+  ['v'] = toggle_side_by_side_key,
   ['@'] = toggle_cmdlog_focus,
+  ['+'] = toggle_diff_focus,
   ['q'] = function() M.close() end,
   ['<Esc>'] = function() M.close() end,
 }
@@ -742,6 +825,7 @@ local function open(fullscreen)
   vim.wo[win.right_win].signcolumn = 'no'
   vim.wo[win.right_win].winhighlight = 'Normal:GitPanelBg'
   bind_click(win.right_buf)
+  bind_diff_keys(win.right_buf)
 
   win.cmdlog_buf = vim.api.nvim_create_buf(false, true)
   vim.bo[win.cmdlog_buf].buftype    = 'nofile'

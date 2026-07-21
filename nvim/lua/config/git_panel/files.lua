@@ -27,6 +27,10 @@ local function parse_status(output)
       local x, y, path = line:sub(1, 1), line:sub(2, 2), line:sub(4)
       local arrow_at = path:find(' %-> ')
       if arrow_at then path = path:sub(arrow_at + 4) end
+      -- ネストしたgitリポジトリ(.gitを含む未追跡ディレクトリ)等、gitが展開せず
+      -- "dir/"の形で1行にまとめて返すことがある。末尾の"/"が残るとbuild_treeで
+      -- ファイル名抽出(name:match('([^/]+)$'))に失敗してnilになるため、ここで落とす
+      path = path:gsub('/$', '')
       table.insert(list, { path = path, x = x, y = y })
     end
   end
@@ -36,6 +40,25 @@ end
 -- ══════════════════════════════════════════════
 -- ツリー構築
 -- ══════════════════════════════════════════════
+
+--- lazygit(pkg/gui/filetree/node.go compressAux)と同じ圧縮: ディレクトリの子が
+--- ちょうど1つだけ、かつその子もディレクトリの場合にだけ連結する（子がファイル
+--- 1つだけの場合は連結しない）。単一の子ディレクトリが連なる限り繰り返し辿って
+--- 一番深いノードに差し替えることで、"hoge"→"fuga"の2行を"hoge/fuga"の1行にする
+local function compress(node)
+  if not node.is_dir then return end
+  local children = node.children
+  for i, child in ipairs(children) do
+    local grandchildren = child.children
+    while grandchildren and #grandchildren == 1 and grandchildren[1].is_dir do
+      children[i] = grandchildren[1]
+      grandchildren = children[i].children
+    end
+  end
+  for _, child in ipairs(children) do
+    compress(child)
+  end
+end
 
 local function build_tree(list)
   local root = { name = '', path = '', is_dir = true, children = {} }
@@ -66,6 +89,7 @@ local function build_tree(list)
     end
   end
   sort_children(root)
+  compress(root)
   return root
 end
 
@@ -128,7 +152,18 @@ end
 local function show_diff_for(node, prefer_staged)
   if not node then ctx.set_right_lines({}); return end
   if node.is_dir then
-    ctx.set_right_lines({ '  ' .. #collect_files(node) .. ' 個のファイル' }, nil, nil, node.path)
+    -- lazygit(files_controller.go GetOnRenderToMain -> renderWorkingTreeDiff)と同じ:
+    -- ディレクトリでもファイル単体と全く同じgit diff -- <path>を使い、配下の
+    -- 変更ファイルをまとめた差分をそのまま表示する(「N個のファイル」という
+    -- 独自の要約表示はしない)。staged/unstagedの判定も配下のどこかにあれば
+    -- 対象にする(node_flagsが再帰的に集計している)
+    local any_staged, any_unstaged = node_flags(node)
+    local section = (prefer_staged and any_staged) and 'staged' or (any_unstaged and 'unstaged' or 'staged')
+    -- ルートノードのpathは''なので、git diffの pathspecとして無効(要"."扱い)
+    local path = node.path ~= '' and node.path or '.'
+    git.diff_file({ path = path, section = section }, function(diff_text)
+      ctx.set_right_diff(diff_text, node.path)
+    end)
     return
   end
   local f = node.file
@@ -180,9 +215,19 @@ local function render()
   -- lazygitのShowRootItemInFileTree(デフォルトtrue)に合わせ、ルートを"/"として
   -- 選択可能な1行にする。ここでSpaceを押すと全ファイルがステージ/アンステージされる
   local remembered_row = nil
-  local function walk(node, depth)
+  local function walk(node, depth, parent_path)
     local is_root = node.path == ''
-    local display_name = is_root and '/' or node.name
+    -- 圧縮(compress)で"hoge"の子スロットに"fuga"が直接差し込まれている場合、
+    -- node.pathは元々のフルパス("hoge/fuga")のまま変わっていないので、
+    -- 呼び出し元(parent_path)からの相対部分を取り出せば"hoge/fuga"と表示できる
+    local display_name
+    if is_root then
+      display_name = '/'
+    elseif parent_path == nil or parent_path == '' then
+      display_name = node.path
+    else
+      display_name = node.path:sub(#parent_path + 2)
+    end
     local s, u = node_flags(node)
     -- ファイル名(+アイコン/ディレクトリの矢印)の色: 実物のnameColorと同じ
     -- staged onlyなら緑、staged+unstagedなら黄、それ以外は無色
@@ -219,11 +264,11 @@ local function render()
 
     if node.is_dir and not collapsed[node.path] then
       for _, c in ipairs(node.children) do
-        walk(c, depth + 1)
+        walk(c, depth + 1, node.path)
       end
     end
   end
-  walk(tree_root, 0)
+  walk(tree_root, 0, nil)
 
   total_rows = #lines
   ctx.set_left_lines(lines, hl_queue)
