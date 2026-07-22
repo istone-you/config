@@ -1,3 +1,16 @@
+local util = require('config.lsp_util')
+
+local function load_local_lsp_config()
+  local path = vim.fn.stdpath('config') .. '/local.lua'
+  if vim.fn.filereadable(path) == 1 then
+    local ok, result = pcall(dofile, path)
+    if ok and type(result) == 'table' then return result end
+  end
+  return {}
+end
+
+local local_cfg = load_local_lsp_config()
+
 vim.lsp.config('gopls', {
   cmd         = { 'gopls' },
   filetypes   = { 'go', 'gomod', 'gowork', 'gotmpl' },
@@ -11,17 +24,6 @@ vim.lsp.config('gopls', {
   },
 })
 
-local function load_local_lsp_config()
-  local path = vim.fn.stdpath('config') .. '/local.lua'
-  if vim.fn.filereadable(path) == 1 then
-    local ok, result = pcall(dofile, path)
-    if ok and type(result) == 'table' then return result end
-  end
-  return {}
-end
-
-local local_cfg = load_local_lsp_config()
-
 vim.lsp.config('ts_ls', {
   cmd         = { 'typescript-language-server', '--stdio' },
   filetypes   = { 'typescript', 'typescriptreact', 'javascript', 'javascriptreact' },
@@ -31,6 +33,9 @@ vim.lsp.config('ts_ls', {
   } or nil,
 })
 
+-- Terraform / OpenTofu:
+-- tofu-ls があればそれを使い、無ければ terraform-ls を救済として使う。
+-- どちらも無ければ他 LSP と同様に無効（enable しない）。
 vim.lsp.config('tofu_ls', {
   cmd          = { 'tofu-ls', 'serve' },
   filetypes    = { 'opentofu', 'opentofu-vars', 'terraform', 'terraform-vars' },
@@ -44,15 +49,56 @@ vim.lsp.config('tofu_ls', {
   },
 })
 
+vim.lsp.config('terraformls', {
+  cmd          = { 'terraform-ls', 'serve' },
+  filetypes    = { 'terraform', 'terraform-vars' },
+  root_markers = { '.terraform', '.opentofu', '.git' },
+  settings     = {
+    ['terraform-ls'] = {
+      -- CLI は tofu 優先、無ければ terraform
+      terraformExecPath = util.has_cmd('tofu') and vim.fn.exepath('tofu')
+                          or vim.fn.exepath('terraform'),
+    },
+  },
+})
+
 vim.lsp.config('taplo', {
   cmd          = { 'taplo', 'lsp', 'stdio' },
   filetypes    = { 'toml' },
   root_markers = { '.taplo.toml', 'taplo.toml', '.git' },
 })
 
-vim.lsp.enable({ 'gopls', 'ts_ls', 'tofu_ls', 'taplo' })
+vim.lsp.config('yamlls', {
+  cmd          = { 'yaml-language-server', '--stdio' },
+  filetypes    = { 'yaml', 'yaml.docker-compose', 'yaml.gitlab' },
+  root_markers = { '.git' },
+  before_init  = util.yamlls_before_init,
+})
 
--- 診断表示の設定
+vim.lsp.config('biome', {
+  cmd          = { 'biome', 'lsp-proxy' },
+  filetypes    = {
+    'javascript',
+    'javascriptreact',
+    'typescript',
+    'typescriptreact',
+    'json',
+    'jsonc',
+    'css',
+    'graphql',
+  },
+  root_markers = { 'biome.json', 'biome.jsonc', 'package.json', '.git' },
+})
+
+local tf_server = util.has_cmd('tofu-ls') and 'tofu_ls'
+  or (util.has_cmd('terraform-ls') and 'terraformls' or nil)
+
+local to_enable = { 'gopls', 'ts_ls', 'taplo', 'yamlls', 'biome' }
+if tf_server then
+  table.insert(to_enable, tf_server)
+end
+util.enable_if_available(to_enable)
+
 vim.diagnostic.config({
   virtual_text  = { prefix = '●' },
   signs         = true,
@@ -61,7 +107,6 @@ vim.diagnostic.config({
   severity_sort = true,
 })
 
--- ノーマルモードのキーマップ（LSP接続時のみ有効）
 vim.api.nvim_create_autocmd('LspAttach', {
   callback = function(ev)
     local function map(key, fn, desc)
@@ -77,19 +122,11 @@ vim.api.nvim_create_autocmd('LspAttach', {
   end,
 })
 
-local format_on_save_clients = {
-  gopls   = true,
-  tofu_ls = true,
-  taplo   = true,
-}
-
-vim.api.nvim_create_autocmd('BufWritePre', {
-  callback = function()
-    vim.lsp.buf.format({
-      async = false,
-      filter = function(client)
-        return format_on_save_clients[client.name] == true
-      end,
-    })
-  end,
+util.setup_format_on_save({
+  gopls       = true,
+  tofu_ls     = true,
+  terraformls = true,
+  taplo       = true,
+  yamlls      = true,
+  biome       = true,
 })

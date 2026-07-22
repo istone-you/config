@@ -1,12 +1,12 @@
 -- lsp.luaは実LSPサーバーの起動確認まではしない(gopls/typescript-language-server等
 -- が居ない環境でも通す)。検証するのは: 静的なサーバー設定が正しく登録されるか、
 -- LspAttach時にバッファローカルキーマップが張られるか、保存時フォーマットの
--- フィルタが意図したクライアントだけを通すか、の3点
+-- フィルタが意図したクライアントだけを通すか、バイナリ欠落時に enable しないか
 local T = dofile(TESTS_DIR .. '/helpers.lua')
 require('config.lsp')
 
 T.describe('lsp.lua: server config registration', function()
-  T.it('registers gopls/ts_ls/tofu_ls/taplo with the right cmd/filetypes/root_markers', function()
+  T.it('registers gopls/ts_ls/tofu_ls/terraformls/taplo/yamlls/biome with the right cmd/filetypes/root_markers', function()
     local gopls = vim.lsp.config.gopls
     T.eq(gopls.cmd, { 'gopls' })
     T.contains(table.concat(gopls.filetypes, ','), 'go')
@@ -21,9 +21,22 @@ T.describe('lsp.lua: server config registration', function()
     T.eq(tofu_ls.cmd, { 'tofu-ls', 'serve' })
     T.contains(table.concat(tofu_ls.filetypes, ','), 'terraform')
 
+    local terraformls = vim.lsp.config.terraformls
+    T.eq(terraformls.cmd, { 'terraform-ls', 'serve' })
+    T.contains(table.concat(terraformls.filetypes, ','), 'terraform')
+
     local taplo = vim.lsp.config.taplo
     T.eq(taplo.cmd, { 'taplo', 'lsp', 'stdio' })
     T.eq(taplo.filetypes, { 'toml' })
+
+    local yamlls = vim.lsp.config.yamlls
+    T.eq(yamlls.cmd, { 'yaml-language-server', '--stdio' })
+    T.contains(table.concat(yamlls.filetypes, ','), 'yaml')
+
+    local biome = vim.lsp.config.biome
+    T.eq(biome.cmd, { 'biome', 'lsp-proxy' })
+    T.contains(table.concat(biome.filetypes, ','), 'typescript')
+    T.contains(table.concat(biome.root_markers, ','), 'biome.json')
   end)
 end)
 
@@ -49,7 +62,7 @@ T.describe('lsp.lua: LspAttach keymaps', function()
 end)
 
 T.describe('lsp.lua: format-on-save filter', function()
-  T.it('BufWritePre triggers vim.lsp.buf.format with a filter that allows only gopls/tofu_ls/taplo', function()
+  T.it('BufWritePre triggers vim.lsp.buf.format with a filter that allows gopls/tofu_ls/terraformls/taplo/yamlls/biome', function()
     local captured_filter
     local orig_format = vim.lsp.buf.format
     vim.lsp.buf.format = function(opts) captured_filter = opts and opts.filter end
@@ -60,8 +73,71 @@ T.describe('lsp.lua: format-on-save filter', function()
     T.ok(captured_filter ~= nil, 'BufWritePre should call vim.lsp.buf.format with a filter')
     T.eq(captured_filter({ name = 'gopls' }), true)
     T.eq(captured_filter({ name = 'tofu_ls' }), true)
+    T.eq(captured_filter({ name = 'terraformls' }), true)
     T.eq(captured_filter({ name = 'taplo' }), true)
+    T.eq(captured_filter({ name = 'yamlls' }), true)
+    T.eq(captured_filter({ name = 'biome' }), true)
     T.eq(captured_filter({ name = 'ts_ls' }), false, 'ts_ls should not be auto-formatted on save')
+  end)
+end)
+
+T.describe('lsp.lua: enable only when binary exists', function()
+  T.it('prefers tofu_ls over terraformls when tofu-ls is available', function()
+    if vim.fn.executable('tofu-ls') == 1 then
+      T.eq(vim.lsp.is_enabled('tofu_ls'), true)
+      T.eq(vim.lsp.is_enabled('terraformls'), false)
+    elseif vim.fn.executable('terraform-ls') == 1 then
+      T.eq(vim.lsp.is_enabled('tofu_ls'), false)
+      T.eq(vim.lsp.is_enabled('terraformls'), true)
+    else
+      T.eq(vim.lsp.is_enabled('tofu_ls'), false)
+      T.eq(vim.lsp.is_enabled('terraformls'), false)
+    end
+  end)
+
+  T.it('enables gopls/ts_ls/taplo/yamlls/biome only when their binaries exist', function()
+    local pairs_ = {
+      { 'gopls', 'gopls' },
+      { 'ts_ls', 'typescript-language-server' },
+      { 'taplo', 'taplo' },
+      { 'yamlls', 'yaml-language-server' },
+      { 'biome', 'biome' },
+    }
+    for _, p in ipairs(pairs_) do
+      local name, bin = p[1], p[2]
+      local expect = vim.fn.executable(bin) == 1
+      T.eq(vim.lsp.is_enabled(name), expect, name .. ' enable should match ' .. bin)
+    end
+  end)
+end)
+
+T.describe('lsp.lua: yamlls reads .vscode/settings.json', function()
+  T.it('loads yaml.* from repo-root .vscode/settings.json when present', function()
+    local root = vim.fn.tempname()
+    vim.fn.mkdir(root .. '/.vscode', 'p')
+    vim.fn.writefile({
+      '{',
+      '  "yaml.format.printWidth": 250, // comment',
+      '  "yaml.format.bracketSpacing": false,',
+      '  "yaml.schemas": { "https://example.com/schema.json": ["*.yml"] },',
+      '  "editor.formatOnSave": true',
+      '}',
+    }, root .. '/.vscode/settings.json')
+
+    local config = { root_dir = root, settings = {} }
+    vim.lsp.config.yamlls.before_init({}, config)
+
+    T.eq(config.settings.yaml.format.printWidth, 250)
+    T.eq(config.settings.yaml.format.bracketSpacing, false)
+    T.eq(config.settings.yaml.schemas['https://example.com/schema.json'], { '*.yml' })
+  end)
+
+  T.it('leaves settings untouched when .vscode/settings.json is absent', function()
+    local root = vim.fn.tempname()
+    vim.fn.mkdir(root, 'p')
+    local config = { root_dir = root, settings = {} }
+    vim.lsp.config.yamlls.before_init({}, config)
+    T.eq(config.settings, {})
   end)
 end)
 
