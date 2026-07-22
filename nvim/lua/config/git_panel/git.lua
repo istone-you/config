@@ -171,6 +171,15 @@ function M.diff_file(entry, cb)
   M.run(args, function(res) cb(res.stdout or '') end, { dont_log = true })
 end
 
+--- lazygit(working_tree.go WorktreeFileDiffCmdObj、noIndex分岐)と同じ:
+--- 未追跡ファイルは`git diff --no-index -- /dev/null <path>`で本物のunified diffを
+--- 得る。exit code(--no-indexは差分がある時1を返す)はエラー扱いしない。
+--- これによりdeltaが正しくdiffとして認識して色付けできる(自作の"+++ path"だけの
+--- 疑似diffだと、diff --git等のヘッダーが無くdeltaに一切色付けされなかった)
+function M.diff_untracked_file(path, cb)
+  M.run({ 'diff', '--no-index', '--', '/dev/null', path }, function(res) cb(res.stdout or '') end, { dont_log = true })
+end
+
 function M.stage(path, cb) M.run({ 'add', '--', path }, cb) end
 function M.unstage(path, cb) M.run({ 'reset', 'HEAD', '--', path }, cb) end
 function M.stage_all(cb) M.run({ 'add', '-A' }, cb) end

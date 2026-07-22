@@ -26,6 +26,7 @@ local git_repo_root = nil  -- git_statusに対応するリポジトリルート�
 local git_status_dirty = false
 local render -- 前方宣言（gitステータス取得の非同期コールバックから参照するため）
 local render_preview -- 前方宣言（render()の末尾から参照するため）
+local teardown_ui -- 前方宣言（open_selectedから参照するため）
 
 local hl_ns = vim.api.nvim_create_namespace('explorer_hl')
 local augrp = vim.api.nvim_create_augroup('explorer', { clear = true })
@@ -436,6 +437,12 @@ local function open_selected()
     selection = {}
     render()
   else
+    -- 全画面時はlist/previewの2枚のfloatが画面全体を覆っているため、それらを
+    -- 閉じずにorigin_winへeditしても裏に隠れて何も変わって見えない
+    -- (teardown_uiはqallを伴わないので、この場合はnvim自体は終了しない)
+    if is_fullscreen then
+      teardown_ui()
+    end
     if origin_win and vim.api.nvim_win_is_valid(origin_win) then
       vim.api.nvim_set_current_win(origin_win)
     end
@@ -872,12 +879,9 @@ end
 -- 開閉
 -- ══════════════════════════════════════════════
 
---- 全画面表示は「これがこのnvimプロセスの用件そのもの」という前提(herdrの
---- popupから nvim +Explorer! で直接立ち上げる運用等)なので、閉じる操作(q/Esc/:q
---- どれでも最終的にここを通る)がそのまま裏側の元バッファへ戻るのではなく、
---- nvim自体を終了させる。通常のサイドパネル表示ではこれまで通り単に閉じるだけ
-local function close()
-  local was_fullscreen = is_fullscreen
+--- ウィンドウ/バッファの後始末だけを行う(qallは含まない)。close()本体と、
+--- 全画面中にファイルを開く場合(open_selected、qallされては困る)の両方から使う
+teardown_ui = function()
   vim.api.nvim_clear_autocmds({ group = augrp })
   if win and vim.api.nvim_win_is_valid(win) then
     vim.api.nvim_win_close(win, true)
@@ -894,6 +898,15 @@ local function close()
   win, buf, preview_win, preview_buf = nil, nil, nil, nil
   last_preview_path = nil
   is_fullscreen = false
+end
+
+--- 全画面表示は「これがこのnvimプロセスの用件そのもの」という前提(herdrの
+--- popupから nvim +Explorer! で直接立ち上げる運用等)なので、閉じる操作(q/Esc/:q
+--- どれでも最終的にここを通る)がそのまま裏側の元バッファへ戻るのではなく、
+--- nvim自体を終了させる。通常のサイドパネル表示ではこれまで通り単に閉じるだけ
+local function close()
+  local was_fullscreen = is_fullscreen
+  teardown_ui()
   if was_fullscreen then
     vim.cmd('qall')
   end

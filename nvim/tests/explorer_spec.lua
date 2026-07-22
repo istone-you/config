@@ -226,6 +226,73 @@ T.describe('explorer', function()
     T.rmrf(dir)
   end)
 
+  T.it('fullscreen: <CR> on a file closes the floating list/preview so the opened buffer is actually visible', function()
+    -- 回帰テスト: open_selected()がis_fullscreen中もfloatを閉じずにorigin_winへ
+    -- editしていたため、画面全体を覆うfloatの裏でファイルが開くだけで見た目には
+    -- 何も変わらず「ファイルが開けない」ように見えていた
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/a.txt', { 'hello' })
+
+    local res = run_child(string.format([[
+      vim.o.columns, vim.o.lines = 160, 40
+      vim.fn.chdir(%s)
+      local explorer = require('config.explorer')
+      explorer.open(true)
+      vim.wait(80)
+      local list_win
+      for _, w in ipairs(vim.api.nvim_list_wins()) do
+        if vim.bo[vim.api.nvim_win_get_buf(w)].filetype == 'explorer' then list_win = w end
+      end
+      vim.api.nvim_set_current_win(list_win)
+      vim.api.nvim_win_set_cursor(list_win, { find_row(list_win, 'a.txt'), 0 })
+      feed('<CR>')
+      vim.wait(80)
+
+      assert_eq(vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ':t'), 'a.txt',
+        'the file should be edited in the current (visible) window')
+      local floats_remaining = 0
+      for _, w in ipairs(vim.api.nvim_list_wins()) do
+        if vim.api.nvim_win_get_config(w).relative ~= '' then floats_remaining = floats_remaining + 1 end
+      end
+      assert_eq(floats_remaining, 0, 'the fullscreen list/preview floats should be closed, not left covering the screen')
+    ]], vim.inspect(dir)))
+
+    T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
+    T.rmrf(dir)
+  end)
+
+  T.it('sidebar mode: <CR> on a file opens it while keeping the explorer panel open', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/a.txt', { 'hello' })
+
+    local res = run_child(string.format([[
+      vim.fn.chdir(%s)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local list_win
+      for _, w in ipairs(vim.api.nvim_list_wins()) do
+        if vim.bo[vim.api.nvim_win_get_buf(w)].filetype == 'explorer' then list_win = w end
+      end
+      vim.api.nvim_set_current_win(list_win)
+      vim.api.nvim_win_set_cursor(list_win, { find_row(list_win, 'a.txt'), 0 })
+      feed('<CR>')
+      vim.wait(80)
+
+      assert_eq(vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ':t'), 'a.txt')
+      local still_open = false
+      for _, w in ipairs(vim.api.nvim_list_wins()) do
+        if vim.bo[vim.api.nvim_win_get_buf(w)].filetype == 'explorer' then still_open = true end
+      end
+      assert_eq(still_open, true, 'the sidebar explorer panel should remain open after opening a file')
+    ]], vim.inspect(dir)))
+
+    T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
+    T.rmrf(dir)
+  end)
+
   T.it('. toggles hidden dotfiles; R refreshes after an out-of-band filesystem change', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir, 'p')

@@ -184,14 +184,12 @@ local function show_diff_for(node, prefer_staged)
       ctx.set_right_lines({ '(ディレクトリ: ' .. f.path .. ')' }, nil, nil, node.path)
       return
     end
-    local ok, content = pcall(vim.fn.readfile, full)
-    if ok then
-      local lines = { '+++ ' .. f.path, '' }
-      for _, l in ipairs(content) do table.insert(lines, '+' .. l) end
-      ctx.set_right_diff(table.concat(lines, '\n'), node.path)
-    else
-      ctx.set_right_lines({ '(バイナリまたは読み込み不可)' }, nil, nil, node.path)
-    end
+    -- lazygitと同じくgit diff --no-index -- /dev/null <path>で本物のunified diffを
+    -- 得る(diff --git等のヘッダーが揃うのでdeltaが正しく色付けできる。バイナリ判定も
+    -- gitが"Binary files ... differ"を出すのでこちらで個別に読む必要がない)
+    git.diff_untracked_file(f.path, function(diff_text)
+      ctx.set_right_diff(diff_text, node.path)
+    end)
     return
   end
   local section = (prefer_staged and has_staged(f)) and 'staged' or (has_unstaged(f) and 'unstaged' or 'staged')

@@ -106,6 +106,66 @@ T.describe('git.lua: run_delta', function()
   end)
 end)
 
+T.describe('git.lua: diff_untracked_file', function()
+  T.it('produces a real unified diff (diff --git/--- /dev/null/+++/@@), not a headerless "+line" pseudo-diff', function()
+    -- 回帰テスト: 以前はfiles.luaが"+++ path\n\n+line1\n+line2"という自作の
+    -- 疑似diffを作っていたが、diff --git等のヘッダーが無いためdeltaが本物の
+    -- diffと認識できず、新規ファイルのプレビューが無色のまま表示されていた
+    local dir = T.tmp_git_repo()
+    T.write_file(dir .. '/new.txt', { 'hello', 'world' })
+    git.root = dir
+
+    local diff_text
+    git.diff_untracked_file('new.txt', function(text) diff_text = text end)
+    T.wait_until(function() return diff_text ~= nil end)
+
+    T.contains(diff_text, 'diff --git')
+    T.contains(diff_text, '--- /dev/null')
+    T.contains(diff_text, '+++ b/new.txt')
+    T.contains(diff_text, '@@ -0,0 +1,2 @@')
+    T.contains(diff_text, '+hello')
+    T.contains(diff_text, '+world')
+
+    T.rmrf(dir)
+  end)
+
+  T.it('feeding it through run_delta actually produces ANSI-colored output (the bug this fixes)', function()
+    if not git.delta_available then
+      print('  (skipped: delta not installed)')
+      return
+    end
+    local dir = T.tmp_git_repo()
+    T.write_file(dir .. '/new.txt', { 'hello', 'world' })
+    git.root = dir
+
+    local diff_text
+    git.diff_untracked_file('new.txt', function(text) diff_text = text end)
+    T.wait_until(function() return diff_text ~= nil end)
+
+    local ansi
+    T.wait_until(function()
+      git.run_delta(diff_text, 80, function(r) ansi = r end)
+      return ansi ~= nil
+    end, 2000)
+    T.contains(ansi, '\27[', 'a new/untracked file diff should be colorized by delta, just like any other diff')
+  end)
+
+  T.it('reports "Binary files ... differ" for a binary untracked file instead of crashing', function()
+    local dir = T.tmp_git_repo()
+    local f = io.open(dir .. '/bin.dat', 'wb')
+    f:write('foo\0bar')
+    f:close()
+    git.root = dir
+
+    local diff_text
+    git.diff_untracked_file('bin.dat', function(text) diff_text = text end)
+    T.wait_until(function() return diff_text ~= nil end)
+    T.contains(diff_text, 'Binary files')
+
+    T.rmrf(dir)
+  end)
+end)
+
 T.describe('git.lua: github_repo_info URL variants', function()
   local function with_origin(url, fn)
     local dir = T.tmp_git_repo()
