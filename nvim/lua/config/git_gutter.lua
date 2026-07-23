@@ -29,7 +29,9 @@ local function git_root(cwd)
   if type(cwd) ~= 'string' or cwd == '' or vim.fn.isdirectory(cwd) == 0 then
     return nil
   end
-  local ok, res = pcall(vim.system, { 'git', 'rev-parse', '--show-toplevel' }, { cwd = cwd, text = true })
+  -- node_modules 等が別マウント（FS境界）でも上位の .git を探せるようにする
+  local ok, res = pcall(vim.system, { 'git', 'rev-parse', '--show-toplevel' },
+    { cwd = cwd, text = true, env = { GIT_DISCOVERY_ACROSS_FILESYSTEM = '1' } })
   if not ok or not res then
     return nil
   end
@@ -188,6 +190,15 @@ function M.diff_for_buf(buf)
   local rel = rel_path(root, path)
   if not rel or rel == '' then
     return nil, 'outside repo'
+  end
+
+  -- git 管理外（未追跡・ignore）のファイルはガター表示しない
+  local tracked = vim.system(
+    { 'git', 'ls-files', '--error-unmatch', '--', rel },
+    { cwd = root }
+  ):wait()
+  if tracked.code ~= 0 then
+    return '', nil
   end
 
   local stamp = tostring(buf) .. '.' .. tostring(generation[buf] or 0)

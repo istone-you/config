@@ -24,6 +24,11 @@ local git_status = {}      -- [リポジトリルート相対path] = GIT_CODES�
 local git_status_cwd = nil -- git_statusがどのcwdのものか
 local git_repo_root = nil  -- git_statusに対応するリポジトリルート（絶対path）
 local git_status_dirty = false
+local git_tracked = {}      -- [ルート相対path] = true（git ls-filesで追跡されているファイル）
+local git_tracked_dirs = {} -- ['dir/'] = true（追跡ファイルを1つ以上含むディレクトリ）
+-- node_modules 等が別マウント（FS境界）だと、その中から git を叩くと境界で
+-- 探索が止まり上位の .git を見つけられない。境界を越えて探索させる。
+local GIT_ENV = { GIT_DISCOVERY_ACROSS_FILESYSTEM = '1' }
 local render -- 前方宣言（gitステータス取得の非同期コールバックから参照するため）
 local render_preview -- 前方宣言（render()の末尾から参照するため）
 local teardown_ui -- 前方宣言（open_selectedから参照するため）
@@ -95,25 +100,42 @@ end
 --- git statusは常にリポジトリルート相対パスで返るため、entry.pathをルート相対に
 --- 変換してから比較する。ファイルは完全一致、ディレクトリは配下(prefix一致)の
 --- 最悪ステータスを継承する
+-- そのエントリのgitステータス。ディレクトリは中身を集約しない（自身のコードのみ）。
+-- ただし未追跡/ignoreのディレクトリは git status が "dir/" 一つに畳むため、
+-- その配下の個々のエントリは git_status に現れない。祖先が畳まれていれば継承する。
 local function entry_git_code(entry)
   if not git_repo_root then return nil end
   local rel = entry.path:sub(#git_repo_root + 2)
-  if not entry.isdir then return git_status[rel] end
-  local prefix = rel .. '/'
-  local best = nil
-  for path, code in pairs(git_status) do
-    if path == prefix or path:sub(1, #prefix) == prefix then
-      if not best or code > best then best = code end
-    end
+  local own = entry.isdir and git_status[rel .. '/'] or git_status[rel]
+  if own then return own end
+  local parent = rel
+  while true do
+    local slash = parent:match('^(.*)/[^/]*$')
+    if not slash then break end
+    parent = slash
+    local code = git_status[parent .. '/']
+    if code then return code end
   end
-  return best
+  return nil
+end
+
+-- git 管理外（追跡ファイルが1つも無い）かどうか。薄字化の判定に使う。
+-- ファイルは追跡集合に無ければ管理外、ディレクトリは配下に追跡ファイルが無ければ管理外。
+-- .terraform や node_modules のように status が畳んだり個別列挙したりする差異に依存しない。
+local function entry_unmanaged(entry)
+  if not git_repo_root then return false end
+  local rel = entry.path:sub(#git_repo_root + 2)
+  if entry.isdir then
+    return not git_tracked_dirs[rel .. '/']
+  end
+  return not git_tracked[rel]
 end
 
 local function refresh_git_status(target_cwd)
-  vim.system({ 'git', 'rev-parse', '--show-toplevel' }, { cwd = target_cwd, text = true }, function(root_res)
+  vim.system({ 'git', 'rev-parse', '--show-toplevel' }, { cwd = target_cwd, text = true, env = GIT_ENV }, function(root_res)
     vim.schedule(function()
       if root_res.code ~= 0 then
-        git_status, git_status_cwd, git_repo_root = {}, target_cwd, nil
+        git_status, git_tracked, git_tracked_dirs, git_status_cwd, git_repo_root = {}, {}, {}, target_cwd, nil
         if cwd == target_cwd then render() end
         return
       end
@@ -121,16 +143,35 @@ local function refresh_git_status(target_cwd)
       vim.system({
         'git', '--no-optional-locks', '-c', 'core.quotePath=', 'status',
         '--porcelain', '-unormal', '--no-renames', '--ignored=matching', '.',
-      }, { cwd = target_cwd, text = true }, function(res)
-        vim.schedule(function()
-          local map = {}
-          for line in (res.stdout or ''):gmatch('[^\r\n]+') do
-            local code, path = match_status_line(line)
-            if code and path then map[path] = code end
+      }, { cwd = target_cwd, text = true, env = GIT_ENV }, function(res)
+        -- 追跡ファイル一覧（管理外＝薄字化 の判定に使う。statusの畳み方に依存しない）
+        vim.system(
+          { 'git', 'ls-files', '--full-name', '--', '.' },
+          { cwd = target_cwd, text = true, env = GIT_ENV },
+          function(ls)
+            vim.schedule(function()
+              local map = {}
+              for line in (res.stdout or ''):gmatch('[^\r\n]+') do
+                local code, path = match_status_line(line)
+                if code and path then map[path] = code end
+              end
+              local tracked, tdirs = {}, {}
+              for path in (ls.stdout or ''):gmatch('[^\r\n]+') do
+                tracked[path] = true
+                local p = path
+                while true do
+                  local slash = p:match('^(.*)/[^/]*$')
+                  if not slash then break end
+                  p = slash
+                  tdirs[p .. '/'] = true
+                end
+              end
+              git_status, git_tracked, git_tracked_dirs = map, tracked, tdirs
+              git_status_cwd, git_repo_root = target_cwd, repo_root
+              if cwd == target_cwd then render() end
+            end)
           end
-          git_status, git_status_cwd, git_repo_root = map, target_cwd, repo_root
-          if cwd == target_cwd then render() end
-        end)
+        )
       end)
     end)
   end)
@@ -211,12 +252,17 @@ function render()
     end
     table.insert(lines, line)
     local lnum = #lines - 1
+    local unmanaged = git_ready and entry_unmanaged(entry) or false
     if selection[entry.path] then
       hl(lnum, 'ExplorerSelected')
     elseif entry.isdir then
       hl(lnum, 'ExplorerDir')
     else
       hl(lnum, 'ExplorerFile')
+    end
+    -- git 管理外（未追跡・ignore）は行全体を薄く表示する（VSCode風）
+    if unmanaged and not selection[entry.path] then
+      hl(lnum, 'ExplorerDimmed')
     end
     if clipboard and clipboard.mode == 'cut' then
       for _, p in ipairs(clipboard.paths) do
@@ -226,9 +272,12 @@ function render()
     if sign and sign ~= '' and GIT_HL[git_code] then
       hl(lnum, GIT_HL[git_code], #line - #sign, #line)
     end
-    local icon_group = file_icons.icon_hl(entry.name, entry.isdir)
-    if icon_group then
-      hl(lnum, icon_group, 2, 2 + #icon)
+    -- 薄字化した行はアイコンのブランド色を付けない（全体を薄く保つ）
+    if not unmanaged then
+      local icon_group = file_icons.icon_hl(entry.name, entry.isdir)
+      if icon_group then
+        hl(lnum, icon_group, 2, 2 + #icon)
+      end
     end
   end
 
@@ -1049,6 +1098,7 @@ local function setup_hl()
   vim.api.nvim_set_hl(0, 'ExplorerConfirmBorder', { bg = 'NONE', fg = '#f7768e' })
   vim.api.nvim_set_hl(0, 'ExplorerInputBg',       { bg = 'NONE', fg = '#c0caf5' })
   vim.api.nvim_set_hl(0, 'ExplorerInputBorder',   { bg = 'NONE', fg = '#7aa2f7' })
+  vim.api.nvim_set_hl(0, 'ExplorerDimmed',        { fg = '#6b7394' })
   vim.api.nvim_set_hl(0, 'ExplorerGitIgnored',    { fg = '#565f89' })
   vim.api.nvim_set_hl(0, 'ExplorerGitUntracked',  { fg = '#bb9af7' })
   vim.api.nvim_set_hl(0, 'ExplorerGitModified',   { fg = '#e0af68' })

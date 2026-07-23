@@ -38,6 +38,87 @@ local function run_child(body_lua)
 end
 
 T.describe('explorer', function()
+  T.it('dims only git-unmanaged entries; a tracked dir with an untracked child stays normal', function()
+    local res = run_child([[
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir, 'p')
+      local function git(args)
+        local c = { 'git', '-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t' }
+        vim.list_extend(c, args)
+        vim.system(c):wait()
+      end
+      git({ 'init', '-q' })
+      -- tracked: keep.txt, src/app.txt, .gitignore(=build/を無視)
+      vim.fn.mkdir(dir .. '/src', 'p')
+      vim.fn.writefile({ 'x' }, dir .. '/keep.txt')
+      vim.fn.writefile({ 'x' }, dir .. '/src/app.txt')
+      -- build/ はディレクトリごと無視、secret/* は中身だけ無視(.terraform型: 畳まれず個別列挙)
+      vim.fn.writefile({ 'build/', 'secret/*' }, dir .. '/.gitignore')
+      git({ 'add', 'keep.txt', 'src/app.txt', '.gitignore' })
+      git({ 'commit', '-qm', 'seed' })
+      -- unmanaged: fresh.txt(未追跡), src/new.txt(trackedなsrc内の未追跡), build/(ignore), secret/(中身がignore)
+      vim.fn.writefile({ 'y' }, dir .. '/fresh.txt')
+      vim.fn.writefile({ 'y' }, dir .. '/src/new.txt')
+      vim.fn.mkdir(dir .. '/build', 'p')
+      vim.fn.writefile({ 'y' }, dir .. '/build/out.txt')
+      vim.fn.mkdir(dir .. '/secret', 'p')
+      vim.fn.writefile({ 'y' }, dir .. '/secret/token.txt')
+
+      vim.fn.chdir(dir)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      local win = list_win()
+      local buf = vim.api.nvim_win_get_buf(win)
+      local ns = vim.api.nvim_create_namespace('explorer_hl')
+
+      -- git status(非同期)が届いて再描画され、未追跡に ? が付くまで待つ
+      local ok = vim.wait(3000, function()
+        for _, l in ipairs(lines(win)) do
+          if l:find('fresh.txt', 1, true) and l:find('?', 1, true) then return true end
+        end
+        return false
+      end, 50)
+      assert_eq(ok, true, 'git status ready (untracked has ? sign)')
+
+      local function dimmed(needle)
+        local row
+        for i, l in ipairs(lines(win)) do if l:find(needle, 1, true) then row = i - 1 end end
+        assert_eq(row ~= nil, true, 'row for ' .. needle)
+        for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, { row, 0 }, { row, 10000 }, { details = true })) do
+          if m[4].hl_group == 'ExplorerDimmed' then return true end
+        end
+        return false
+      end
+
+      assert_eq(dimmed('fresh.txt'), true, 'untracked file should be dimmed')
+      assert_eq(dimmed('keep.txt'), false, 'tracked file should NOT be dimmed')
+      assert_eq(dimmed('build'), true, 'ignored dir should be dimmed')
+      assert_eq(dimmed('secret'), true, 'dir whose contents are ignored individually should be dimmed (.terraform型)')
+      assert_eq(dimmed('src'), false, 'tracked dir with an untracked child should NOT be dimmed')
+
+      -- 無視ディレクトリを開いたら中身も全部薄いこと（畳まれた祖先から継承）
+      local brow
+      for i, l in ipairs(lines(win)) do if l:find('build', 1, true) then brow = i end end
+      vim.api.nvim_set_current_win(win)
+      vim.api.nvim_win_set_cursor(win, { brow, 0 })
+      feed('l')
+      local ok2 = vim.wait(3000, function()
+        if not (lines(win)[1] or ''):find('build', 1, true) then return false end
+        for i, l in ipairs(lines(win)) do
+          if l:find('out.txt', 1, true) then
+            local row = i - 1
+            for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, { row, 0 }, { row, 10000 }, { details = true })) do
+              if m[4].hl_group == 'ExplorerDimmed' then return true end
+            end
+          end
+        end
+        return false
+      end, 50)
+      assert_eq(ok2, true, 'contents of an ignored dir should all be dimmed')
+    ]])
+    T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
+  end)
+
   T.it('lists dirs before files (alphabetical); l/h navigate in/out; a/r/d create/rename/delete', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir .. '/zdir', 'p')
