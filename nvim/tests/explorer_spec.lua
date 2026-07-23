@@ -119,6 +119,37 @@ T.describe('explorer', function()
     T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
   end)
 
+  T.it('shows a symlink as "name -> target" (yazi風) with its own highlight', function()
+    local res = run_child([[
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir .. '/real', 'p')
+      vim.fn.writefile({ 'x' }, dir .. '/real/config.toml')
+      vim.uv.fs_symlink('real/config.toml', dir .. '/link.toml')
+
+      vim.fn.chdir(dir)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(120)
+      local win = list_win()
+      local buf = vim.api.nvim_win_get_buf(win)
+      local ns = vim.api.nvim_create_namespace('explorer_hl')
+
+      local row, text
+      for i, l in ipairs(lines(win)) do
+        if l:find('link.toml', 1, true) then row = i - 1; text = l end
+      end
+      assert_eq(row ~= nil, true, 'link.toml row exists')
+      assert_eq(text:find('link.toml -> real/config.toml', 1, true) ~= nil, true, 'shows -> target, got: ' .. text)
+
+      local has_symlink_hl = false
+      for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, { row, 0 }, { row, 10000 }, { details = true })) do
+        if m[4].hl_group == 'ExplorerSymlink' then has_symlink_hl = true end
+      end
+      assert_eq(has_symlink_hl, true, 'the -> target part should use ExplorerSymlink')
+    ]])
+    T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
+  end)
+
   T.it('lists dirs before files (alphabetical); l/h navigate in/out; a/r/d create/rename/delete', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir .. '/zdir', 'p')

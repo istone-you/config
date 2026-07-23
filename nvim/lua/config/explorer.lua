@@ -197,7 +197,12 @@ local function list_dir(path)
     if show_hidden or name:sub(1, 1) ~= '.' then
       if filter == '' or name:lower():find(filter:lower(), 1, true) then
         local full = path .. '/' .. name
-        table.insert(list, { name = name, path = full, isdir = vim.fn.isdirectory(full) == 1 })
+        local entry = { name = name, path = full, isdir = vim.fn.isdirectory(full) == 1 }
+        local st = vim.uv.fs_lstat(full)
+        if st and st.type == 'link' then
+          entry.link = vim.uv.fs_readlink(full)
+        end
+        table.insert(list, entry)
       end
     end
   end
@@ -245,6 +250,13 @@ function render()
   for _, entry in ipairs(rows) do
     local icon = get_icon(entry.name, entry.isdir)
     local line = '  ' .. icon .. '  ' .. entry.name
+    -- シンボリックリンクは yazi 風に「名前 -> ターゲット」を表示する
+    local link_cs, link_ce
+    if entry.link then
+      link_cs = #line
+      line = line .. ' -> ' .. entry.link
+      link_ce = #line
+    end
     local git_code = git_ready and entry_git_code(entry) or nil
     local sign = git_code and GIT_SIGNS[git_code]
     if sign and sign ~= '' then
@@ -278,6 +290,9 @@ function render()
       if icon_group then
         hl(lnum, icon_group, 2, 2 + #icon)
       end
+    end
+    if link_cs then
+      hl(lnum, 'ExplorerSymlink', link_cs, link_ce)
     end
   end
 
@@ -379,8 +394,14 @@ local function preview_dir_lines(path)
   if #list == 0 then return { '  (空)' } end
   local lines = {}
   for _, name in ipairs(list) do
-    local isdir = vim.fn.isdirectory(path .. '/' .. name) == 1
-    table.insert(lines, '  ' .. get_icon(name, isdir) .. '  ' .. name)
+    local full = path .. '/' .. name
+    local isdir = vim.fn.isdirectory(full) == 1
+    local suffix = ''
+    local st = vim.uv.fs_lstat(full)
+    if st and st.type == 'link' then
+      suffix = ' -> ' .. (vim.uv.fs_readlink(full) or '?')
+    end
+    table.insert(lines, '  ' .. get_icon(name, isdir) .. '  ' .. name .. suffix)
   end
   return lines
 end
@@ -1099,6 +1120,7 @@ local function setup_hl()
   vim.api.nvim_set_hl(0, 'ExplorerInputBg',       { bg = 'NONE', fg = '#c0caf5' })
   vim.api.nvim_set_hl(0, 'ExplorerInputBorder',   { bg = 'NONE', fg = '#7aa2f7' })
   vim.api.nvim_set_hl(0, 'ExplorerDimmed',        { fg = '#6b7394' })
+  vim.api.nvim_set_hl(0, 'ExplorerSymlink',       { fg = '#73daca' })
   vim.api.nvim_set_hl(0, 'ExplorerGitIgnored',    { fg = '#565f89' })
   vim.api.nvim_set_hl(0, 'ExplorerGitUntracked',  { fg = '#bb9af7' })
   vim.api.nvim_set_hl(0, 'ExplorerGitModified',   { fg = '#e0af68' })
