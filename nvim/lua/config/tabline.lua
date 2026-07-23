@@ -1,51 +1,11 @@
 -- VSCode風バッファタブライン（Nerd Fontsアイコン付き）
 
-local function i(code) return vim.fn.nr2char(code) .. ' ' end
-
-local icons = {
-  lua        = i(0xe620),
-  ts         = i(0xe628),
-  tsx        = i(0xe628),
-  js         = i(0xe74e),
-  jsx        = i(0xe74e),
-  go         = i(0xe626),
-  py         = i(0xe606),
-  rs         = i(0xe7a8),
-  rb         = i(0xe739),
-  java       = i(0xe738),
-  kt         = i(0xe634),
-  swift      = i(0xe755),
-  html       = i(0xe736),
-  css        = i(0xe749),
-  scss       = i(0xe603),
-  json       = i(0xe60b),
-  toml       = i(0xe6b2),
-  md         = i(0xe73e),
-  sh         = i(0xe615),
-  bash       = i(0xe615),
-  zsh        = i(0xe615),
-  vim        = i(0xe62b),
-  tf         = i(0xe69a),
-  tfvars     = i(0xe69a),
-  graphql    = i(0xe662),
-  sql        = i(0xe706),
-  php        = i(0xe73d),
-  c          = i(0xe61e),
-  cpp        = i(0xe61d),
-  cs         = i(0xe648),
-  dockerfile = i(0xe650),
-  gitignore  = i(0xe65d),
-  env        = i(0xf462),
-  lock       = i(0xf023),
-  default    = i(0xf15b),
-}
+-- アイコン定義は config.file_icons に集約（explorer/git_panel/tabline で共有）。
+-- タブラインはアイコンの後ろに空白を1つ付けて表示する。
+local file_icons = require('config.file_icons')
 
 local function get_icon(filename)
-  local ext = filename:match('%.([^%.]+)$')
-  if filename:lower() == 'dockerfile' then return icons.dockerfile end
-  if filename:lower():match('%.env') then return icons.env end
-  if filename:lower():match('gitignore') then return icons.gitignore end
-  return icons[ext] or icons.default
+  return file_icons.get(filename, false) .. ' '
 end
 
 local function set_highlights()

@@ -131,18 +131,9 @@ end
 -- アイコン（拡張子ごと、tabline.lua/explorer.luaと同方式）
 -- ══════════════════════════════════════════════
 
-local function icon_char(code) return vim.fn.nr2char(code) end
-local FOLDER_ICON, DEFAULT_ICON = 0xe5ff, 0xf15b
-local FILE_ICONS = {
-  lua = 0xe620, ts = 0xe628, tsx = 0xe628, js = 0xe74e, jsx = 0xe74e,
-  go = 0xe626, py = 0xe606, rs = 0xe7a8, rb = 0xe739, md = 0xe73e,
-  json = 0xe60b, toml = 0xe6b2, sh = 0xe615, yml = 0xe6a8, yaml = 0xe6a8,
-}
-local function get_icon(name, is_dir)
-  if is_dir then return icon_char(FOLDER_ICON) end
-  local ext = name:match('%.([^%.]+)$')
-  return icon_char((ext and FILE_ICONS[ext]) or DEFAULT_ICON)
-end
+-- アイコン定義は config.file_icons に集約（explorer/git_panel/tabline で共有）
+local file_icons = require('config.file_icons')
+local function get_icon(name, is_dir) return file_icons.get(name, is_dir) end
 
 -- ══════════════════════════════════════════════
 -- 描画

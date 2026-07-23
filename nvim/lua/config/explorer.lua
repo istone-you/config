@@ -46,40 +46,14 @@ end
 
 -- ══════════════════════════════════════════════
 -- アイコン（拡張子ごと・Nerd Fonts）
+-- 定義は config.file_icons に集約（explorer/git_panel/tabline で共有）
 -- ══════════════════════════════════════════════
 
-local function icon_char(code) return vim.fn.nr2char(code) end
+local file_icons = require('config.file_icons')
 
-local FOLDER_ICON       = 0xe5ff
-local DEFAULT_FILE_ICON = 0xf15b
-local ENV_ICON          = 0xf462
-local LOCK_ICON         = 0xf023
-
-local FILE_ICONS = {
-  lua = 0xe620, ts = 0xe628, tsx = 0xe628, js = 0xe74e, jsx = 0xe74e,
-  go = 0xe626, py = 0xe606, rs = 0xe7a8, rb = 0xe739, java = 0xe738,
-  kt = 0xe634, swift = 0xe755, html = 0xe736, css = 0xe749, scss = 0xe603,
-  json = 0xe60b, toml = 0xe6b2, md = 0xe73e, sh = 0xe615, bash = 0xe615,
-  zsh = 0xe615, vim = 0xe62b, tf = 0xe69a, tfvars = 0xe69a, graphql = 0xe662,
-  sql = 0xe706, php = 0xe73d, c = 0xe61e, cpp = 0xe61d, cs = 0xe648,
-}
-
-local SPECIAL_ICONS = {
-  dockerfile = 0xe650,
-  gitignore  = 0xe65d,
-}
-
-local function get_icon(name, isdir)
-  if isdir then return icon_char(FOLDER_ICON) end
-  local lower = name:lower()
-  if lower == 'dockerfile' then return icon_char(SPECIAL_ICONS.dockerfile) end
-  if lower:match('gitignore') then return icon_char(SPECIAL_ICONS.gitignore) end
-  if lower:match('%.env') then return icon_char(ENV_ICON) end
-  if lower:match('%.lock$') then return icon_char(LOCK_ICON) end
-  local ext = name:match('%.([^%.]+)$')
-  local code = ext and FILE_ICONS[ext]
-  return icon_char(code or DEFAULT_FILE_ICON)
-end
+local FOLDER_ICON = file_icons.FOLDER
+local function icon_char(code) return file_icons.char(code) end
+local function get_icon(name, isdir) return file_icons.get(name, isdir) end
 
 -- ══════════════════════════════════════════════
 -- gitステータス（yazi/plugins/git.yazi と同じ判定・表示ロジック）
@@ -251,6 +225,10 @@ function render()
     end
     if sign and sign ~= '' and GIT_HL[git_code] then
       hl(lnum, GIT_HL[git_code], #line - #sign, #line)
+    end
+    local icon_group = file_icons.icon_hl(entry.name, entry.isdir)
+    if icon_group then
+      hl(lnum, icon_group, 2, 2 + #icon)
     end
   end
 
