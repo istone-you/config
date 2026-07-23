@@ -900,7 +900,7 @@ end
 -- ══════════════════════════════════════════════
 
 local function setup_hl()
-  vim.api.nvim_set_hl(0, 'GitPanelBg',           { bg = '#1a1b26' })
+  vim.api.nvim_set_hl(0, 'GitPanelBg',           { bg = 'NONE' })
   vim.api.nvim_set_hl(0, 'GitPanelCursorLine',   { bg = '#2d3250' })
   vim.api.nvim_set_hl(0, 'GitPanelHeader',       { fg = '#7aa2f7', bold = true })
   vim.api.nvim_set_hl(0, 'GitPanelSection',      { fg = '#e0af68', bold = true })

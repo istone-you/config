@@ -300,10 +300,10 @@ function M.menu(title, items, opts, on_choice)
 end
 
 function M.setup_hl()
-  vim.api.nvim_set_hl(0, 'GitPanelConfirmBg',     { bg = '#1a1b26', fg = '#f7768e', bold = true })
-  vim.api.nvim_set_hl(0, 'GitPanelConfirmBorder', { bg = '#1a1b26', fg = '#f7768e' })
-  vim.api.nvim_set_hl(0, 'GitPanelInputBg',       { bg = '#1a1b26', fg = '#c0caf5' })
-  vim.api.nvim_set_hl(0, 'GitPanelInputBorder',   { bg = '#1a1b26', fg = '#7aa2f7' })
+  vim.api.nvim_set_hl(0, 'GitPanelConfirmBg',     { bg = 'NONE', fg = '#f7768e', bold = true })
+  vim.api.nvim_set_hl(0, 'GitPanelConfirmBorder', { bg = 'NONE', fg = '#f7768e' })
+  vim.api.nvim_set_hl(0, 'GitPanelInputBg',       { bg = 'NONE', fg = '#c0caf5' })
+  vim.api.nvim_set_hl(0, 'GitPanelInputBorder',   { bg = 'NONE', fg = '#7aa2f7' })
 end
 
 return M
