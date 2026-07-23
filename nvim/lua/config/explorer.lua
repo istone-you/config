@@ -294,7 +294,7 @@ function render()
     end
     -- 薄字化した行はアイコンのブランド色を付けない（全体を薄く保つ）
     if not unmanaged then
-      local icon_group = file_icons.icon_hl(entry.name, entry.isdir)
+      local icon_group = file_icons.icon_hl(entry.name, entry.isdir, entry.path)
       if icon_group then
         hl(lnum, icon_group, 2, 2 + #icon)
       end
@@ -376,13 +376,20 @@ local function set_preview_title(text)
   end
 end
 
-local function set_preview_lines(lines, filetype)
+local preview_hl_ns = vim.api.nvim_create_namespace('explorer_preview_hl')
+
+-- highlights: { {lnum0, group, col_start, col_end}, ... }（任意）
+local function set_preview_lines(lines, filetype, highlights)
   if not (preview_buf and vim.api.nvim_buf_is_valid(preview_buf)) then return end
   if vim.bo[preview_buf].buftype == 'terminal' then recreate_preview_buf(false) end
   vim.bo[preview_buf].modifiable = true
   vim.bo[preview_buf].filetype = filetype or ''
   vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, lines)
   vim.bo[preview_buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(preview_buf, preview_hl_ns, 0, -1)
+  for _, h in ipairs(highlights or {}) do
+    vim.api.nvim_buf_add_highlight(preview_buf, preview_hl_ns, h[2], h[1], h[3], h[4])
+  end
 end
 
 local function set_preview_ansi(ansi_text)
@@ -392,26 +399,50 @@ local function set_preview_ansi(ansi_text)
   vim.api.nvim_chan_send(chan, ansi_text)
 end
 
+-- ディレクトリプレビュー。本体一覧(list_dir)と同じ並び・色で lines と highlights を返す。
 local function preview_dir_lines(path)
   local names = vim.fn.readdir(path) or {}
-  local list = {}
+  local entries = {}
   for _, name in ipairs(names) do
-    if show_hidden or name:sub(1, 1) ~= '.' then table.insert(list, name) end
-  end
-  table.sort(list, function(a, b) return a:lower() < b:lower() end)
-  if #list == 0 then return { '  (空)' } end
-  local lines = {}
-  for _, name in ipairs(list) do
-    local full = join_path(path, name)
-    local isdir = vim.fn.isdirectory(full) == 1
-    local suffix = ''
-    local st = vim.uv.fs_lstat(full)
-    if st and st.type == 'link' then
-      suffix = ' -> ' .. (vim.uv.fs_readlink(full) or '?')
+    if show_hidden or name:sub(1, 1) ~= '.' then
+      local full = join_path(path, name)
+      local e = { name = name, path = full, isdir = vim.fn.isdirectory(full) == 1 }
+      local st = vim.uv.fs_lstat(full)
+      if st and st.type == 'link' then e.link = vim.uv.fs_readlink(full) end
+      entries[#entries + 1] = e
     end
-    table.insert(lines, '  ' .. get_icon(name, isdir) .. '  ' .. name .. suffix)
   end
-  return lines
+  -- list_dir と同じ: ディレクトリが先、その後は名前順
+  table.sort(entries, function(a, b)
+    if a.isdir ~= b.isdir then return a.isdir end
+    return a.name:lower() < b.name:lower()
+  end)
+  if #entries == 0 then return { '  (空)' }, {} end
+
+  local git_ready = git_status_cwd == cwd
+  local lines, hls = {}, {}
+  for _, e in ipairs(entries) do
+    local icon = get_icon(e.name, e.isdir)
+    local line = '  ' .. icon .. '  ' .. e.name
+    local link_cs, link_ce
+    if e.link then
+      link_cs = #line
+      line = line .. ' -> ' .. e.link
+      link_ce = #line
+    end
+    lines[#lines + 1] = line
+    local lnum = #lines - 1
+    local unmanaged = git_ready and entry_unmanaged(e) or false
+    hls[#hls + 1] = { lnum, e.isdir and 'ExplorerDir' or 'ExplorerFile', 0, -1 }
+    if unmanaged then
+      hls[#hls + 1] = { lnum, 'ExplorerDimmed', 0, -1 }
+    else
+      local ig = file_icons.icon_hl(e.name, e.isdir, e.path)
+      if ig then hls[#hls + 1] = { lnum, ig, 2, 2 + #icon } end
+    end
+    if link_cs then hls[#hls + 1] = { lnum, 'ExplorerSymlink', link_cs, link_ce } end
+  end
+  return lines, hls
 end
 
 --- batが無い/失敗した時のフォールバック。実際にcatを起動する代わりに直接読むが、
@@ -467,7 +498,8 @@ function render_preview()
   end
   set_preview_title(entry.name)
   if entry.isdir then
-    set_preview_lines(preview_dir_lines(entry.path), '')
+    local lines, hls = preview_dir_lines(entry.path)
+    set_preview_lines(lines, '', hls)
   else
     preview_file(entry.path)
   end
@@ -538,6 +570,7 @@ local function move_sidebar(side)
   vim.api.nvim_win_set_width(win, PANEL_WIDTH)
   vim.wo[win].winfixwidth = true
   if had_preview then toggle_sidebar_preview() end
+  vim.cmd('redrawtabline')
 end
 
 local function enter_dir()
@@ -1020,6 +1053,7 @@ teardown_ui = function()
   win, buf, preview_win, preview_buf = nil, nil, nil, nil
   last_preview_path = nil
   is_fullscreen = false
+  pcall(vim.cmd, 'redrawtabline')
 end
 
 --- 全画面表示は「これがこのnvimプロセスの用件そのもの」という前提(herdrの
@@ -1104,6 +1138,7 @@ local function open(fullscreen)
   vim.wo[win].signcolumn     = 'no'
   vim.wo[win].cursorline     = true
   vim.wo[win].winhighlight   = 'Normal:ExplorerBg,CursorLine:ExplorerCursorLine'
+  vim.wo[win].statusline     = '%#ExplorerBg#' -- ステータスラインを空＋透明にして隠す
 
   render()
 
@@ -1161,12 +1196,23 @@ local function open(fullscreen)
     once     = true,
     callback = close,
   })
+
+  vim.cmd('redrawtabline')
 end
 
 function M.open(fullscreen)
   if not (win and vim.api.nvim_win_is_valid(win)) then
     open(fullscreen)
   end
+end
+
+-- タブラインが explorer の上に被らないよう、左サイドバー表示時に必要な左パディング桁数。
+-- （右サイドバー/全画面/非表示なら0）
+function M.sidebar_pad()
+  if is_fullscreen then return 0 end
+  if not (win and vim.api.nvim_win_is_valid(win)) then return 0 end
+  if sidebar_side ~= 'left' then return 0 end
+  return vim.api.nvim_win_get_width(win) + 1 -- サイドバー幅 + 区切り1桁
 end
 
 function M.close()

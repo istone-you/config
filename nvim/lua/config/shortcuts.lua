@@ -132,6 +132,7 @@ DATA[1] = {
     { 'Space l g',       'lazygitを開く（ターミナル版）' },
     { 'Tab / Shift-Tab', '次 / 前のバッファへ' },
     { 'Space q',         '現在のバッファを閉じる' },
+    { ':q / :qa 等',     '通常の終了コマンド。Neovimを閉じる直前に確認が入る（:q! など ! 付きは確認なしで即終了）' },
     { 'g d / g r',       'Glance: 定義元 / 参照元' },
     { 'g y / g i',       'Glance: 型定義 / 実装' },
     { 'K',               'LSP: ホバードキュメント' },
@@ -463,6 +464,7 @@ local function open()
   vim.wo[win].cursorline     = false
   vim.wo[win].winfixwidth    = true
   vim.wo[win].winhighlight   = 'Normal:ShortcutsBg'
+  vim.wo[win].statusline     = '%#ShortcutsBg#' -- ステータスラインを隠す（パネル背景に溶け込ませる）
 
   render()
 

@@ -300,10 +300,11 @@ function M.menu(title, items, opts, on_choice)
 end
 
 function M.setup_hl()
-  vim.api.nvim_set_hl(0, 'GitPanelConfirmBg',     { bg = 'NONE', fg = '#f7768e', bold = true })
-  vim.api.nvim_set_hl(0, 'GitPanelConfirmBorder', { bg = 'NONE', fg = '#f7768e' })
-  vim.api.nvim_set_hl(0, 'GitPanelInputBg',       { bg = 'NONE', fg = '#c0caf5' })
-  vim.api.nvim_set_hl(0, 'GitPanelInputBorder',   { bg = 'NONE', fg = '#7aa2f7' })
+  -- ダイアログはパネル(#282828)より少し明るい実背景にして浮かせる（透明にしない）
+  vim.api.nvim_set_hl(0, 'GitPanelConfirmBg',     { bg = '#32302f', fg = '#f7768e', bold = true })
+  vim.api.nvim_set_hl(0, 'GitPanelConfirmBorder', { bg = '#32302f', fg = '#f7768e' })
+  vim.api.nvim_set_hl(0, 'GitPanelInputBg',       { bg = '#32302f', fg = '#c0caf5' })
+  vim.api.nvim_set_hl(0, 'GitPanelInputBorder',   { bg = '#32302f', fg = '#7aa2f7' })
 end
 
 return M

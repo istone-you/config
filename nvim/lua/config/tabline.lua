@@ -9,7 +9,7 @@ local function get_icon(filename)
 end
 
 local function set_highlights()
-  vim.api.nvim_set_hl(0, 'TabLineFill',     { bg = '#252526' })
+  vim.api.nvim_set_hl(0, 'TabLineFill',     { bg = 'NONE' }) -- タブが無い所は透明
   vim.api.nvim_set_hl(0, 'TabLine',         { fg = '#8b8b8b', bg = '#2d2d2d' })
   vim.api.nvim_set_hl(0, 'TabLineSel',      { fg = '#ffffff', bg = '#1e1e1e', underline = true, sp = '#007acc' })
   vim.api.nvim_set_hl(0, 'TabLineMod',      { fg = '#e8a44a', bg = '#2d2d2d' })
@@ -42,8 +42,22 @@ local function tabline()
   local s = ''
   local current = vim.api.nvim_get_current_buf()
 
+  -- 左サイドバー(explorer)の上にはタブを出さず、エディタの上から始める
+  local ok, explorer = pcall(require, 'config.explorer')
+  local pad = (ok and explorer.sidebar_pad) and explorer.sidebar_pad() or 0
+  if pad > 0 then
+    s = s .. '%#TabLineFill#' .. string.rep(' ', pad)
+  end
+
   local buffers = vim.tbl_filter(function(b)
-    return vim.bo[b].buflisted and vim.api.nvim_buf_is_valid(b) and vim.bo[b].buftype ~= 'terminal'
+    if not (vim.bo[b].buflisted and vim.api.nvim_buf_is_valid(b) and vim.bo[b].buftype ~= 'terminal') then
+      return false
+    end
+    -- 無名バッファ（[No Name]）はタブに出さない
+    if vim.api.nvim_buf_get_name(b) == '' then
+      return false
+    end
+    return true
   end, vim.api.nvim_list_bufs())
 
   for _, bufnr in ipairs(buffers) do

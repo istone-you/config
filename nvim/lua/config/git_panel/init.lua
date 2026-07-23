@@ -550,7 +550,7 @@ function activate_panel(idx)
   vim.wo[win.left_win].number       = false
   vim.wo[win.left_win].signcolumn   = 'no'
   vim.wo[win.left_win].cursorline   = true
-  vim.wo[win.left_win].winhighlight = 'Normal:GitPanelBg,CursorLine:GitPanelCursorLine'
+  vim.wo[win.left_win].winhighlight = 'Normal:GitPanelBg,CursorLine:GitPanelCursorLine,FloatBorder:GitPanelBorder'
   vim.api.nvim_win_set_config(win.left_win, { title = ' ' .. spec.title .. ' ', title_pos = 'center' })
   render_tabbar(idx)
 
@@ -803,7 +803,7 @@ local function open(fullscreen)
     relative = 'editor', width = L.tabbar_w, height = L.tabbar_h, col = L.outer_col, row = L.tabbar_row,
     style = 'minimal', border = 'single',
   })
-  vim.wo[win.tabbar_win].winhighlight = 'Normal:GitPanelBg'
+  vim.wo[win.tabbar_win].winhighlight = 'Normal:GitPanelBg,FloatBorder:GitPanelBorder'
   bind_click(win.tabbar_buf)
 
   win.left_buf = vim.api.nvim_create_buf(false, true)
@@ -830,7 +830,7 @@ local function open(fullscreen)
   })
   vim.wo[win.right_win].wrap = false
   vim.wo[win.right_win].signcolumn = 'no'
-  vim.wo[win.right_win].winhighlight = 'Normal:GitPanelBg'
+  vim.wo[win.right_win].winhighlight = 'Normal:GitPanelBg,FloatBorder:GitPanelBorder'
   bind_click(win.right_buf)
   bind_diff_keys(win.right_buf)
 
@@ -846,7 +846,7 @@ local function open(fullscreen)
   vim.wo[win.cmdlog_win].wrap = false
   bind_click(win.cmdlog_buf)
   vim.wo[win.cmdlog_win].signcolumn = 'no'
-  vim.wo[win.cmdlog_win].winhighlight = 'Normal:GitPanelBg'
+  vim.wo[win.cmdlog_win].winhighlight = 'Normal:GitPanelBg,FloatBorder:GitPanelBorder'
   -- フォーカス中(@で拡大)は @/q/Escで元の大きさに戻す。フォーカス前ならq/Escはパネル自体を閉じる
   for _, key in ipairs({ '@', 'q', '<Esc>' }) do
     vim.keymap.set('n', key, function()
@@ -900,7 +900,8 @@ end
 -- ══════════════════════════════════════════════
 
 local function setup_hl()
-  vim.api.nvim_set_hl(0, 'GitPanelBg',           { bg = 'NONE' })
+  vim.api.nvim_set_hl(0, 'GitPanelBg',           { bg = '#282828' })
+  vim.api.nvim_set_hl(0, 'GitPanelBorder',       { bg = '#282828', fg = '#565f89' })
   vim.api.nvim_set_hl(0, 'GitPanelCursorLine',   { bg = '#2d3250' })
   vim.api.nvim_set_hl(0, 'GitPanelHeader',       { fg = '#7aa2f7', bold = true })
   vim.api.nvim_set_hl(0, 'GitPanelSection',      { fg = '#e0af68', bold = true })

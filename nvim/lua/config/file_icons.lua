@@ -164,8 +164,23 @@ M.color_by_code = {
   [0xe5ff] = '#7aa2f7',
 }
 
--- ファイル名（+ ディレクトリか否か）からブランドカラーを返す
-function M.color(name, isdir)
+-- テストファイル（VSCode風にアイコンをオレンジにする）。path があればパス基準も判定。
+M.TEST_COLOR = '#ff9e64'
+function M.is_test_file(name, path)
+  local l = name:lower()
+  -- *.test./*.spec. + js,ts,jsx,tsx,mjs,cjs,mts,cts
+  if l:match('%.test%.[cm]?[jt]sx?$') or l:match('%.spec%.[cm]?[jt]sx?$') then return true end
+  if l:match('%.e2e%.ts$') then return true end -- *.e2e.ts
+  if l:match('_test%.go$') then return true end -- *_test.go
+  -- Rust: tests/ 配下（統合テストの慣習）
+  local p = (path or ''):lower()
+  if p:match('/tests/[^/]+%.rs$') or p:match('^tests/[^/]+%.rs$') then return true end
+  return false
+end
+
+-- ファイル名（+ ディレクトリか否か・任意でフルパス）からブランドカラーを返す
+function M.color(name, isdir, path)
+  if not isdir and M.is_test_file(name, path) then return M.TEST_COLOR end
   return M.color_by_code[M.code(name, isdir)]
 end
 
@@ -173,8 +188,8 @@ local hl_defined = {}
 
 -- アイコンの色に対応するハイライトグループ名を返す（無ければnil）。
 -- グループは遅延生成し、ColorScheme変更時に作り直す。
-function M.icon_hl(name, isdir)
-  local hex = M.color(name, isdir)
+function M.icon_hl(name, isdir, path)
+  local hex = M.color(name, isdir, path)
   if not hex then return nil end
   local grp = 'FileIcon_' .. hex:sub(2)
   if not hl_defined[grp] then

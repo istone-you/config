@@ -8,13 +8,19 @@ vim.cmd.colorscheme('retrobox')
 vim.api.nvim_set_hl(0, 'Normal',      { bg = 'NONE' })
 vim.api.nvim_set_hl(0, 'NormalFloat', { bg = 'NONE' })
 vim.api.nvim_set_hl(0, 'NormalNC',    { bg = 'NONE' })
+-- サイン列(git gutter等)の背景も透明にする（editorが透過なので浮いて見えるのを防ぐ）
+vim.api.nvim_set_hl(0, 'SignColumn',  { bg = 'NONE' })
+-- ウィンドウ区切り線も背景を透明に（線色だけ残す）
+vim.api.nvim_set_hl(0, 'WinSeparator', { bg = 'NONE', fg = '#565f89' })
 
 -- カラースキームを変えても透過を維持
 vim.api.nvim_create_autocmd('ColorScheme', {
   callback = function()
-    vim.api.nvim_set_hl(0, 'Normal',      { bg = 'NONE' })
-    vim.api.nvim_set_hl(0, 'NormalFloat', { bg = 'NONE' })
-    vim.api.nvim_set_hl(0, 'NormalNC',    { bg = 'NONE' })
+    vim.api.nvim_set_hl(0, 'Normal',       { bg = 'NONE' })
+    vim.api.nvim_set_hl(0, 'NormalFloat',  { bg = 'NONE' })
+    vim.api.nvim_set_hl(0, 'NormalNC',     { bg = 'NONE' })
+    vim.api.nvim_set_hl(0, 'SignColumn',   { bg = 'NONE' })
+    vim.api.nvim_set_hl(0, 'WinSeparator', { bg = 'NONE', fg = '#565f89' })
   end,
 })
 

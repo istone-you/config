@@ -36,4 +36,26 @@ T.describe('tabline', function()
   end)
 end)
 
+T.describe('tabline sidebar padding', function()
+  T.it('pads the tabline so tabs do not sit above a left-side explorer', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/main.lua', { 'return 1' })
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/main.lua'))
+
+    local explorer = require('config.explorer')
+    explorer.open(false) -- 既定は左
+    vim.wait(60)
+    local padded = _G._tabline()
+    T.ok(padded:find('^%%#TabLineFill#   ', 1) ~= nil, 'left explorer → tabline starts with fill padding')
+
+    explorer.close()
+    vim.wait(30)
+    local plain = _G._tabline()
+    T.ok(plain:find('^%%#TabLineFill#   ', 1) == nil, 'no padding once explorer is closed')
+
+    T.rmrf(dir)
+  end)
+end)
+
 T.summary()

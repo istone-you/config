@@ -97,6 +97,28 @@ T.describe('file_icons', function()
     T.eq(file_icons.color('mystery.xyz', false), nil) -- デフォルトは色なし（文字色にフォールバック）
   end)
 
+  T.it('color() makes test/spec files orange (VSCode風)', function()
+    local orange = '#ff9e64'
+    -- *.test./*.spec. + js,ts,jsx,tsx,mjs,cjs,mts,cts
+    T.eq(file_icons.color('foo.test.ts', false), orange)
+    T.eq(file_icons.color('foo.test.tsx', false), orange)
+    T.eq(file_icons.color('foo.test.mts', false), orange)
+    T.eq(file_icons.color('foo.test.cjs', false), orange)
+    T.eq(file_icons.color('bar.spec.js', false), orange)
+    T.eq(file_icons.color('bar.spec.jsx', false), orange)
+    T.eq(file_icons.color('flow.e2e.ts', false), orange) -- *.e2e.ts
+    T.eq(file_icons.color('handler_test.go', false), orange) -- *_test.go
+    -- Rust: tests/ 配下（パス基準）
+    T.eq(file_icons.color('foo.rs', false, '/proj/tests/foo.rs'), orange)
+    T.eq(file_icons.color('foo.rs', false, 'tests/foo.rs'), orange)
+    -- tests/外の .rs や *_test.rs は対象外（Rustでは一般的でない）
+    T.eq(file_icons.color('lib_test.rs', false, '/proj/src/lib_test.rs'), '#dea584')
+    T.eq(file_icons.color('main.rs', false, '/proj/src/main.rs'), '#dea584')
+    -- 通常ファイルは従来の色、"test.ts" 単体はテスト扱いしない
+    T.eq(file_icons.color('main.ts', false), '#519aba')
+    T.eq(file_icons.color('test.ts', false), '#519aba')
+  end)
+
   T.it('icon_hl() returns a highlight group for colored icons and nil otherwise', function()
     local grp = file_icons.icon_hl('main.lua', false)
     T.ok(grp ~= nil and grp:find('FileIcon_', 1, true) == 1, 'colored icon should get a FileIcon_* group')

@@ -82,3 +82,7 @@ kitty_graphics = true
 
 [theme]
 name = "catppuccin"
+
+[theme.custom]
+# パネルクロム(タブバー等)の背景を端末背景に透過させる（reset/none/transparent/default）
+panel_bg = "reset"

@@ -30,7 +30,9 @@ vim.api.nvim_create_autocmd('WinClosed', {
       if #vim.api.nvim_list_tabpages() > 1 then
         vim.cmd('tabclose')
       else
-        vim.cmd('quit')
+        -- 未保存があるとquitはE37で失敗する。quit_confirm経由で「保存/破棄/キャンセル」を促す
+        local ok, qc = pcall(require, 'config.quit_confirm')
+        if ok then qc.exit_or_prompt() else vim.cmd('quit') end
       end
     end)
   end,
