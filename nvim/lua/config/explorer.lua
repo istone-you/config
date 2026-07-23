@@ -181,6 +181,13 @@ end
 -- 一覧取得・表示
 -- ══════════════════════════════════════════════
 
+-- パス連結。cwd が '/'（ルート）のときに '//app' のような重複スラッシュを
+-- 作らないようにする（重複すると :h での親移動時に累積していく）。
+local function join_path(dir, name)
+  if dir == '/' then return '/' .. name end
+  return dir .. '/' .. name
+end
+
 local function build_display_path(path)
   local home = vim.fn.expand('~')
   if path == home then return '~' end
@@ -196,7 +203,7 @@ local function list_dir(path)
   for _, name in ipairs(names) do
     if show_hidden or name:sub(1, 1) ~= '.' then
       if filter == '' or name:lower():find(filter:lower(), 1, true) then
-        local full = path .. '/' .. name
+        local full = join_path(path, name)
         local entry = { name = name, path = full, isdir = vim.fn.isdirectory(full) == 1 }
         local st = vim.uv.fs_lstat(full)
         if st and st.type == 'link' then
@@ -394,7 +401,7 @@ local function preview_dir_lines(path)
   if #list == 0 then return { '  (空)' } end
   local lines = {}
   for _, name in ipairs(list) do
-    local full = path .. '/' .. name
+    local full = join_path(path, name)
     local isdir = vim.fn.isdirectory(full) == 1
     local suffix = ''
     local st = vim.uv.fs_lstat(full)
@@ -654,7 +661,7 @@ local function create()
     local is_dir = input:sub(-1) == '/'
     local name = is_dir and input:sub(1, -2) or input
     if name == '' then return end
-    local full = cwd .. '/' .. name
+    local full = join_path(cwd, name)
     if is_dir then
       vim.fn.mkdir(full, 'p')
     else
@@ -680,7 +687,7 @@ local function rename()
   local entry = list[1]
   input_modal('リネーム', entry.name, function(input)
     if not input or input == '' or input == entry.name then return end
-    local new_path = cwd .. '/' .. input
+    local new_path = join_path(cwd, input)
     if vim.fn.filereadable(new_path) == 1 or vim.fn.isdirectory(new_path) == 1 then
       vim.notify('既に存在します: ' .. input, vim.log.levels.ERROR)
       return
@@ -804,7 +811,7 @@ local function unique_dest(dest_dir, name)
   if not base then
     base, ext = name, ''
   end
-  local candidate = dest_dir .. '/' .. name
+  local candidate = join_path(dest_dir, name)
   local n = 1
   while vim.fn.filereadable(candidate) == 1 or vim.fn.isdirectory(candidate) == 1 do
     candidate = string.format('%s/%s_copy%d%s', dest_dir, base, n, ext)
@@ -820,7 +827,7 @@ local function paste(overwrite)
   end
   for _, src in ipairs(clipboard.paths) do
     local name = vim.fn.fnamemodify(src, ':t')
-    local dest = cwd .. '/' .. name
+    local dest = join_path(cwd, name)
     if not overwrite and (vim.fn.filereadable(dest) == 1 or vim.fn.isdirectory(dest) == 1) then
       dest = unique_dest(cwd, name)
     end

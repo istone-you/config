@@ -150,6 +150,46 @@ T.describe('explorer', function()
     T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
   end)
 
+  T.it('does not accumulate slashes when going to / and back (no //app)', function()
+    local res = run_child([[
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir, 'p')
+      vim.fn.chdir(dir)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+      local function header() return lines(win)[1] end
+
+      -- ルート(/)まで戻る（go_parentが変化しなくなったら到達）
+      local prev
+      for _ = 1, 20 do
+        local h = header()
+        if h == prev then break end
+        prev = h
+        feed('h')
+        vim.wait(60)
+      end
+
+      -- / で子へ入る→戻る を数回。二重スラッシュが出ない/累積しないこと
+      for round = 1, 3 do
+        assert_eq(header():find('//', 1, true), nil, 'no // at root (round ' .. round .. '): ' .. header())
+        local trow
+        for i, l in ipairs(lines(win)) do if l:find('tmp', 1, true) then trow = i end end
+        assert_eq(trow ~= nil, true, 'tmp entry exists at /')
+        vim.api.nvim_win_set_cursor(win, { trow, 0 })
+        feed('l')
+        vim.wait(100)
+        assert_eq(header():find('//', 1, true), nil, 'no // after entering (round ' .. round .. '): ' .. header())
+        assert_eq(header():find('/tmp', 1, true) ~= nil, true, 'should be /tmp: ' .. header())
+        feed('h')
+        vim.wait(80)
+      end
+    ]])
+    T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
+  end)
+
   T.it('lists dirs before files (alphabetical); l/h navigate in/out; a/r/d create/rename/delete', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir .. '/zdir', 'p')
