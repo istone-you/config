@@ -19,6 +19,7 @@ local preview_win, preview_buf
 local last_preview_path = nil
 local BAT_AVAILABLE = vim.fn.executable('bat') == 1
 local is_fullscreen = false
+local sidebar_side = 'left' -- サイドバー表示位置（'left' / 'right'）。< / > で切替、以降も維持
 
 local git_status = {}      -- [リポジトリルート相対path] = GIT_CODES（git statusは常にルート相対で返るため）
 local git_status_cwd = nil -- git_statusがどのcwdのものか
@@ -498,6 +499,8 @@ local function toggle_sidebar_preview()
   local height = vim.o.lines - 3
   local width = vim.o.columns - PANEL_WIDTH - 3 -- サイドバー幅+区切り+ボーダーを避ける
   if width < 20 or height < 5 then return end
+  -- サイドバーが左なら、その右側（エディタ上）に出す
+  local col = sidebar_side == 'left' and (PANEL_WIDTH + 1) or 0
   preview_buf = vim.api.nvim_create_buf(false, true)
   vim.bo[preview_buf].buftype = 'nofile'
   vim.bo[preview_buf].buflisted = false
@@ -506,7 +509,7 @@ local function toggle_sidebar_preview()
     relative = 'editor',
     width = width,
     height = height,
-    col = 0,
+    col = col,
     row = 1,
     style = 'minimal',
     border = 'single',
@@ -519,6 +522,22 @@ local function toggle_sidebar_preview()
   vim.wo[preview_win].winhighlight = 'Normal:ExplorerBg'
   last_preview_path = nil
   render_preview()
+end
+
+-- サイドバーを左右へ移動する（'left' / 'right'）。プレビュー表示中は位置が変わるので
+-- 一旦閉じて移動後に開き直す。全画面モードでは無効。
+local function move_sidebar(side)
+  if is_fullscreen then return end
+  if not (win and vim.api.nvim_win_is_valid(win)) then return end
+  if sidebar_side == side then return end
+  local had_preview = preview_win and vim.api.nvim_win_is_valid(preview_win)
+  if had_preview then close_sidebar_preview() end
+  vim.api.nvim_set_current_win(win)
+  vim.cmd(side == 'left' and 'wincmd H' or 'wincmd L')
+  sidebar_side = side
+  vim.api.nvim_win_set_width(win, PANEL_WIDTH)
+  vim.wo[win].winfixwidth = true
+  if had_preview then toggle_sidebar_preview() end
 end
 
 local function enter_dir()
@@ -1069,7 +1088,8 @@ local function open(fullscreen)
     vim.wo[preview_win].signcolumn   = 'no'
     vim.wo[preview_win].winhighlight = 'Normal:ExplorerBg'
   else
-    vim.cmd('botright ' .. PANEL_WIDTH .. 'vsplit')
+    local pos = sidebar_side == 'left' and 'topleft' or 'botright'
+    vim.cmd(pos .. ' ' .. PANEL_WIDTH .. 'vsplit')
     win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(win, buf)
     vim.wo[win].winfixwidth = true
@@ -1129,6 +1149,8 @@ local function open(fullscreen)
   map('/',       set_filter)
   map('s',       fd_search)
   map('<C-p>',   toggle_sidebar_preview)
+  map('<',       function() move_sidebar('left') end)
+  map('>',       function() move_sidebar('right') end)
 
   local watched = tostring(win)
   if preview_win then watched = watched .. ',' .. tostring(preview_win) end

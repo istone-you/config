@@ -236,9 +236,13 @@ T.describe('explorer', function()
       vim.wait(800)
       assert_eq(contains(pv_lines(), 'ZZZ here'), true, 'preview follows cursor to z.txt: ' .. vim.inspect(pv_lines()))
 
-      -- サイドバー右端に被らない（ボーダー込みで右側にサイドバー分の余白がある）
+      -- サイドバーと被らない（左右どちら側でも）
       local c = vim.api.nvim_win_get_config(preview_win())
-      assert_eq((c.col + c.width + 2) <= (vim.o.columns - 48 - 1), true, 'preview must not overlap the sidebar')
+      local scol = vim.api.nvim_win_get_position(win)[2]
+      local swidth = vim.api.nvim_win_get_width(win)
+      local p_left, p_right = c.col, c.col + c.width + 1 -- ボーダー込み
+      local s_left, s_right = scol, scol + swidth - 1
+      assert_eq(p_right < s_left or p_left > s_right, true, 'preview must not overlap the sidebar')
 
       -- もう一度で消える
       feed('<C-p>')
@@ -252,6 +256,42 @@ T.describe('explorer', function()
       feed('<CR>')
       vim.wait(200)
       assert_eq(preview_win(), nil, 'Enter (open file) closes the preview')
+    ]])
+    T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
+  end)
+
+  T.it('< / > move the sidebar to the left / right (winid preserved)', function()
+    local res = run_child([[
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir, 'p')
+      vim.fn.writefile({ 'x' }, dir .. '/a.txt')
+      vim.fn.chdir(dir)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(60)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+      local function col() return vim.api.nvim_win_get_position(win)[2] end
+
+      assert_eq(col(), 0, 'default is left side')
+      feed('>')
+      vim.wait(50)
+      assert_eq(list_win(), win, 'same window id after move (wincmd L)')
+      assert_eq(col() > 0, true, 'moved to the right')
+      feed('<')
+      vim.wait(50)
+      assert_eq(col(), 0, 'moved back to the left')
+
+      -- 位置は開き直しても維持される
+      feed('>')
+      vim.wait(50)
+      assert_eq(col() > 0, true, 'right again')
+      feed('q')
+      vim.wait(50)
+      explorer.open(false)
+      vim.wait(60)
+      local win2 = list_win()
+      assert_eq(vim.api.nvim_win_get_position(win2)[2] > 0, true, 'reopens on the remembered (right) side')
     ]])
     T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
   end)
