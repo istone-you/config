@@ -39,7 +39,8 @@ function M.win_by_title(title_part)
 end
 
 function M.left_win() return M.win_by_title('Files') or M.win_by_title('Commits')
-  or M.win_by_title('Branches') or M.win_by_title('Stash') or M.win_by_title('Worktree') end
+  or M.win_by_title('Branches') or M.win_by_title('Stash') or M.win_by_title('Worktree')
+  or M.win_by_title('PR') end
 
 function M.right_win() return M.win_by_title('Diff') or M.win_by_title('プレビュー') end
 

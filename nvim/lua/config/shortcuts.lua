@@ -174,8 +174,8 @@ DATA[1] = {
     { '< / >',           'サイドバーを左 / 右へ移動（位置は以降も維持）' },
     { 'q',               'ファイラーを閉じる' },
   }},
-  { header = '🌱 gitパネル（Space g で開閉、1-5/←→/タブクリックでパネル切替）', color = 'ShortcutsBuffer', rows = {
-    { '1-5',             'Files / Commits / Branches / Stash / Worktree へ切替' },
+  { header = '🌱 gitパネル（Space g で開閉、1-6/←→/タブクリックでパネル切替）', color = 'ShortcutsBuffer', rows = {
+    { '1-6',             'Files / Commits / Branches / Stash / Worktree / PR へ切替' },
     { '← / →',           '前後のパネルへ切替（タブバーはクリックでも切替可）' },
     { 'P / p',           'push / pull（どのパネルでも共通）' },
     { 'R',               '現在のパネルを再取得' },
@@ -212,6 +212,10 @@ DATA[1] = {
     { '[Stash] d/n',     '削除 / このスタッシュから新規ブランチ' },
     { '[Worktree] Space','移動（cd）' },
     { '[Worktree] n/d',  '新規作成 / 削除' },
+    { '[PR] o / Enter',  'PRをブラウザで開く（開けなければURLをコピー）' },
+    { '[PR] d',          '詳細 ⇄ diff を切替（diff中はvでside-by-side）' },
+    { '[PR] c',          'PRのブランチをcheckout' },
+    { '[PR] f',          'フィルタ（既定=作成/レビュー依頼 / 全て / 作者 / 検索）' },
   }},
 }
 

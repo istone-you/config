@@ -207,20 +207,20 @@ T.describe('git_panel init', function()
     T.rmrf(dir)
   end)
 
-  T.it('1-5 and arrow keys switch panels, updating the tabbar highlight/title', function()
+  T.it('1-6 and arrow keys switch panels, updating the tabbar highlight/title', function()
     local dir = T.tmp_git_repo()
     GP.open(dir, false)
-    for _, case in ipairs({ { '2', 'Commits' }, { '3', 'Branches' }, { '4', 'Stash' }, { '5', 'Worktree' }, { '1', 'Files' } }) do
+    for _, case in ipairs({ { '2', 'Commits' }, { '3', 'Branches' }, { '4', 'Stash' }, { '5', 'Worktree' }, { '6', 'PR' }, { '1', 'Files' } }) do
       GP.press(case[1])
       vim.wait(150)
       T.ok(GP.win_by_title(case[2]) ~= nil, 'panel ' .. case[2] .. ' should be active after pressing ' .. case[1])
     end
     GP.press('<Left>')
     vim.wait(100)
-    T.ok(GP.win_by_title('Worktree') ~= nil, '<Left> from Files should wrap to Worktree')
+    T.ok(GP.win_by_title('PR') ~= nil, '<Left> from Files should wrap to PR')
     GP.press('<Right>')
     vim.wait(100)
-    T.ok(GP.win_by_title('Files') ~= nil, '<Right> from Worktree should wrap to Files')
+    T.ok(GP.win_by_title('Files') ~= nil, '<Right> from PR should wrap to Files')
 
     GP.close()
     T.rmrf(dir)

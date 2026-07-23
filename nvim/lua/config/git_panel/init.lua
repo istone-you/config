@@ -12,6 +12,7 @@ local PANELS = {
   { key = '3', name = 'branches', title = 'Branches', mod = 'config.git_panel.branches' },
   { key = '4', name = 'stash',    title = 'Stash',    mod = 'config.git_panel.stash' },
   { key = '5', name = 'worktree', title = 'Worktree', mod = 'config.git_panel.worktree' },
+  { key = '6', name = 'pr',       title = 'PR',       mod = 'config.git_panel.pr' },
 }
 
 local win = {}
@@ -49,10 +50,13 @@ local AUTO_REFRESH_INTERVAL_MS = 2000
 --- 一番遅いタイミングで現在のカーソル位置を捕捉する。ここ(呼び出し前)で捕捉すると、
 --- 非同期のgitコマンドが完了するまでの間にユーザーがj/kで動かした分を取りこぼして
 --- カーソルが古い位置に戻ってしまうため、タイミングを意図的に遅らせている
-local function refresh_current_panel()
+local function refresh_current_panel(is_auto)
   local spec = PANELS[current_panel_idx]
   if not spec then return end
-  require(spec.mod).refresh(true)
+  local mod = require(spec.mod)
+  -- ネットワーク取得系(PR等)は自動更新の対象外にする（点滅・負荷防止。手動Rは対象）
+  if is_auto and mod.auto_refresh == false then return end
+  mod.refresh(true)
 end
 
 local function start_auto_refresh()
@@ -63,7 +67,7 @@ local function start_auto_refresh()
     -- 消えてしまうため、左パネルにフォーカスがある時だけ自動更新する
     if not (win.left_win and vim.api.nvim_win_is_valid(win.left_win)) then return end
     if vim.api.nvim_get_current_win() ~= win.left_win then return end
-    refresh_current_panel()
+    refresh_current_panel(true)
   end))
 end
 
@@ -224,6 +228,11 @@ end
 --- ファイルdiff・commit show・stash show -pなど「diffテキストを右パネルに出す」処理は
 --- files.lua/commits.lua/stash.luaで同じ内容だったのでここに一本化した。
 --- rawの生diffが前回と同じならdeltaへ渡すことすらしない（無駄なサブプロセス起動も省く）
+function ctx.right_width()
+  return (win.right_win and vim.api.nvim_win_is_valid(win.right_win))
+    and vim.api.nvim_win_get_width(win.right_win) or 80
+end
+
 function ctx.set_right_diff(text, key)
   if key ~= nil and key == last_right_raw_key and text == last_right_raw_text then
     return
@@ -520,7 +529,7 @@ function bind_diff_keys(buf)
       if diff_focused then toggle_diff_focus() else M.close() end
     end, { buffer = buf, nowait = true, silent = true })
   end
-  for _, k in ipairs({ '1', '2', '3', '4', '5' }) do
+  for _, k in ipairs({ '1', '2', '3', '4', '5', '6' }) do
     vim.keymap.set('n', k, function() switch_to(tonumber(k)) end, { buffer = buf, nowait = true, silent = true })
   end
   vim.keymap.set('n', '<Left>', function() switch_relative(-1) end, { buffer = buf, nowait = true, silent = true })
@@ -693,6 +702,7 @@ GLOBAL_KEYS = {
   ['3'] = function() switch_to(3) end,
   ['4'] = function() switch_to(4) end,
   ['5'] = function() switch_to(5) end,
+  ['6'] = function() switch_to(6) end,
   ['<Left>'] = function() switch_relative(-1) end,
   ['<Right>'] = function() switch_relative(1) end,
   ['P'] = do_push,

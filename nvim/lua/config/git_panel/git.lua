@@ -536,6 +536,63 @@ function M.fetch_prs(owner, repo, token, branch_names, cb)
 end
 
 -- ══════════════════════════════════════════════
+-- PR（gh CLI）
+-- ══════════════════════════════════════════════
+
+--- オープンなPR一覧を gh CLI で取得。extra_args でフィルタ(--author/--search等)を足せる。
+--- gh未インストール/未認証/GitHub以外なら空配列。
+function M.gh_pr_list(extra_args, cb)
+  local cmd = {
+    'gh', 'pr', 'list', '--limit', '50',
+    '--json', 'number,title,state,author,headRefName,url,isDraft,updatedAt',
+  }
+  for _, a in ipairs(extra_args or {}) do table.insert(cmd, a) end
+  vim.system(cmd, { cwd = M.root, text = true }, function(res)
+    vim.schedule(function()
+      if res.code ~= 0 or not res.stdout or res.stdout == '' then cb({}); return end
+      local ok, list = pcall(vim.json.decode, res.stdout)
+      if not ok or type(list) ~= 'table' then cb({}); return end
+      for _, pr in ipairs(list) do
+        if pr.isDraft and pr.state == 'OPEN' then pr.state = 'DRAFT' end
+      end
+      cb(list)
+    end)
+  end)
+end
+
+--- gh pr view の出力を「端末で見るのと同じ形（本文＋コメント＋色）」で取得する。
+--- 非TTY(vim.system)だとコメントが落ちるため GH_FORCE_TTY で端末表示を強制し、ansiのまま返す。
+function M.gh_pr_view(number, width, cb)
+  vim.system(
+    { 'gh', 'pr', 'view', tostring(number) },
+    { cwd = M.root, text = true, env = { GH_FORCE_TTY = tostring(width or 80), GH_PAGER = 'cat' } },
+    function(res)
+      vim.schedule(function()
+        cb(res.code == 0 and (res.stdout or '') or ('PR詳細の取得に失敗:\n' .. (res.stderr or '')))
+      end)
+    end
+  )
+end
+
+function M.gh_pr_diff(number, cb)
+  vim.system({ 'gh', 'pr', 'diff', tostring(number) }, { cwd = M.root, text = true }, function(res)
+    vim.schedule(function() cb(res.code == 0 and (res.stdout or '') or '') end)
+  end)
+end
+
+function M.gh_pr_web(number, cb)
+  vim.system({ 'gh', 'pr', 'view', tostring(number), '--web' }, { cwd = M.root, text = true }, function(res)
+    vim.schedule(function() if cb then cb(res) end end)
+  end)
+end
+
+function M.gh_pr_checkout(number, cb)
+  vim.system({ 'gh', 'pr', 'checkout', tostring(number) }, { cwd = M.root, text = true }, function(res)
+    vim.schedule(function() cb(res) end)
+  end)
+end
+
+-- ══════════════════════════════════════════════
 -- ワークツリー
 -- ══════════════════════════════════════════════
 
