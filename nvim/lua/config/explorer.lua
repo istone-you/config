@@ -476,6 +476,51 @@ end
 -- ナビゲーション
 -- ══════════════════════════════════════════════
 
+-- サイドバー表示時のプレビュー窓（エディタ領域の上に浮かべる。全画面時は常時右に
+-- 出るため無効）。トグルで表示/非表示。表示中はCursorMovedでrender_previewが追従する。
+local function close_sidebar_preview()
+  if preview_win and vim.api.nvim_win_is_valid(preview_win) then
+    vim.api.nvim_win_close(preview_win, true)
+  end
+  if preview_buf and vim.api.nvim_buf_is_valid(preview_buf) then
+    vim.api.nvim_buf_delete(preview_buf, { force = true })
+  end
+  preview_win, preview_buf = nil, nil
+  last_preview_path = nil
+end
+
+local function toggle_sidebar_preview()
+  if is_fullscreen then return end
+  if preview_win and vim.api.nvim_win_is_valid(preview_win) then
+    close_sidebar_preview()
+    return
+  end
+  local height = vim.o.lines - 3
+  local width = vim.o.columns - PANEL_WIDTH - 3 -- サイドバー幅+区切り+ボーダーを避ける
+  if width < 20 or height < 5 then return end
+  preview_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[preview_buf].buftype = 'nofile'
+  vim.bo[preview_buf].buflisted = false
+  require('config.hidden_cursor').mark_buffer(preview_buf)
+  preview_win = vim.api.nvim_open_win(preview_buf, false, {
+    relative = 'editor',
+    width = width,
+    height = height,
+    col = 0,
+    row = 1,
+    style = 'minimal',
+    border = 'single',
+    title = ' プレビュー ',
+    title_pos = 'center',
+    zindex = 40,
+  })
+  vim.wo[preview_win].wrap = false
+  vim.wo[preview_win].signcolumn = 'no'
+  vim.wo[preview_win].winhighlight = 'Normal:ExplorerBg'
+  last_preview_path = nil
+  render_preview()
+end
+
 local function enter_dir()
   local entry = entry_at_cursor()
   if not entry or not entry.isdir then return end
@@ -497,6 +542,9 @@ local function open_selected()
     -- (teardown_uiはqallを伴わないので、この場合はnvim自体は終了しない)
     if is_fullscreen then
       teardown_ui()
+    else
+      -- サイドバー時: 開いたファイルがプレビュー窓に隠れないよう閉じる
+      close_sidebar_preview()
     end
     if origin_win and vim.api.nvim_win_is_valid(origin_win) then
       vim.api.nvim_set_current_win(origin_win)
@@ -1080,6 +1128,7 @@ local function open(fullscreen)
   map('P',       function() paste(true) end)
   map('/',       set_filter)
   map('s',       fd_search)
+  map('<C-p>',   toggle_sidebar_preview)
 
   local watched = tostring(win)
   if preview_win then watched = watched .. ',' .. tostring(preview_win) end

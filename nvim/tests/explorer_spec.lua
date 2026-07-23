@@ -190,6 +190,72 @@ T.describe('explorer', function()
     T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
   end)
 
+  T.it('Ctrl-p toggles a sidebar preview float that follows the cursor; Enter closes it', function()
+    local res = run_child([[
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir, 'p')
+      vim.fn.writefile({ 'AAA', 'BBB' }, dir .. '/a.txt')
+      vim.fn.writefile({ 'ZZZ here' }, dir .. '/z.txt')
+      vim.fn.chdir(dir)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+
+      local function preview_win()
+        for _, w in ipairs(vim.api.nvim_list_wins()) do
+          local c = vim.api.nvim_win_get_config(w)
+          if c.relative == 'editor' and vim.bo[vim.api.nvim_win_get_buf(w)].filetype ~= 'explorer' then
+            return w
+          end
+        end
+      end
+      local function pv_lines()
+        local w = preview_win()
+        return w and vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(w), 0, -1, false) or {}
+      end
+      local function contains(tbl, needle)
+        for _, l in ipairs(tbl) do if l:find(needle, 1, true) then return true end end
+        return false
+      end
+
+      -- カーソルを a.txt に置く
+      local arow = find_row(win, 'a.txt')
+      vim.api.nvim_win_set_cursor(win, { arow, 0 })
+      assert_eq(preview_win(), nil, 'no preview before toggle')
+
+      feed('<C-p>')
+      vim.wait(800)
+      assert_eq(preview_win() ~= nil, true, 'preview float appears after Ctrl-p')
+      assert_eq(contains(pv_lines(), 'AAA'), true, 'shows a.txt content: ' .. vim.inspect(pv_lines()))
+
+      -- z.txt へ移動 → 追従
+      vim.api.nvim_win_set_cursor(win, { find_row(win, 'z.txt'), 0 })
+      vim.api.nvim_exec_autocmds('CursorMoved', { buffer = vim.api.nvim_win_get_buf(win) })
+      vim.wait(800)
+      assert_eq(contains(pv_lines(), 'ZZZ here'), true, 'preview follows cursor to z.txt: ' .. vim.inspect(pv_lines()))
+
+      -- サイドバー右端に被らない（ボーダー込みで右側にサイドバー分の余白がある）
+      local c = vim.api.nvim_win_get_config(preview_win())
+      assert_eq((c.col + c.width + 2) <= (vim.o.columns - 48 - 1), true, 'preview must not overlap the sidebar')
+
+      -- もう一度で消える
+      feed('<C-p>')
+      vim.wait(100)
+      assert_eq(preview_win(), nil, 'preview toggles off')
+
+      -- 再表示して Enter で開くと閉じる
+      feed('<C-p>')
+      vim.wait(300)
+      assert_eq(preview_win() ~= nil, true, 'preview on again')
+      feed('<CR>')
+      vim.wait(200)
+      assert_eq(preview_win(), nil, 'Enter (open file) closes the preview')
+    ]])
+    T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
+  end)
+
   T.it('lists dirs before files (alphabetical); l/h navigate in/out; a/r/d create/rename/delete', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir .. '/zdir', 'p')
