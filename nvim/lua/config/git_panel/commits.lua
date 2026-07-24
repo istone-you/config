@@ -1,4 +1,4 @@
--- Commits(ログ)パネル: 一覧・詳細diff・reset・revert・新規ブランチ・detached HEADチェックアウト
+-- Commits(ログ)パネル: 一覧・詳細diff・reset・revert・cherry-pick・SHAコピー・新規ブランチ・detached HEADチェックアウト
 -- amendはFilesパネル側(A)が正しい位置（KeybindingFilesConfig.AmendLastCommit）なのでここには置かない
 -- 注: squash/fixup/reword/drop/並び替えなどの対話的リベース操作は
 --     非対話化スクリプトの失敗時にリベース中断状態で壊れるリスクが高いため未対応
@@ -175,11 +175,42 @@ local function new_branch_from_commit()
   end)
 end
 
+local function copy_sha()
+  local entry = current_entry()
+  if not entry then return end
+  vim.fn.setreg('"', entry.hash)
+  pcall(vim.fn.setreg, '+', entry.hash)
+  vim.notify('コピーしました: ' .. entry.hash, vim.log.levels.INFO)
+end
+
+local function cherry_pick()
+  local entry = current_entry()
+  if not entry then return end
+  ctx.confirm('このコミットをcherry-pickしますか？\n' .. entry.short .. ' ' .. entry.subject, function(ok)
+    if not ok then return end
+    git.cherry_pick(entry.hash, function(res)
+      ctx.render_cmdlog()
+      if res.code ~= 0 then
+        vim.notify('cherry-pick失敗: ' .. (res.stderr or ''), vim.log.levels.ERROR)
+        -- コンフリクト/emptyなどで途中状態が残らないよう打ち消す
+        git.run({ 'cherry-pick', '--abort' }, function()
+          ctx.render_cmdlog()
+          M.refresh()
+        end)
+        return
+      end
+      M.refresh()
+    end)
+  end)
+end
+
 function M.keymaps()
   return {
     g = reset,
     t = revert,
     n = new_branch_from_commit,
+    y = copy_sha,
+    c = cherry_pick,
     ['<Space>'] = checkout_commit,
   }
 end

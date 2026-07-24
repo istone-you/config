@@ -1,10 +1,10 @@
--- commits.lua(t=revert, Space=checkout_commit)とworktree.lua(Space=checkout, d=delete)の
+-- commits.lua(t=revert, Space=checkout_commit, y=copy SHA, c=cherry-pick)とworktree.lua(Space=checkout, d=delete)の
 -- 未テストキー。既存specはg(reset)/n(new branch)/一覧表示しか検証していなかった
 
 local T = dofile(TESTS_DIR .. '/helpers.lua')
 local GP = dofile(TESTS_DIR .. '/git_panel_helpers.lua')
 
-T.describe('git_panel Commits panel: revert/checkout-commit', function()
+T.describe('git_panel Commits panel: revert/checkout-commit/copy-sha/cherry-pick', function()
   T.it('t reverts the selected commit, creating a new commit that undoes it', function()
     local dir = T.tmp_git_repo(function(d)
       T.write_file(d .. '/a.txt', { 'a' })
@@ -52,6 +52,64 @@ T.describe('git_panel Commits panel: revert/checkout-commit', function()
     end)
     T.eq(vim.trim(GP.git(dir, { 'rev-parse', 'HEAD' }).stdout), first_hash)
     T.eq(GP.git(dir, { 'symbolic-ref', '-q', 'HEAD' }).code, 1, 'HEAD should be detached (no symbolic ref)')
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+
+  T.it('y copies the full commit SHA to the unnamed register', function()
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/a.txt', { 'a' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'copyme' })
+    end)
+    local hash = vim.trim(GP.git(dir, { 'rev-parse', 'HEAD' }).stdout)
+    GP.open(dir, false)
+    GP.press('2')
+    vim.wait(200)
+    local left = GP.left_win()
+    GP.goto_row(left, GP.find_row(left, 'copyme'))
+    GP.press('y')
+    vim.wait(50)
+    T.eq(vim.fn.getreg('"'), hash)
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+
+  T.it('c cherry-picks the selected commit onto the current branch', function()
+    -- 履歴に残るコミットを選んで再適用できることを確認する:
+    -- add → revert で消したあと、元の add を cherry-pick して復元する
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/a.txt', { 'a' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'introduce file' })
+    end)
+    local add_hash = vim.trim(GP.git(dir, { 'rev-parse', 'HEAD' }).stdout)
+    GP.git(dir, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'revert', '--no-edit', 'HEAD' })
+    T.eq(vim.fn.filereadable(dir .. '/a.txt'), 0)
+
+    GP.open(dir, false)
+    GP.press('2')
+    vim.wait(200)
+    local left = GP.left_win()
+    -- Revert "introduce file" も同じ文言を含むので、Revert行は除外する
+    local row
+    for i, l in ipairs(GP.lines(left)) do
+      if l:find('introduce file', 1, true) and not l:find('Revert', 1, true) then
+        row = i
+        break
+      end
+    end
+    T.ok(row ~= nil, 'original introduce-file commit should be listed')
+    GP.goto_row(left, row)
+    GP.press('c')
+    vim.wait(80)
+    GP.press_modal('y')
+    T.wait_until(function() return vim.fn.filereadable(dir .. '/a.txt') == 1 end)
+    T.eq(vim.fn.filereadable(dir .. '/a.txt'), 1, 'cherry-pick should restore the file from the selected commit')
+    T.eq(vim.fn.readfile(dir .. '/a.txt'), { 'a' })
+    T.ok(vim.trim(GP.git(dir, { 'rev-parse', 'HEAD' }).stdout) ~= add_hash)
 
     GP.close()
     T.rmrf(dir)

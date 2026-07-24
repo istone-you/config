@@ -829,7 +829,53 @@ local function confirm(message, on_result)
   map('<Esc>', false)
 end
 
-local function delete()
+--- FreeDesktop Trash仕様（XDG）に従ってゴミ箱へ移す。外部CLI不要。
+--- Pathは仕様どおりパーセントエンコードする。
+local function trash_encode_path(abs)
+  return (abs:gsub('([^A-Za-z0-9_.!*/-])', function(c)
+    return string.format('%%%02X', string.byte(c))
+  end))
+end
+
+local function move_to_trash(path)
+  local data_home = vim.env.XDG_DATA_HOME
+  if not data_home or data_home == '' then
+    data_home = vim.fn.expand('~/.local/share')
+  end
+  local files_dir = data_home .. '/Trash/files'
+  local info_dir = data_home .. '/Trash/info'
+  vim.fn.mkdir(files_dir, 'p')
+  vim.fn.mkdir(info_dir, 'p')
+
+  local base = vim.fn.fnamemodify(path, ':t')
+  local dest = files_dir .. '/' .. base
+  local info = info_dir .. '/' .. base .. '.trashinfo'
+  local n = 1
+  while vim.fn.filereadable(dest) == 1 or vim.fn.isdirectory(dest) == 1
+    or vim.fn.filereadable(info) == 1 do
+    dest = string.format('%s/%s.%d', files_dir, base, n)
+    info = string.format('%s/%s.%d.trashinfo', info_dir, base, n)
+    n = n + 1
+  end
+
+  local abs = vim.fn.fnamemodify(path, ':p'):gsub('/$', '')
+  local ok = vim.uv.fs_rename(path, dest)
+  if not ok then
+    local cp = vim.system({ 'cp', '-a', path, dest }):wait()
+    if cp.code ~= 0 then
+      return false, 'ゴミ箱への移動に失敗しました'
+    end
+    vim.fn.delete(path, 'rf')
+  end
+  vim.fn.writefile({
+    '[Trash Info]',
+    'Path=' .. trash_encode_path(abs),
+    'DeletionDate=' .. os.date('%Y-%m-%dT%H:%M:%S'),
+  }, info)
+  return true
+end
+
+local function delete_targets(permanent)
   local list = targets()
   if #list == 0 then return end
   local names = {}
@@ -840,10 +886,21 @@ local function delete()
   local label = table.concat(names, ', ')
   if #list > 5 then label = label .. ' 他' .. (#list - 5) .. '件' end
 
-  confirm(string.format('%d件を完全削除しますか？\n%s', #list, label), function(ok)
+  local msg = permanent
+    and string.format('%d件を完全削除しますか？\n%s', #list, label)
+    or string.format('%d件をゴミ箱へ移しますか？\n%s', #list, label)
+
+  confirm(msg, function(ok)
     if not ok then return end
     for _, e in ipairs(list) do
-      vim.fn.delete(e.path, 'rf')
+      if permanent then
+        vim.fn.delete(e.path, 'rf')
+      else
+        local moved, err = move_to_trash(e.path)
+        if not moved then
+          vim.notify(err or 'ゴミ箱への移動に失敗しました', vim.log.levels.ERROR)
+        end
+      end
       selection[e.path] = nil
       local bufnr = vim.fn.bufnr(e.path)
       if bufnr ~= -1 and vim.api.nvim_buf_is_valid(bufnr) then
@@ -854,6 +911,14 @@ local function delete()
     render()
     refocus_panel()
   end)
+end
+
+local function trash()
+  delete_targets(false)
+end
+
+local function delete_permanent()
+  delete_targets(true)
 end
 
 local function copy_selection()
@@ -1144,7 +1209,8 @@ local function open(fullscreen)
   map('q',       close)
   map('a',       create)
   map('r',       rename)
-  map('d',       delete)
+  map('d',       trash)
+  map('D',       delete_permanent)
   map('y',       copy_selection)
   map('x',       cut_selection)
   map('p',       function() paste(false) end)

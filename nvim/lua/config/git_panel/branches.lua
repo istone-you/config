@@ -426,6 +426,14 @@ local function set_upstream()
   end)
 end
 
+local function copy_branch_name()
+  local entry = current_entry()
+  if not entry then return end
+  vim.fn.setreg('"', entry.name)
+  pcall(vim.fn.setreg, '+', entry.name)
+  vim.notify('コピーしました: ' .. entry.name, vim.log.levels.INFO)
+end
+
 function M.keymaps()
   return {
     ['<Space>'] = checkout,
@@ -440,6 +448,7 @@ function M.keymaps()
     R = rename,
     f = fast_forward,
     u = set_upstream,
+    y = copy_branch_name,
   }
 end
 

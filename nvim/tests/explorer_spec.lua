@@ -295,13 +295,16 @@ T.describe('explorer', function()
     T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
   end)
 
-  T.it('lists dirs before files (alphabetical); l/h navigate in/out; a/r/d create/rename/delete', function()
+  T.it('lists dirs before files (alphabetical); l/h navigate in/out; a/r/d trash / D permanent-delete', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir .. '/zdir', 'p')
     T.write_file(dir .. '/afile.txt', { 'x' })
     T.write_file(dir .. '/bfile.txt', { 'x' })
+    local xdg = vim.fn.tempname()
+    vim.fn.mkdir(xdg, 'p')
 
     local res = run_child(string.format([[
+      vim.env.XDG_DATA_HOME = %s
       vim.fn.chdir(%s)
       local explorer = require('config.explorer')
       explorer.open(false)
@@ -358,17 +361,35 @@ T.describe('explorer', function()
       assert_eq(vim.fn.filereadable(%s .. '/renamed.txt'), 1)
       assert_eq(vim.fn.filereadable(%s .. '/newfile.txt'), 0)
 
-      -- 5) d で削除(確認y)
+      -- 5) d でゴミ箱へ（元の場所から消え、Trash/filesへ移る）
       vim.api.nvim_win_set_cursor(win, { find_row(win, 'renamed.txt'), 0 })
       feed('d')
       vim.wait(50)
       feed('y')
       vim.wait(80)
       assert_eq(vim.fn.filereadable(%s .. '/renamed.txt'), 0)
-    ]], vim.inspect(dir), vim.inspect(dir), vim.inspect(dir), vim.inspect(dir), vim.inspect(dir), vim.inspect(dir)))
+      assert_eq(vim.fn.filereadable(%s .. '/Trash/files/renamed.txt'), 1)
+      assert_eq(vim.fn.filereadable(%s .. '/Trash/info/renamed.txt.trashinfo'), 1)
+
+      -- 6) D で完全削除（ゴミ箱に残らない）
+      feed('a')
+      vim.wait(50)
+      feed('igone.txt')
+      feed('<CR>')
+      vim.wait(80)
+      vim.api.nvim_win_set_cursor(win, { find_row(win, 'gone.txt'), 0 })
+      feed('D')
+      vim.wait(50)
+      feed('y')
+      vim.wait(80)
+      assert_eq(vim.fn.filereadable(%s .. '/gone.txt'), 0)
+      assert_eq(vim.fn.filereadable(%s .. '/Trash/files/gone.txt'), 0)
+    ]], vim.inspect(xdg), vim.inspect(dir), vim.inspect(dir), vim.inspect(dir), vim.inspect(dir), vim.inspect(dir),
+      vim.inspect(dir), vim.inspect(xdg), vim.inspect(xdg), vim.inspect(dir), vim.inspect(xdg)))
 
     T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
     T.rmrf(dir)
+    T.rmrf(xdg)
   end)
 
   T.it('Tab/y/x/p: copy-paste and cut-paste move files between directories', function()
@@ -585,14 +606,17 @@ T.describe('explorer', function()
     T.rmrf(dir)
   end)
 
-  T.it('Tab toggles multi-select; delete/copy act on the whole selection, not just the cursor row', function()
+  T.it('Tab toggles multi-select; trash/copy act on the whole selection, not just the cursor row', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir, 'p')
     T.write_file(dir .. '/a.txt', { 'x' })
     T.write_file(dir .. '/b.txt', { 'x' })
     T.write_file(dir .. '/c.txt', { 'x' })
+    local xdg = vim.fn.tempname()
+    vim.fn.mkdir(xdg, 'p')
 
     local res = run_child(string.format([[
+      vim.env.XDG_DATA_HOME = %s
       vim.fn.chdir(%s)
       local explorer = require('config.explorer')
       explorer.open(false)
@@ -600,7 +624,7 @@ T.describe('explorer', function()
       local win = list_win()
       vim.api.nvim_set_current_win(win)
 
-      -- a.txtとb.txtだけ選択(<Tab>2回、c.txtは選ばない)して削除 -> c.txtだけ残る
+      -- a.txtとb.txtだけ選択(<Tab>2回、c.txtは選ばない)してゴミ箱へ -> c.txtだけ残る
       vim.api.nvim_win_set_cursor(win, { find_row(win, 'a.txt'), 0 })
       feed('<Tab>')
       vim.wait(30)
@@ -610,12 +634,16 @@ T.describe('explorer', function()
       vim.wait(50)
       feed('y') -- 確認モーダル
       vim.wait(80)
-      assert_eq(vim.fn.filereadable(%s .. '/a.txt'), 0, 'selected a.txt should be deleted')
-      assert_eq(vim.fn.filereadable(%s .. '/b.txt'), 0, 'selected b.txt should be deleted')
+      assert_eq(vim.fn.filereadable(%s .. '/a.txt'), 0, 'selected a.txt should be trashed')
+      assert_eq(vim.fn.filereadable(%s .. '/b.txt'), 0, 'selected b.txt should be trashed')
       assert_eq(vim.fn.filereadable(%s .. '/c.txt'), 1, 'unselected c.txt should remain')
-    ]], vim.inspect(dir), vim.inspect(dir), vim.inspect(dir), vim.inspect(dir)))
+      assert_eq(vim.fn.filereadable(%s .. '/Trash/files/a.txt'), 1)
+      assert_eq(vim.fn.filereadable(%s .. '/Trash/files/b.txt'), 1)
+    ]], vim.inspect(xdg), vim.inspect(dir), vim.inspect(dir), vim.inspect(dir), vim.inspect(dir),
+      vim.inspect(xdg), vim.inspect(xdg)))
     T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
     T.rmrf(dir)
+    T.rmrf(xdg)
   end)
 
   T.it('<C-a> selects everything and <C-r> inverts the selection before deleting', function()
@@ -641,8 +669,11 @@ T.describe('explorer', function()
     ]], vim.inspect(dir)))
     T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
 
-    -- <C-a>で全選択し、そのまま削除すると全ファイルが消えることを確認する
+    -- <C-a>で全選択し、そのままゴミ箱へ移すと全ファイルが消えることを確認する
+    local xdg = vim.fn.tempname()
+    vim.fn.mkdir(xdg, 'p')
     res = run_child(string.format([[
+      vim.env.XDG_DATA_HOME = %s
       vim.fn.chdir(%s)
       local explorer = require('config.explorer')
       explorer.open(false)
@@ -657,9 +688,10 @@ T.describe('explorer', function()
       vim.wait(80)
       assert_eq(vim.fn.filereadable(%s .. '/a.txt'), 0)
       assert_eq(vim.fn.filereadable(%s .. '/b.txt'), 0)
-    ]], vim.inspect(dir), vim.inspect(dir), vim.inspect(dir)))
+    ]], vim.inspect(xdg), vim.inspect(dir), vim.inspect(dir), vim.inspect(dir)))
     T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
     T.rmrf(dir)
+    T.rmrf(xdg)
   end)
 
   T.it('<Esc> priority: clears selection first, then the filter, only closing the panel once both are empty', function()

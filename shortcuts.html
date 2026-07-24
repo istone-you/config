@@ -476,7 +476,7 @@
       <tr><td><kbd>Esc</kbd></td><td class="desc">選択解除→フィルタ解除→（どちらも無ければ）閉じる</td></tr>
       <tr><td><kbd>a</kbd></td><td class="desc">ファイル/ディレクトリを作成（末尾/でディレクトリ）</td></tr>
       <tr><td><kbd>r</kbd></td><td class="desc">名前を変更</td></tr>
-      <tr><td><kbd>d</kbd></td><td class="desc">確認して完全削除（複数選択可）</td></tr>
+      <tr><td><kbd>d</kbd> / <kbd>D</kbd></td><td class="desc">ゴミ箱へ移動 / 完全削除（複数選択可）</td></tr>
       <tr><td><kbd>y</kbd> / <kbd>x</kbd></td><td class="desc">コピー / カットをクリップボードにセット</td></tr>
       <tr><td><kbd>p</kbd> / <kbd>P</kbd></td><td class="desc">貼り付け（衝突時リネーム） / 上書き貼り付け</td></tr>
       <tr><td><kbd>/</kbd></td><td class="desc">現在フォルダ内をファイル名でフィルタ（Escでクリア）</td></tr>
@@ -507,6 +507,7 @@
       <tr><td><kbd>A</kbd></td><td class="desc">直前コミットをamend（ステージ済み変更で）</td></tr>
       <tr><td><kbd>d</kbd></td><td class="desc">破棄メニュー（x: すべての変更を破棄 / u: 未ステージのみ破棄）</td></tr>
       <tr><td><kbd>s</kbd></td><td class="desc">全変更をスタッシュ</td></tr>
+      <tr><td><kbd>S</kbd></td><td class="desc">スタッシュオプション（a:全て / u:未追跡含む / t:ステージ済み / k:keep-index）</td></tr>
       <tr><td><kbd>f</kbd></td><td class="desc">fetch（成功時はBranchesのPR状態も再取得）</td></tr>
       <tr><td><kbd>i</kbd> / <kbd>y</kbd></td><td class="desc">ignoreに追加 / パスをコピー</td></tr>
       <tr><td><kbd>e</kbd> / <kbd>o</kbd></td><td class="desc">ファイルを開いて編集（gitパネルを閉じる）</td></tr>
@@ -522,10 +523,13 @@
       <tr><td><kbd>R</kbd> / <kbd>f</kbd></td><td class="desc">リネーム / fast-forward</td></tr>
       <tr><td><kbd>c</kbd> / <kbd>F</kbd> / <kbd>-</kbd></td><td class="desc">名前指定 / 強制チェックアウト / 直前のブランチへ</td></tr>
       <tr><td><kbd>u</kbd></td><td class="desc">上流ブランチ(upstream)を設定</td></tr>
+      <tr><td><kbd>y</kbd></td><td class="desc">ブランチ名をコピー</td></tr>
       <tr><td class="section-divider" colspan="2">Commits</td></tr>
       <tr><td><kbd>g</kbd></td><td class="desc">resetメニュー（soft/mixed/hard）</td></tr>
       <tr><td><kbd>t</kbd></td><td class="desc">revert</td></tr>
       <tr><td><kbd>n</kbd></td><td class="desc">このコミットから新規ブランチ</td></tr>
+      <tr><td><kbd>y</kbd></td><td class="desc">SHAをコピー</td></tr>
+      <tr><td><kbd>c</kbd></td><td class="desc">cherry-pick</td></tr>
       <tr><td><kbd>Space</kbd></td><td class="desc">detached HEADでチェックアウト</td></tr>
       <tr><td class="section-divider" colspan="2">Stash</td></tr>
       <tr><td><kbd>Space</kbd> / <kbd>g</kbd></td><td class="desc">apply / pop</td></tr>
@@ -535,6 +539,7 @@
       <tr><td><kbd>n</kbd> / <kbd>d</kbd></td><td class="desc">新規作成 / 削除</td></tr>
       <tr><td class="section-divider" colspan="2">PR</td></tr>
       <tr><td><kbd>o</kbd> / <kbd>Enter</kbd></td><td class="desc">PRをブラウザで開く（開けなければURLをコピー）</td></tr>
+      <tr><td><kbd>y</kbd></td><td class="desc">PRのURLをコピー</td></tr>
       <tr><td><kbd>d</kbd></td><td class="desc">詳細 ⇄ diff を切替（diff中は v で side-by-side）</td></tr>
       <tr><td><kbd>c</kbd></td><td class="desc">PRのブランチをcheckout</td></tr>
       <tr><td><kbd>f</kbd></td><td class="desc">フィルタ（既定=作成/レビュー依頼 / 全て / 作者 / 検索）</td></tr>

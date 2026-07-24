@@ -170,14 +170,27 @@ local function open_web()
     if res.code ~= 0 then
       local url = entry.url or ''
       if url ~= '' then
-        vim.fn.setreg('+', url)
         vim.fn.setreg('"', url)
+        pcall(vim.fn.setreg, '+', url)
         vim.notify('URLをコピーしました: ' .. url, vim.log.levels.INFO)
       else
         vim.notify('ブラウザで開けませんでした: ' .. (res.stderr or ''), vim.log.levels.WARN)
       end
     end
   end)
+end
+
+local function copy_url()
+  local entry = current_entry()
+  if not entry then return end
+  local url = entry.url or ''
+  if url == '' then
+    vim.notify('URLがありません', vim.log.levels.WARN)
+    return
+  end
+  vim.fn.setreg('"', url)
+  pcall(vim.fn.setreg, '+', url)
+  vim.notify('コピーしました: ' .. url, vim.log.levels.INFO)
 end
 
 -- f: フィルタを選ぶ
@@ -232,6 +245,7 @@ function M.keymaps()
   return {
     ['<CR>'] = open_web,
     o = open_web,
+    y = copy_url,
     d = toggle_diff,
     c = checkout,
     f = choose_filter,

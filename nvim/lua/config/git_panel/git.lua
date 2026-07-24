@@ -335,6 +335,7 @@ end
 function M.show_commit(hash, cb) M.run({ 'show', hash }, function(res) cb(res.stdout or '') end, { dont_log = true }) end
 function M.reset(hash, mode, cb) M.run({ 'reset', '--' .. mode, hash }, cb) end
 function M.revert_commit(hash, cb) M.run({ 'revert', '--no-edit', hash }, cb, { stream_output = true }) end
+function M.cherry_pick(hash, cb) M.run({ 'cherry-pick', hash }, cb, { stream_output = true }) end
 function M.new_branch_from_commit(hash, name, cb) M.run({ 'checkout', '-b', name, hash }, cb) end
 
 --- Undo(z): 直前のコミット1つだけをsoft resetで取り消す（lazygitのreflog Undoの
@@ -404,8 +405,14 @@ function M.stash_pop(ref, cb) M.run({ 'stash', 'pop', ref }, cb, { stream_output
 function M.stash_drop(ref, cb) M.run({ 'stash', 'drop', ref }, cb) end
 function M.stash_branch(ref, name, cb) M.run({ 'stash', 'branch', name, ref }, cb) end
 
-function M.stash_save(msg, cb)
+--- opts = { include_untracked?, staged?, keep_index? }
+--- lazygitのスタッシュオプション（Stash / StashIncludingUntracked / StashStaged / StashKeepIndex）に対応
+function M.stash_save(msg, cb, opts)
+  opts = opts or {}
   local args = { 'stash', 'push' }
+  if opts.include_untracked then table.insert(args, '--include-untracked') end
+  if opts.staged then table.insert(args, '--staged') end
+  if opts.keep_index then table.insert(args, '--keep-index') end
   if msg and msg ~= '' then
     table.insert(args, '-m')
     table.insert(args, msg)

@@ -1,5 +1,5 @@
 -- Filesパネル: ディレクトリツリー表示（lazygit実機のデフォルト gui.showFileTree=true に合わせる）
--- ステージ/アンステージ・hunk単位ステージ・破棄・コミット・amend・stash・ignore
+-- ステージ/アンステージ・hunk単位ステージ・破棄・コミット・amend・stash(オプション含む)・ignore
 
 local git = require('config.git_panel.git')
 
@@ -594,7 +594,8 @@ end
 local function copy_path()
   local node = current_entry()
   if not node then return end
-  vim.fn.setreg('+', node.path)
+  vim.fn.setreg('"', node.path)
+  pcall(vim.fn.setreg, '+', node.path)
   vim.notify('コピーしました: ' .. node.path, vim.log.levels.INFO)
 end
 
@@ -642,10 +643,30 @@ end
 
 --- files_controller.go handleStashSave相当。AllowEmptyInput=trueと同じく、
 --- 空メッセージのままEnterしてもキャンセルにはせずスタッシュを実行する
-local function stash_all()
+local function stash_with(opts)
   ctx.input('スタッシュメッセージ', '', function(msg)
     if msg == nil then return end
-    git.stash_save(msg, ctx.done_refresh(function() cursor_mem = nil; M.refresh() end, 'スタッシュ'))
+    git.stash_save(msg, ctx.done_refresh(function() cursor_mem = nil; M.refresh() end, 'スタッシュ'), opts)
+  end)
+end
+
+local function stash_all()
+  stash_with(nil)
+end
+
+--- lazygit KeybindingFilesConfig.ViewStashOptions(既定"S")相当
+local function stash_options()
+  ctx.menu('スタッシュ', {
+    { key = 'a', label = 'すべての変更をスタッシュ', value = 'all' },
+    { key = 'u', label = '未追跡ファイルも含めてスタッシュ', value = 'untracked' },
+    { key = 't', label = 'ステージ済みのみスタッシュ', value = 'staged' },
+    { key = 'k', label = 'インデックスを保持してスタッシュ', value = 'keep_index' },
+  }, function(choice)
+    if choice == 'all' then stash_with(nil)
+    elseif choice == 'untracked' then stash_with({ include_untracked = true })
+    elseif choice == 'staged' then stash_with({ staged = true })
+    elseif choice == 'keep_index' then stash_with({ keep_index = true })
+    end
   end)
 end
 
@@ -662,6 +683,7 @@ function M.keymaps()
     i = ignore_file,
     y = copy_path,
     s = stash_all,
+    S = stash_options,
     f = fetch,
     ['<CR>'] = enter_or_toggle,
   }
