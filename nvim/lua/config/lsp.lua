@@ -1,4 +1,4 @@
-local util = require('config.lsp_util')
+local util = require('config.util.lsp_util')
 
 local function load_local_lsp_config()
   local path = vim.fn.stdpath('config') .. '/local.lua'

@@ -19,6 +19,12 @@ local hunk_hl_ns = vim.api.nvim_create_namespace('git_panel_hunk')
 local function is_untracked(f) return f.x == '?' and f.y == '?' end
 local function has_staged(f) return f.x ~= ' ' and f.x ~= '?' end
 local function has_unstaged(f) return f.y ~= ' ' or is_untracked(f) end
+-- lazygit(models/file.go deriveStatusFields)のTrackedと同じ: 新規追加(A /AM)と未追跡(??)
+-- 以外はtracked。アンステージ時にreset(tracked)かrm --cached(untracked)かを分けるのに使う
+local function is_tracked(f)
+  local code = f.x .. f.y
+  return code ~= '??' and code ~= 'A ' and code ~= 'AM'
+end
 
 --- git.status()の`-z`出力(lazygit file_loader.goのgitStatus()と同形式)をパースする。
 --- NUL区切りなのでスペース/特殊文字を含むパスもクォート無しの生バイトのまま渡ってくる。
@@ -131,8 +137,8 @@ end
 -- アイコン（拡張子ごと、tabline.lua/explorer.luaと同方式）
 -- ══════════════════════════════════════════════
 
--- アイコン定義は config.file_icons に集約（explorer/git_panel/tabline で共有）
-local file_icons = require('config.file_icons')
+-- アイコン定義は config.util.file_icons に集約（explorer/git_panel/tabline で共有）
+local file_icons = require('config.util.file_icons')
 local function get_icon(name, is_dir) return file_icons.get(name, is_dir) end
 
 -- ══════════════════════════════════════════════
@@ -448,19 +454,35 @@ end
 local function stage_toggle()
   local node = current_entry()
   if not node then return end
-  local targets = collect_files(node)
-  if #targets == 0 then return end
   cursor_mem = node.path
-  local any_unstaged = false
-  for _, f in ipairs(targets) do
-    if has_unstaged(f) then any_unstaged = true; break end
-  end
-  local paths = vim.tbl_map(function(f) return f.path end, targets)
   local function done() ctx.render_cmdlog(); M.refresh() end
+
+  -- lazygit(files_controller.go pressWithLock)と同じ「パス単位」方式。表示されている
+  -- ファイル行を個別に列挙するのではなく、選択ノードのパス(ディレクトリならそのディレクトリ、
+  -- ルートなら".")をそのままgitに渡し、配下の再帰はgitに任せる。
+  -- こうすると「木に出ていないステージ済み削除」なども確実に対象へ含められる。
+  -- 個別列挙だと表示に無いエントリを拾えず「Dだけアンステージされない」不具合になっていた。
+  local pathspec = node.path ~= '' and node.path or '.'
+
+  -- lazygit(toggleStaged): 配下(自分含む)に未ステージの変更が1つでもあれば「ステージ」、
+  -- 無ければ「アンステージ」
+  local _, any_unstaged = node_flags(node)
+
   if any_unstaged then
-    git.run(vim.list_extend({ 'add', '--' }, paths), done)
+    -- git add -- <path>: git2.0以降はディレクトリ指定でも配下の削除を拾う(git add -A相当)。
+    -- 未ステージ削除の単体ファイルにもマッチする。ステージ済みのみの削除は
+    -- any_unstaged=falseでここへ来ないので pathspec エラーにもならない
+    git.run({ 'add', '--', pathspec }, done)
+    return
+  end
+
+  -- 全部ステージ済み → アンステージ。lazygitはディレクトリを常にtracked扱いにして
+  -- git reset HEAD -- <dir> 一発で配下全部(削除・新規追加含む)をindexから戻す。
+  -- 単体の新規追加ファイル(A 等、HEADに無い)だけは git rm --cached でないと外せない
+  if node.is_dir or is_tracked(node.file) then
+    git.run({ 'reset', 'HEAD', '--', pathspec }, done)
   else
-    git.run(vim.list_extend({ 'reset', 'HEAD', '--' }, paths), done)
+    git.run({ 'rm', '--cached', '--force', '--', pathspec }, done)
   end
 end
 

@@ -16,23 +16,8 @@ function M.show()
   vim.bo[buf].filetype = 'startscreen'
   require('config.hidden_cursor').mark_buffer(buf) -- カーソルを隠す
   vim.api.nvim_win_set_buf(win, buf)
-
-  vim.wo[win].number = false
-  vim.wo[win].relativenumber = false
-  vim.wo[win].cursorline = false
-  vim.wo[win].signcolumn = 'no'
-  vim.wo[win].statuscolumn = ''
-  vim.wo[win].list = false
-  vim.wo[win].statusline = '%#Normal#' -- 空＋透明（[Scratch]等を出さない）
-
-  -- スタート画面が窓から外れたら、透明ステータスラインの設定を通常へ戻す
-  vim.api.nvim_create_autocmd('BufWinLeave', {
-    buffer = buf,
-    once = true,
-    callback = function()
-      if vim.api.nvim_win_is_valid(win) then vim.wo[win].statusline = '' end
-    end,
-  })
+  -- window-localオプションは触らない。ここで number/statusline 等を変えると、この窓に
+  -- ファイルを開いた後もその設定が残ってしまう（行番号が消える等）。空バッファなので既定表示で問題ない。
 
   return buf
 end

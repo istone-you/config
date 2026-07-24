@@ -1,8 +1,8 @@
 -- VSCode風バッファタブライン（Nerd Fontsアイコン付き）
 
--- アイコン定義は config.file_icons に集約（explorer/git_panel/tabline で共有）。
+-- アイコン定義は config.util.file_icons に集約（explorer/git_panel/tabline で共有）。
 -- タブラインはアイコンの後ろに空白を1つ付けて表示する。
-local file_icons = require('config.file_icons')
+local file_icons = require('config.util.file_icons')
 
 local function get_icon(filename)
   return file_icons.get(filename, false) .. ' '

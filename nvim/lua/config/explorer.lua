@@ -25,8 +25,6 @@ local git_status = {}      -- [リポジトリルート相対path] = GIT_CODES�
 local git_status_cwd = nil -- git_statusがどのcwdのものか
 local git_repo_root = nil  -- git_statusに対応するリポジトリルート（絶対path）
 local git_status_dirty = false
-local git_tracked = {}      -- [ルート相対path] = true（git ls-filesで追跡されているファイル）
-local git_tracked_dirs = {} -- ['dir/'] = true（追跡ファイルを1つ以上含むディレクトリ）
 -- node_modules 等が別マウント（FS境界）だと、その中から git を叩くと境界で
 -- 探索が止まり上位の .git を見つけられない。境界を越えて探索させる。
 local GIT_ENV = { GIT_DISCOVERY_ACROSS_FILESYSTEM = '1' }
@@ -52,10 +50,10 @@ end
 
 -- ══════════════════════════════════════════════
 -- アイコン（拡張子ごと・Nerd Fonts）
--- 定義は config.file_icons に集約（explorer/git_panel/tabline で共有）
+-- 定義は config.util.file_icons に集約（explorer/git_panel/tabline で共有）
 -- ══════════════════════════════════════════════
 
-local file_icons = require('config.file_icons')
+local file_icons = require('config.util.file_icons')
 
 local FOLDER_ICON = file_icons.FOLDER
 local function icon_char(code) return file_icons.char(code) end
@@ -120,23 +118,11 @@ local function entry_git_code(entry)
   return nil
 end
 
--- git 管理外（追跡ファイルが1つも無い）かどうか。薄字化の判定に使う。
--- ファイルは追跡集合に無ければ管理外、ディレクトリは配下に追跡ファイルが無ければ管理外。
--- .terraform や node_modules のように status が畳んだり個別列挙したりする差異に依存しない。
-local function entry_unmanaged(entry)
-  if not git_repo_root then return false end
-  local rel = entry.path:sub(#git_repo_root + 2)
-  if entry.isdir then
-    return not git_tracked_dirs[rel .. '/']
-  end
-  return not git_tracked[rel]
-end
-
 local function refresh_git_status(target_cwd)
   vim.system({ 'git', 'rev-parse', '--show-toplevel' }, { cwd = target_cwd, text = true, env = GIT_ENV }, function(root_res)
     vim.schedule(function()
       if root_res.code ~= 0 then
-        git_status, git_tracked, git_tracked_dirs, git_status_cwd, git_repo_root = {}, {}, {}, target_cwd, nil
+        git_status, git_status_cwd, git_repo_root = {}, target_cwd, nil
         if cwd == target_cwd then render() end
         return
       end
@@ -145,34 +131,15 @@ local function refresh_git_status(target_cwd)
         'git', '--no-optional-locks', '-c', 'core.quotePath=', 'status',
         '--porcelain', '-unormal', '--no-renames', '--ignored=matching', '.',
       }, { cwd = target_cwd, text = true, env = GIT_ENV }, function(res)
-        -- 追跡ファイル一覧（管理外＝薄字化 の判定に使う。statusの畳み方に依存しない）
-        vim.system(
-          { 'git', 'ls-files', '--full-name', '--', '.' },
-          { cwd = target_cwd, text = true, env = GIT_ENV },
-          function(ls)
-            vim.schedule(function()
-              local map = {}
-              for line in (res.stdout or ''):gmatch('[^\r\n]+') do
-                local code, path = match_status_line(line)
-                if code and path then map[path] = code end
-              end
-              local tracked, tdirs = {}, {}
-              for path in (ls.stdout or ''):gmatch('[^\r\n]+') do
-                tracked[path] = true
-                local p = path
-                while true do
-                  local slash = p:match('^(.*)/[^/]*$')
-                  if not slash then break end
-                  p = slash
-                  tdirs[p .. '/'] = true
-                end
-              end
-              git_status, git_tracked, git_tracked_dirs = map, tracked, tdirs
-              git_status_cwd, git_repo_root = target_cwd, repo_root
-              if cwd == target_cwd then render() end
-            end)
+        vim.schedule(function()
+          local map = {}
+          for line in (res.stdout or ''):gmatch('[^\r\n]+') do
+            local code, path = match_status_line(line)
+            if code and path then map[path] = code end
           end
-        )
+          git_status, git_status_cwd, git_repo_root = map, target_cwd, repo_root
+          if cwd == target_cwd then render() end
+        end)
       end)
     end)
   end)
@@ -272,7 +239,8 @@ function render()
     end
     table.insert(lines, line)
     local lnum = #lines - 1
-    local unmanaged = git_ready and entry_unmanaged(entry) or false
+    -- 薄字化するのは git 管理外＝ignore のみ（新規/未追跡ファイルは薄くしない）
+    local unmanaged = git_code == GIT_CODES.ignored
     if selection[entry.path] then
       hl(lnum, 'ExplorerSelected')
     elseif entry.isdir then
@@ -280,7 +248,7 @@ function render()
     else
       hl(lnum, 'ExplorerFile')
     end
-    -- git 管理外（未追跡・ignore）は行全体を薄く表示する（VSCode風）
+    -- git 管理外（ignore）は行全体を薄く表示する（VSCode風。未追跡は薄くしない）
     if unmanaged and not selection[entry.path] then
       hl(lnum, 'ExplorerDimmed')
     end
@@ -432,7 +400,7 @@ local function preview_dir_lines(path)
     end
     lines[#lines + 1] = line
     local lnum = #lines - 1
-    local unmanaged = git_ready and entry_unmanaged(e) or false
+    local unmanaged = git_ready and entry_git_code(e) == GIT_CODES.ignored or false
     hls[#hls + 1] = { lnum, e.isdir and 'ExplorerDir' or 'ExplorerFile', 0, -1 }
     if unmanaged then
       hls[#hls + 1] = { lnum, 'ExplorerDimmed', 0, -1 }

@@ -3,6 +3,8 @@
 
 local M = {}
 
+local win_util = require('config.util.win_util')
+
 local function has_bat()
   return vim.fn.executable('bat') == 1
 end
@@ -50,6 +52,7 @@ function M.open_match(line)
   lnum = tonumber(lnum) or 1
   col = tonumber(col) or 1
 
+  win_util.focus_editor() -- explorer等にフォーカスがあっても必ず編集窓へ開く
   vim.cmd('edit ' .. vim.fn.fnameescape(path))
   pcall(vim.api.nvim_win_set_cursor, 0, { lnum, math.max(col - 1, 0) })
   vim.cmd('normal! zz')
@@ -189,12 +192,53 @@ local function open_float_term(title, shell, on_done)
   end)
 end
 
+-- モード切替（内容検索 / ファイル名検索 / 置換）を1つのピッカーから行うための仕組み。
+-- fzfは別プロセスなので、表示中のキーは fzf の --bind で拾い、「相手モードの印」と
+-- 現在のクエリを一時ファイルに書いて abort し、Lua側(on_exit)がそれを見て開き直す。
+
+-- targets: { {key='ctrl-f', to='files'}, ... } → fzfの --bind 文字列を返す
+local function switch_binds_str(switch_file, qfile, targets)
+  local parts = {}
+  for _, t in ipairs(targets) do
+    local action = string.format(
+      'execute-silent(printf %%s %s > %s; printf %%s {q} > %s)+abort',
+      t.to, switch_file, qfile
+    )
+    parts[#parts + 1] = '--bind ' .. vim.fn.shellescape(t.key .. ':' .. action)
+  end
+  return table.concat(parts, ' ')
+end
+
+-- 切替印があれば消費して true を返す（相手モードを開き直す）
+local function consume_switch(switch_file, qfile)
+  if vim.fn.filereadable(switch_file) == 0 then return false end
+  local target = vim.trim((vim.fn.readfile(switch_file))[1] or '')
+  local q = ''
+  if vim.fn.filereadable(qfile) == 1 then q = (vim.fn.readfile(qfile))[1] or '' end
+  vim.fn.delete(switch_file)
+  vim.fn.delete(qfile)
+  if target == 'content' then
+    M.open(q)
+  elseif target == 'files' then
+    M.open_files(q)
+  elseif target == 'replace' then
+    M.replace(q)
+  else
+    return false
+  end
+  return true
+end
+
+local SWITCH_HEADER = 'Ctrl-g:内容  Ctrl-f:ファイル名  Ctrl-r:置換'
+
 ---@param initial_query? string
 function M.open(initial_query)
   if not ensure_deps() then return end
 
   initial_query = initial_query or ''
   local out = vim.fn.tempname()
+  local switch_file = vim.fn.tempname()
+  local qfile = vim.fn.tempname()
   local cwd = vim.fn.getcwd()
 
   local fzf_cmd = table.concat({
@@ -203,13 +247,17 @@ function M.open(initial_query)
     '--disabled',
     '--delimiter', ':',
     '--prompt', "'rg> '",
-    '--header', "'Enter: 開く  Esc: 閉じる'",
+    '--header', vim.fn.shellescape('Enter:開く  ' .. SWITCH_HEADER .. '  Esc:閉じる'),
     '--preview-window', "'right,50%,+{2}+3/3,~1'",
     '--preview', vim.fn.shellescape(preview_cmd()),
     '--query', vim.fn.shellescape(initial_query),
     '--bind', vim.fn.shellescape('start:reload:' .. RG_RELOAD),
     '--bind', vim.fn.shellescape('change:reload:' .. RG_RELOAD),
     '--bind', "'ctrl-u:clear-query'",
+    switch_binds_str(switch_file, qfile, {
+      { key = 'ctrl-f', to = 'files' },
+      { key = 'ctrl-r', to = 'replace' },
+    }),
   }, ' ')
 
   local shell = string.format(
@@ -220,18 +268,85 @@ function M.open(initial_query)
   )
 
   open_float_term(' rg + fzf: ' .. cwd .. ' ', shell, function()
-    if vim.fn.filereadable(out) == 0 then
+    local lines = {}
+    if vim.fn.filereadable(out) == 1 then
+      lines = vim.tbl_filter(function(l) return l ~= '' end, vim.fn.readfile(out))
+      vim.fn.delete(out)
+    end
+    if #lines > 0 then
+      M.open_match(lines[1])
       return
     end
-    local lines = vim.tbl_filter(function(l)
-      return l ~= ''
-    end, vim.fn.readfile(out))
-    vim.fn.delete(out)
+    consume_switch(switch_file, qfile) -- 選択なし: モード切替なら開き直す
+  end)
+end
 
-    if #lines == 0 then
+local function ensure_file_deps()
+  if not has_cmd('fzf') then
+    vim.notify('fzf が見つかりません', vim.log.levels.ERROR)
+    return false
+  end
+  if not has_cmd('fd') then
+    vim.notify('fd が見つかりません', vim.log.levels.ERROR)
+    return false
+  end
+  return true
+end
+
+local function file_preview_cmd()
+  if has_bat() then
+    return [[bat --style=numbers --color=always -- {} 2>/dev/null || sed -n '1,200p' -- {}]]
+  end
+  return [[sed -n '1,200p' -- {}]]
+end
+
+local FD_CMD = "fd --type f --hidden --strip-cwd-prefix --color=never --exclude .git"
+
+--- ファイル名を fd + fzf で絞り込んで開く（全文検索の M.open のファイル名版）
+---@param initial_query? string
+function M.open_files(initial_query)
+  if not ensure_file_deps() then return end
+
+  initial_query = initial_query or ''
+  local out = vim.fn.tempname()
+  local switch_file = vim.fn.tempname()
+  local qfile = vim.fn.tempname()
+  local cwd = vim.fn.getcwd()
+
+  local fzf_cmd = table.concat({
+    'fzf',
+    '--prompt', "'files> '",
+    '--header', vim.fn.shellescape('Enter:開く  ' .. SWITCH_HEADER .. '  Esc:閉じる'),
+    '--preview-window', "'right,50%'",
+    '--preview', vim.fn.shellescape(file_preview_cmd()),
+    '--query', vim.fn.shellescape(initial_query),
+    '--bind', "'ctrl-u:clear-query'",
+    switch_binds_str(switch_file, qfile, {
+      { key = 'ctrl-g', to = 'content' },
+      { key = 'ctrl-r', to = 'replace' },
+    }),
+  }, ' ')
+
+  local shell = string.format(
+    'cd %s && %s | %s > %s',
+    vim.fn.shellescape(cwd),
+    FD_CMD,
+    fzf_cmd,
+    vim.fn.shellescape(out)
+  )
+
+  open_float_term(' files + fzf: ' .. cwd .. ' ', shell, function()
+    local lines = {}
+    if vim.fn.filereadable(out) == 1 then
+      lines = vim.tbl_filter(function(l) return l ~= '' end, vim.fn.readfile(out))
+      vim.fn.delete(out)
+    end
+    if #lines > 0 then
+      win_util.focus_editor() -- explorer等にフォーカスがあっても必ず編集窓へ開く
+      vim.cmd('edit ' .. vim.fn.fnameescape(M.resolve_path(cwd, lines[1])))
       return
     end
-    M.open_match(lines[1])
+    consume_switch(switch_file, qfile) -- 選択なし: モード切替なら開き直す
   end)
 end
 
@@ -270,6 +385,8 @@ function M.replace(initial_query, initial_replace)
   initial_query = initial_query or ''
   initial_replace = initial_replace or ''
   local out = vim.fn.tempname()
+  local switch_file = vim.fn.tempname()
+  local qfile = vim.fn.tempname()
   local cwd = vim.fn.getcwd()
   local closing = false
   local job_id = nil
@@ -295,14 +412,18 @@ function M.replace(initial_query, initial_replace)
     '--print-query',
     '--delimiter', ':',
     '--prompt', "'rg> '",
-    '--header', "'Tab:置換欄  Ctrl-Space:選択  Enter:置換実行  Esc:閉じる'",
+    '--header', vim.fn.shellescape('Tab:置換欄  Ctrl-t:選択  Enter:置換実行  Ctrl-g:内容  Ctrl-f:ファイル名  Esc:閉じる'),
     '--preview-window', "'right,50%,+{2}+3/3,~1'",
     '--preview', vim.fn.shellescape(preview_cmd()),
     '--query', vim.fn.shellescape(initial_query),
     '--bind', vim.fn.shellescape('start:reload:' .. RG_RELOAD),
     '--bind', vim.fn.shellescape('change:reload:' .. RG_RELOAD),
     '--bind', "'ctrl-u:clear-query'",
-    '--bind', "'ctrl-space:toggle+down'",
+    '--bind', "'ctrl-t:toggle+down'",
+    switch_binds_str(switch_file, qfile, {
+      { key = 'ctrl-g', to = 'content' },
+      { key = 'ctrl-f', to = 'files' },
+    }),
   }, ' ')
 
   local shell = string.format(
@@ -449,6 +570,12 @@ function M.replace(initial_query, initial_replace)
 
         cleanup_wins()
 
+        -- モード切替（Ctrl-g/Ctrl-f）なら相手モードで開き直す
+        if consume_switch(switch_file, qfile) then
+          pcall(vim.fn.delete, out)
+          return
+        end
+
         -- Esc / abort
         if code ~= 0 and vim.fn.filereadable(out) == 0 then
           return
@@ -494,13 +621,14 @@ function M.replace(initial_query, initial_replace)
   end)
 end
 
+-- 入口は検索(内容)のみ。開いた後 Ctrl-f=ファイル名 / Ctrl-r=置換 / Ctrl-g=内容 で切替。
 vim.keymap.set('n', '<leader>/', function()
   M.open('')
-end, { desc = 'rg+fzf: 全ファイル検索' })
+end, { desc = 'rg+fzf: 検索（Ctrl-fファイル名/Ctrl-r置換に切替可）' })
 
 vim.keymap.set('n', '<leader>*', function()
   M.open(vim.fn.expand('<cword>'))
-end, { desc = 'rg+fzf: カーソル単語で全ファイル検索' })
+end, { desc = 'rg+fzf: カーソル単語で検索（Ctrl-f/Ctrl-rで切替可）' })
 
 vim.keymap.set('v', '<leader>/', function()
   local text = visual_text()
@@ -508,22 +636,6 @@ vim.keymap.set('v', '<leader>/', function()
   vim.schedule(function()
     M.open(text)
   end)
-end, { desc = 'rg+fzf: 選択文字列で全ファイル検索' })
-
-vim.keymap.set('n', '<leader>sr', function()
-  M.replace('')
-end, { desc = 'rg+fzf: 全ファイル置換' })
-
-vim.keymap.set('n', '<leader>s*', function()
-  M.replace(vim.fn.expand('<cword>'))
-end, { desc = 'rg+fzf: カーソル単語で全ファイル置換' })
-
-vim.keymap.set('v', '<leader>sr', function()
-  local text = visual_text()
-  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'n', false)
-  vim.schedule(function()
-    M.replace(text)
-  end)
-end, { desc = 'rg+fzf: 選択文字列で全ファイル置換' })
+end, { desc = 'rg+fzf: 選択文字列で検索（Ctrl-f/Ctrl-rで切替可）' })
 
 return M

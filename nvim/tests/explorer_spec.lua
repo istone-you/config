@@ -38,7 +38,7 @@ local function run_child(body_lua)
 end
 
 T.describe('explorer', function()
-  T.it('dims only git-unmanaged entries; a tracked dir with an untracked child stays normal', function()
+  T.it('dims only git-ignored entries; untracked/new files are NOT dimmed', function()
     local res = run_child([[
       local dir = vim.fn.tempname()
       vim.fn.mkdir(dir, 'p')
@@ -90,10 +90,9 @@ T.describe('explorer', function()
         return false
       end
 
-      assert_eq(dimmed('fresh.txt'), true, 'untracked file should be dimmed')
+      assert_eq(dimmed('fresh.txt'), false, 'untracked/new file should NOT be dimmed')
       assert_eq(dimmed('keep.txt'), false, 'tracked file should NOT be dimmed')
-      assert_eq(dimmed('build'), true, 'ignored dir should be dimmed')
-      assert_eq(dimmed('secret'), true, 'dir whose contents are ignored individually should be dimmed (.terraform型)')
+      assert_eq(dimmed('build'), true, 'ignored dir (collapsed) should be dimmed')
       assert_eq(dimmed('src'), false, 'tracked dir with an untracked child should NOT be dimmed')
 
       -- 無視ディレクトリを開いたら中身も全部薄いこと（畳まれた祖先から継承）

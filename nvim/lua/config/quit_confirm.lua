@@ -7,21 +7,16 @@
 
 local M = {}
 
--- auto_quit.lua と同じ「ユーティリティ扱い」の判定基準。これらしか残らないと
--- auto_quit が Neovim を終了させるため、確認判定でも同様に無視する。
-local UTILITY_FT = { explorer = true, shortcuts = true }
+local win_util = require('config.util.win_util')
 
 -- 現在のウィンドウを閉じたら Neovim 自体が終了するか。
--- = 現在の窓以外に「実編集ウィンドウ（非フロート かつ 非ユーティリティ）」が
---   1つも無い（かつタブが1つ）。explorerやgitパネルだけが残る場合も終了扱い。
+-- = 現在の窓以外に実編集ウィンドウが1つも無い（かつタブが1つ）。
+--   explorerやgitパネルだけが残る場合も終了扱い。
 local function exits_nvim()
   if #vim.api.nvim_list_tabpages() > 1 then return false end
   local cur = vim.api.nvim_get_current_win()
   for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-    if w ~= cur and vim.api.nvim_win_get_config(w).relative == '' then
-      local ft = vim.bo[vim.api.nvim_win_get_buf(w)].filetype
-      if not UTILITY_FT[ft] then return false end
-    end
+    if w ~= cur and win_util.is_editor(w) then return false end
   end
   return true
 end

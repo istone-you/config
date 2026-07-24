@@ -51,7 +51,7 @@ T.describe('options.lua behavior', function()
     T.rmrf(dir)
   end)
 
-  T.it('<leader>q does nothing when it is the only listed buffer (avoids closing the last window/buffer)', function()
+  T.it('<leader>q closes the last listed buffer too (start_screen が受け止める)', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir, 'p')
     T.write_file(dir .. '/only.txt', { 'x' })
@@ -65,10 +65,12 @@ T.describe('options.lua behavior', function()
     local only_buf = vim.api.nvim_get_current_buf()
 
     feed('<leader>q')
-    T.eq(vim.api.nvim_get_current_buf(), only_buf, 'the only listed buffer should remain open')
-    T.ok(vim.api.nvim_buf_is_valid(only_buf))
+    vim.wait(50)
+    -- 最後の1つでも閉じる（delistされ、カーソルは別バッファへ移る）
+    T.ok(vim.api.nvim_get_current_buf() ~= only_buf, 'moved off the closed buffer')
+    T.eq(vim.fn.buflisted(only_buf), 0, 'the last buffer is closed (delisted)')
 
-    vim.cmd('bwipeout! ' .. only_buf)
+    pcall(vim.cmd, 'bwipeout! ' .. only_buf)
     T.rmrf(dir)
   end)
 

@@ -376,6 +376,91 @@ T.describe('git_panel Files panel', function()
     GP.close()
     T.rmrf(dir)
   end)
+
+  T.it('Space on / stages the other files even when a staged deletion is present (lazygit toggleStaged: stage only unstaged nodes; `git add` on a deleted path would otherwise abort the whole batch)', function()
+    -- 回帰テスト: 以前は配下の全パスをまとめて`git add -- <all>`していたため、
+    -- ステージ済み削除(working treeに存在しない)が1つでも混ざると
+    -- `fatal: pathspec did not match any files`でコマンド全体が失敗し、
+    -- 他のファイルも一切ステージされなかった
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/gone.txt', { 'x' })
+      T.write_file(d .. '/keep.txt', { 'y' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'seed' })
+    end)
+    GP.git(dir, { 'rm', 'gone.txt' })                     -- staged deletion: 'D '
+    T.write_file(dir .. '/keep.txt', { 'y', 'changed' })  -- unstaged modify: ' M'
+
+    GP.open(dir, false)
+    -- デフォルトでカーソルはルート"/"に乗っている -> 配下(gone.txt/keep.txt)全部が対象
+    GP.press('<Space>')
+    T.wait_until(function() return GP.status(dir):find('M  keep.txt', 1, true) ~= nil end)
+    T.contains(GP.status(dir), 'M  keep.txt', 'the modified file must get staged despite the deleted sibling')
+    T.contains(GP.status(dir), 'D  gone.txt', 'the already-staged deletion stays staged, untouched')
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+
+  T.it('Space on a directory unstages everything under it INCLUDING a staged deletion (lazygit pressWithLock: unstage a dir via `git reset HEAD -- <dir>`, not by enumerating displayed rows)', function()
+    -- 回帰テスト: 以前は表示ツリーのファイル行を列挙して個別にreset/rmしていたため、
+    -- 何らかの理由でツリーに出ていないステージ済み削除が取りこぼされ
+    -- 「親ディレクトリをSpaceしてもDだけアンステージされない」状態になっていた。
+    -- ディレクトリはパスごとgit reset に渡し、配下の再帰をgitに任せることで確実に外す
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/sub/gone.txt', { 'x' })
+      T.write_file(d .. '/sub/keep.txt', { 'y' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'seed' })
+    end)
+    GP.git(dir, { 'rm', 'sub/gone.txt' })                 -- staged deletion: 'D '
+    T.write_file(dir .. '/sub/keep.txt', { 'y', 'ch' })
+    GP.git(dir, { 'add', 'sub/keep.txt' })                -- staged modify: 'M '
+    -- sanity: すべてステージ済み
+    T.contains(GP.status(dir), 'D  sub/gone.txt')
+    T.contains(GP.status(dir), 'M  sub/keep.txt')
+
+    GP.open(dir, false)
+    local left = GP.left_win()
+    local row = GP.find_row(left, 'sub')
+    T.ok(row ~= nil, 'the sub directory should be listed')
+    GP.goto_row(left, row)
+    GP.press('<Space>') -- unstage all under sub/
+    T.wait_until(function() return GP.status(dir):find(' D sub/gone.txt', 1, true) ~= nil end)
+    T.contains(GP.status(dir), ' D sub/gone.txt', 'the staged deletion must be unstaged too, not left staged')
+    T.contains(GP.status(dir), ' M sub/keep.txt', 'the staged modification is unstaged as well')
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+
+  T.it('Space toggles a deleted file between staged (D ) and unstaged ( D)', function()
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/gone.txt', { 'x' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'seed' })
+    end)
+    GP.git(dir, { 'rm', 'gone.txt' }) -- 'D '
+    T.contains(GP.status(dir), 'D  gone.txt')
+
+    GP.open(dir, false)
+    local left = GP.left_win()
+    local row = GP.find_row(left, 'gone.txt')
+    T.ok(row ~= nil, 'the deleted file should be listed')
+    GP.goto_row(left, row)
+    GP.press('<Space>') -- unstage: git reset HEAD -- gone.txt -> ' D'
+    T.wait_until(function() return GP.status(dir):find(' D gone.txt', 1, true) ~= nil end)
+    T.contains(GP.status(dir), ' D gone.txt')
+
+    -- 内部refreshが済んでカーソルがgone.txtに乗り直すのを待ってから2回目を押す
+    vim.wait(200)
+    GP.press('<Space>') -- re-stage: 素の`git add -- gone.txt`(未ステージ削除にはマッチする)
+    T.wait_until(function() return GP.status(dir):find('D  gone.txt', 1, true) ~= nil end)
+    T.contains(GP.status(dir), 'D  gone.txt')
+
+    GP.close()
+    T.rmrf(dir)
+  end)
 end)
 
 T.summary()

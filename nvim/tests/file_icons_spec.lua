@@ -1,5 +1,5 @@
 local T = dofile(TESTS_DIR .. '/helpers.lua')
-local file_icons = require('config.file_icons')
+local file_icons = require('config.util.file_icons')
 
 local function char(code) return vim.fn.nr2char(code) end
 

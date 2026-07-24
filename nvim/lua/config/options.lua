@@ -32,13 +32,17 @@ vim.opt.relativenumber = true
 vim.keymap.set('n', '<Tab>',   '<cmd>bnext<cr>',  { desc = 'Next buffer' })
 vim.keymap.set('n', '<S-Tab>', '<cmd>bprev<cr>',  { desc = 'Prev buffer' })
 vim.keymap.set('n', '<leader>q', function()
+  local cur = vim.api.nvim_get_current_buf()
+  if not vim.bo[cur].buflisted then return end -- スタート画面等の非listedバッファは対象外
   local bufs = vim.tbl_filter(function(b)
     return vim.bo[b].buflisted and vim.api.nvim_buf_is_valid(b)
   end, vim.api.nvim_list_bufs())
   if #bufs > 1 then
-    local cur = vim.api.nvim_get_current_buf()
     vim.cmd('bprev')
     vim.cmd('bd ' .. cur)
+  else
+    -- 最後の1つ: 閉じるとBufDeleteでスタート画面に戻る
+    vim.cmd('bdelete ' .. cur)
   end
 end, { desc = 'Close buffer' })
 
