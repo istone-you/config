@@ -6,7 +6,7 @@ local T = dofile(TESTS_DIR .. '/helpers.lua')
 require('config.lsp')
 
 T.describe('lsp.lua: server config registration', function()
-  T.it('registers gopls/ts_ls/tofu_ls/terraformls/taplo/yamlls/biome with the right cmd/filetypes/root_markers', function()
+  T.it('registers gopls/ts_ls/tofu_ls/terraformls/taplo/yamlls/biome/bashls with the right cmd/filetypes/root_markers', function()
     local gopls = vim.lsp.config.gopls
     T.eq(gopls.cmd, { 'gopls' })
     T.contains(table.concat(gopls.filetypes, ','), 'go')
@@ -37,6 +37,12 @@ T.describe('lsp.lua: server config registration', function()
     T.eq(biome.cmd, { 'biome', 'lsp-proxy' })
     T.contains(table.concat(biome.filetypes, ','), 'typescript')
     T.contains(table.concat(biome.root_markers, ','), 'biome.json')
+
+    local bashls = vim.lsp.config.bashls
+    T.eq(bashls.cmd, { 'bash-language-server', 'start' })
+    T.contains(table.concat(bashls.filetypes, ','), 'sh')
+    T.contains(table.concat(bashls.filetypes, ','), 'bash')
+    T.contains(table.concat(bashls.root_markers, ','), '.git')
   end)
 end)
 
@@ -62,7 +68,7 @@ T.describe('lsp.lua: LspAttach keymaps', function()
 end)
 
 T.describe('lsp.lua: format-on-save filter', function()
-  T.it('BufWritePre triggers vim.lsp.buf.format with a filter that allows gopls/tofu_ls/terraformls/taplo/yamlls/biome', function()
+  T.it('BufWritePre triggers vim.lsp.buf.format with a filter that allows gopls/tofu_ls/terraformls/taplo/yamlls/biome/bashls', function()
     local captured_filter
     local orig_format = vim.lsp.buf.format
     vim.lsp.buf.format = function(opts) captured_filter = opts and opts.filter end
@@ -77,6 +83,7 @@ T.describe('lsp.lua: format-on-save filter', function()
     T.eq(captured_filter({ name = 'taplo' }), true)
     T.eq(captured_filter({ name = 'yamlls' }), true)
     T.eq(captured_filter({ name = 'biome' }), true)
+    T.eq(captured_filter({ name = 'bashls' }), true)
     T.eq(captured_filter({ name = 'ts_ls' }), false, 'ts_ls should not be auto-formatted on save')
   end)
 end)
@@ -95,13 +102,14 @@ T.describe('lsp.lua: enable only when binary exists', function()
     end
   end)
 
-  T.it('enables gopls/ts_ls/taplo/yamlls/biome only when their binaries exist', function()
+  T.it('enables gopls/ts_ls/taplo/yamlls/biome/bashls only when their binaries exist', function()
     local pairs_ = {
       { 'gopls', 'gopls' },
       { 'ts_ls', 'typescript-language-server' },
       { 'taplo', 'taplo' },
       { 'yamlls', 'yaml-language-server' },
       { 'biome', 'biome' },
+      { 'bashls', 'bash-language-server' },
     }
     for _, p in ipairs(pairs_) do
       local name, bin = p[1], p[2]

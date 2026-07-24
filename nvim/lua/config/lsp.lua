@@ -90,10 +90,16 @@ vim.lsp.config('biome', {
   root_markers = { 'biome.json', 'biome.jsonc', 'package.json', '.git' },
 })
 
+vim.lsp.config('bashls', {
+  cmd          = { 'bash-language-server', 'start' },
+  filetypes    = { 'sh', 'bash' },
+  root_markers = { '.git' },
+})
+
 local tf_server = util.has_cmd('tofu-ls') and 'tofu_ls'
   or (util.has_cmd('terraform-ls') and 'terraformls' or nil)
 
-local to_enable = { 'gopls', 'ts_ls', 'taplo', 'yamlls', 'biome' }
+local to_enable = { 'gopls', 'ts_ls', 'taplo', 'yamlls', 'biome', 'bashls' }
 if tf_server then
   table.insert(to_enable, tf_server)
 end
@@ -129,4 +135,5 @@ util.setup_format_on_save({
   taplo       = true,
   yamlls      = true,
   biome       = true,
+  bashls      = true,
 })

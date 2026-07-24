@@ -35,7 +35,3 @@ return {
   tsserver_path = '/app/web/node_modules/typescript/lib/tsserver.js',
 }
 ```
-
-## 動作確認
-
-Neovim で対象ファイルを開いて `:LspInfo` を実行し、LSP が接続されているか確認する。
