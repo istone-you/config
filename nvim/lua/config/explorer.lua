@@ -57,7 +57,7 @@ local file_icons = require('config.util.file_icons')
 
 local FOLDER_ICON = file_icons.FOLDER
 local function icon_char(code) return file_icons.char(code) end
-local function get_icon(name, isdir) return file_icons.get(name, isdir) end
+local function get_icon(name, isdir, path) return file_icons.get(name, isdir, path) end
 
 -- ══════════════════════════════════════════════
 -- gitステータス（yazi/plugins/git.yazi と同じ判定・表示ロジック）
@@ -223,7 +223,7 @@ function render()
   table.insert(lines, '')
 
   for _, entry in ipairs(rows) do
-    local icon = get_icon(entry.name, entry.isdir)
+    local icon = get_icon(entry.name, entry.isdir, entry.path)
     local line = '  ' .. icon .. '  ' .. entry.name
     -- シンボリックリンクは yazi 風に「名前 -> ターゲット」を表示する
     local link_cs, link_ce
@@ -390,7 +390,7 @@ local function preview_dir_lines(path)
   local git_ready = git_status_cwd == cwd
   local lines, hls = {}, {}
   for _, e in ipairs(entries) do
-    local icon = get_icon(e.name, e.isdir)
+    local icon = get_icon(e.name, e.isdir, e.path)
     local line = '  ' .. icon .. '  ' .. e.name
     local link_cs, link_ce
     if e.link then

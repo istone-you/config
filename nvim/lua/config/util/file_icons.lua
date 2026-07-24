@@ -22,6 +22,7 @@ M.by_ext = {
   tsx     = 0xf0708,
   go      = 0xe626,
   py      = 0xe606,
+  pkl     = 0xf013,
   rs      = 0xe7a8,
   rb      = 0xe739,
   java    = 0xe738,
@@ -34,10 +35,20 @@ M.by_ext = {
   jsonc   = 0xe60b,
   toml    = 0xe6b2,
   md      = 0xe73e,
+  mdc     = 0xe73e,
   sh      = 0xe691,
   bash    = 0xe615,
   zsh     = 0xe615,
+  zshrc   = 0xe615,
   vim     = 0xe62b,
+  vimrc   = 0xe62b,
+  shellcheckrc = 0xe691,
+  cursorrules = 0xf0bf1,
+  template = 0xf0613,
+  txt     = 0xf15c,
+  text    = 0xf15c,
+  crt     = 0xf0124,
+  rego    = 0xf0498,
   tf      = 0xe69a,
   tfvars  = 0xe69a,
   graphql = 0xe662,
@@ -51,6 +62,11 @@ M.by_ext = {
   xml     = 0xe619,
   png     = 0xe60d,
   jpeg    = 0xe60d,
+  jpg     = 0xe60d,
+  gif     = 0xf0d78,
+  webp    = 0xe60d,
+  avif    = 0xe60d,
+  ico     = 0xe623,
   svg     = 0xe698,
   zip     = 0xe6aa,
   npmrc   = 0xe71e,
@@ -72,12 +88,20 @@ local SPECIAL = {
   tsconfig     = 0xe69d,
   playwright   = 0xe863,
   claude       = 0xf0bf1,
+  agents       = 0xf0beb,
   gomod        = 0xe626,
-  gosum        = 0xf0565,
+  codeowners   = 0xf09b,
+  license      = 0xf0fc3,
+  githubactions = 0xe7e9, -- dev-githubactions
+  vscode       = 0xe8da, -- dev-vscode
+  codecov      = 0xe797, -- dev-codecov
+  container    = 0xf4b7, -- oct-container
+  coderabbit   = 0xf0907, -- md-rabbit
+  wrangler     = 0xe792, -- dev-cloudflare
 }
 
--- ファイル名（+ ディレクトリか否か）からアイコンのコードポイントを返す
-function M.code(name, isdir)
+-- ファイル名（+ ディレクトリか否か・任意でフルパス）からアイコンのコードポイントを返す
+function M.code(name, isdir, path)
   if isdir then return M.FOLDER end
   local lower = name:lower()
   -- Docker（Dockerfile / .dockerignore / docker-compose.*.yml）
@@ -85,6 +109,30 @@ function M.code(name, isdir)
   -- docker-compose.yml / docker-compose.yaml（および *.override.yml 等）は
   -- yaml ではなく Docker アイコンで表示する
   if lower:match('docker%-compose.*%.ya?ml$') then return SPECIAL.dockerfile end
+  -- .github/workflows 配下の yaml/yml は GitHub Actions
+  do
+    local p = (path or ''):lower():gsub('\\', '/')
+    if lower:match('%.ya?ml$') and (p:match('/%.github/workflows/') or p:match('^%.github/workflows/')) then
+      return SPECIAL.githubactions
+    end
+    -- .vscode/settings.json は VS Code
+    if lower == 'settings.json' and (p:match('/%.vscode/settings%.json$') or p:match('^%.vscode/settings%.json$')) then
+      return SPECIAL.vscode
+    end
+    -- .devcontainer/devcontainer.json
+    if lower == 'devcontainer.json' and (p:match('/%.devcontainer/devcontainer%.json$') or p:match('^%.devcontainer/devcontainer%.json$')) then
+      return SPECIAL.container
+    end
+  end
+  if lower == 'codecov.yml' or lower == '.codecov.yml' or lower == 'codecov.yaml' or lower == '.codecov.yaml' then
+    return SPECIAL.codecov
+  end
+  if lower == '.coderabbit.yml' or lower == '.coderabbit.yaml' then
+    return SPECIAL.coderabbit
+  end
+  if lower == 'wrangler.toml' or lower == 'wrangler.json' or lower == 'wrangler.jsonc' then
+    return SPECIAL.wrangler
+  end
   -- .gitignore / .gitattributes / .cursorignore は同じアイコン
   if lower:match('gitignore') or lower == '.gitattributes' or lower == '.cursorignore' then
     return SPECIAL.gitignore
@@ -97,11 +145,16 @@ function M.code(name, isdir)
   -- tsconfig.json / tsconfig.app.json など（.jsonc は対象外）
   if lower:match('^tsconfig.*%.json$') then return SPECIAL.tsconfig end
   if lower == 'package.json' then return SPECIAL.nodejs end
+  if lower == 'package-lock.json' then return SPECIAL.nodejs end
   if lower == 'claude.md' then return SPECIAL.claude end
-  if lower == 'go.mod' then return SPECIAL.gomod end
-  if lower == 'go.sum' then return SPECIAL.gosum end
+  if lower == 'agents.md' then return SPECIAL.agents end
+  if lower == 'go.mod' or lower == 'go.sum' or lower == 'go.work' or lower == 'go.work.sum' then
+    return SPECIAL.gomod
+  end
   if lower:match('^readme') then return SPECIAL.readme end
   if lower == 'yarn.lock' then return SPECIAL.yarn end
+  if lower == 'codeowners' then return SPECIAL.codeowners end
+  if lower == 'license' or lower == 'licence' then return SPECIAL.license end
   if lower:match('%.env') then return SPECIAL.env end
   if lower:match('%.lock$') then return SPECIAL.lock end
   local ext = name:match('%.([^%.]+)$')
@@ -118,8 +171,8 @@ M.color_by_code = {
   [0xe74e] = '#cbcb41',
   [0xf0708] = '#61dafb',
   [0xe626] = '#519aba',
-  [0xf0565] = '#9ece6a',
   [0xe606] = '#ffbc03',
+  [0xf013] = '#689f38',
   [0xe7a8] = '#dea584',
   [0xe739] = '#cc342d',
   [0xe738] = '#cc3e44',
@@ -144,10 +197,12 @@ M.color_by_code = {
   [0xe6a8] = '#cb171e',
   [0xe619] = '#e37933',
   [0xe60d] = '#a074c4',
+  [0xe623] = '#cbcb41',
+  [0xf0d78] = '#00bfa5',
   [0xe698] = '#ffb13b',
   [0xe6aa] = '#eca517',
   [0xe71e] = '#cb3837',
-  [0xf0c01] = '#ffffff',
+  [0xf0c01] = '#eceff1',
   [0xe650] = '#2496ed',
   [0xe65d] = '#f54d27',
   [0xf462] = '#dfd545',
@@ -161,7 +216,28 @@ M.color_by_code = {
   [0xe69d] = '#519aba',
   [0xe863] = '#45ba4b',
   [0xf0bf1] = '#d97757',
+  [0xf0beb] = '#a97bff',
+  [0xf09b] = '#dddddd',
+  [0xf0fc3] = '#e5c07b',
+  [0xf15c] = '#6d8086',
+  [0xf0124] = '#e5c07b',
+  [0xf0498] = '#5181b1',
+  [0xf0613] = '#9c9c9c',
+  [0xe7e9] = '#2088ff',
+  [0xe8da] = '#007acc',
+  [0xe797] = '#ec407a',
+  [0xf4b7] = '#00b0ff',
+  [0xf0907] = '#f4511e',
+  [0xe792] = '#f57f17',
   [0xe5ff] = '#7aa2f7',
+}
+
+local COLOR_BY_NAME = {
+  ['.cursorrules'] = '#dddddd',
+  ['go.mod'] = '#ec407a',
+  ['go.sum'] = '#ec407a',
+  ['go.work'] = '#ec407a',
+  ['go.work.sum'] = '#ec407a',
 }
 
 -- テストファイル（VSCode風にアイコンをオレンジにする）。path があればパス基準も判定。
@@ -181,7 +257,11 @@ end
 -- ファイル名（+ ディレクトリか否か・任意でフルパス）からブランドカラーを返す
 function M.color(name, isdir, path)
   if not isdir and M.is_test_file(name, path) then return M.TEST_COLOR end
-  return M.color_by_code[M.code(name, isdir)]
+  if not isdir then
+    local by_name = COLOR_BY_NAME[name:lower()]
+    if by_name then return by_name end
+  end
+  return M.color_by_code[M.code(name, isdir, path)]
 end
 
 local hl_defined = {}
@@ -203,9 +283,9 @@ vim.api.nvim_create_autocmd('ColorScheme', {
   callback = function() hl_defined = {} end,
 })
 
--- ファイル名（+ ディレクトリか否か）からアイコン文字を返す
-function M.get(name, isdir)
-  return char(M.code(name, isdir))
+-- ファイル名（+ ディレクトリか否か・任意でフルパス）からアイコン文字を返す
+function M.get(name, isdir, path)
+  return char(M.code(name, isdir, path))
 end
 
 return M

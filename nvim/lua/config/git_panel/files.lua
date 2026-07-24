@@ -139,7 +139,7 @@ end
 
 -- アイコン定義は config.util.file_icons に集約（explorer/git_panel/tabline で共有）
 local file_icons = require('config.util.file_icons')
-local function get_icon(name, is_dir) return file_icons.get(name, is_dir) end
+local function get_icon(name, is_dir, path) return file_icons.get(name, is_dir, path) end
 
 -- ══════════════════════════════════════════════
 -- 描画
@@ -248,7 +248,7 @@ local function render()
     else
       status_str = node.file.x .. node.file.y
     end
-    local icon = get_icon(display_name, node.is_dir)
+    local icon = get_icon(display_name, node.is_dir, node.path)
     local status_prefix = '  ' .. indent
     local before_name = status_prefix .. status_str .. ' '
     local line = before_name .. icon .. ' ' .. display_name

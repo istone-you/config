@@ -12,6 +12,8 @@ T.describe('file_icons', function()
   T.it('maps known extensions to their codepoint', function()
     T.eq(file_icons.get('main.lua', false), char(0xe620))
     T.eq(file_icons.get('server.go', false), char(0xe626))
+    T.eq(file_icons.get('AppConfig.pkl', false), char(0xf013)) -- Apple Pkl → fa-cog
+    T.eq(file_icons.color('AppConfig.pkl', false), '#689f38')
   end)
 
   T.it('jsx/tsx use the react icon; images/svg/zip/xml/npmrc are mapped', function()
@@ -35,11 +37,21 @@ T.describe('file_icons', function()
     T.eq(file_icons.get('sentry.properties', false), char(0xe89f))
     T.eq(file_icons.get('yarn.lock', false), char(0xe6a7)) -- 汎用 *.lock より優先
     T.eq(file_icons.get('package.json', false), char(0xf0399)) -- 汎用 json より優先
+    T.eq(file_icons.get('package-lock.json', false), char(0xf0399))
+    T.eq(file_icons.color('package-lock.json', false), '#8cc84b')
     T.eq(file_icons.get('README.md', false), char(0xeda4)) -- 汎用 md より優先
     T.eq(file_icons.get('CLAUDE.md', false), char(0xf0bf1)) -- 汎用 md より優先
+    T.eq(file_icons.get('AGENTS.md', false), char(0xf0beb))
+    T.eq(file_icons.color('AGENTS.md', false), '#a97bff')
     T.eq(file_icons.get('config.hcl', false), char(0xf0c01))
-    T.eq(file_icons.get('go.mod', false), char(0xe626)) -- .go と同じ Gopher
-    T.eq(file_icons.get('go.sum', false), char(0xf0565)) -- md-shield_check（整合性）
+    T.eq(file_icons.color('config.hcl', false), '#eceff1')
+    T.eq(file_icons.get('go.mod', false), char(0xe626))
+    T.eq(file_icons.get('go.sum', false), char(0xe626))
+    T.eq(file_icons.get('go.work', false), char(0xe626))
+    T.eq(file_icons.get('go.work.sum', false), char(0xe626))
+    T.eq(file_icons.color('go.mod', false), '#ec407a')
+    T.eq(file_icons.color('go.sum', false), '#ec407a')
+    T.eq(file_icons.color('main.go', false), '#519aba')
     T.eq(file_icons.get('.dockerignore', false), char(0xe650)) -- Dockerと同じ
     T.eq(file_icons.get('.gitattributes', false), char(0xe65d)) -- gitignoreと同じ
     T.eq(file_icons.get('.cursorignore', false), char(0xe65d)) -- gitignoreと同じ
@@ -88,12 +100,93 @@ T.describe('file_icons', function()
 
   T.it('falls back to the default icon for unknown extensions and no extension', function()
     T.eq(file_icons.get('mystery.xyz', false), char(file_icons.DEFAULT))
-    T.eq(file_icons.get('LICENSE', false), char(file_icons.DEFAULT))
+    T.eq(file_icons.get('Makefile', false), char(file_icons.DEFAULT))
+  end)
+
+  T.it('maps newly-added extensions and special names (mdc/images/txt/crt/rego/dotfiles/license/codeowners)', function()
+    -- .mdc は Markdown と同じ
+    T.eq(file_icons.get('rules.mdc', false), char(0xe73e))
+    T.eq(file_icons.color('rules.mdc', false), '#dddddd')
+    -- 画像一式
+    for _, name in ipairs({ 'a.jpg', 'a.webp', 'a.avif' }) do
+      T.eq(file_icons.get(name, false), char(0xe60d))
+      T.eq(file_icons.color(name, false), '#a074c4')
+    end
+    T.eq(file_icons.get('a.gif', false), char(0xf0d78))
+    T.eq(file_icons.color('a.gif', false), '#00bfa5')
+    T.eq(file_icons.get('a.ico', false), char(0xe623))
+    T.eq(file_icons.color('a.ico', false), '#cbcb41')
+    T.eq(file_icons.get('a.jxl', false), char(file_icons.DEFAULT))
+    -- テキスト
+    T.eq(file_icons.get('notes.txt', false), char(0xf15c))
+    T.eq(file_icons.get('notes.text', false), char(0xf15c))
+    T.eq(file_icons.color('notes.txt', false), '#6d8086')
+    -- 証明書 / OPA
+    T.eq(file_icons.get('server.crt', false), char(0xf0124))
+    T.eq(file_icons.color('server.crt', false), '#e5c07b')
+    T.eq(file_icons.get('policy.rego', false), char(0xf0498))
+    T.eq(file_icons.color('policy.rego', false), '#5181b1')
+    -- ドット系設定（緑）
+    T.eq(file_icons.get('.zshrc', false), char(0xe615))
+    T.eq(file_icons.color('.zshrc', false), '#89e051')
+    T.eq(file_icons.get('.vimrc', false), char(0xe62b))
+    T.eq(file_icons.color('.vimrc', false), '#019833')
+    T.eq(file_icons.get('.shellcheckrc', false), char(0xe691))
+    T.eq(file_icons.color('.shellcheckrc', false), '#89e051')
+    -- .template
+    T.eq(file_icons.get('Caddyfile.template', false), char(0xf0613))
+    T.eq(file_icons.color('Caddyfile.template', false), '#9c9c9c')
+    T.eq(file_icons.get('.cursorrules', false), char(0xf0bf1))
+    T.eq(file_icons.color('.cursorrules', false), '#dddddd')
+    T.eq(file_icons.get('CODEOWNERS', false), char(0xf09b))
+    T.eq(file_icons.color('CODEOWNERS', false), '#dddddd')
+    T.eq(file_icons.get('LICENSE', false), char(0xf0fc3))
+    T.eq(file_icons.get('LICENCE', false), char(0xf0fc3))
+    T.eq(file_icons.color('LICENSE', false), '#e5c07b')
+  end)
+
+  T.it('uses GitHub Actions icon for yaml under .github/workflows', function()
+    T.eq(file_icons.get('ci.yml', false, '.github/workflows/ci.yml'), char(0xe7e9))
+    T.eq(file_icons.get('ci.yaml', false, '/app/.github/workflows/ci.yaml'), char(0xe7e9))
+    T.eq(file_icons.color('ci.yml', false, '.github/workflows/ci.yml'), '#2088ff')
+    -- 通常の yaml や .github 直下は従来どおり
+    T.eq(file_icons.get('config.yml', false, 'config/config.yml'), char(0xe6a8))
+    T.eq(file_icons.get('dependabot.yml', false, '.github/dependabot.yml'), char(0xe6a8))
+  end)
+
+  T.it('uses VS Code icon for .vscode/settings.json', function()
+    T.eq(file_icons.get('settings.json', false, '.vscode/settings.json'), char(0xe8da))
+    T.eq(file_icons.get('settings.json', false, '/app/.vscode/settings.json'), char(0xe8da))
+    T.eq(file_icons.color('settings.json', false, '.vscode/settings.json'), '#007acc')
+    -- 他の settings.json は通常の json
+    T.eq(file_icons.get('settings.json', false, 'config/settings.json'), char(0xe60b))
+  end)
+
+  T.it('maps codecov.yml and .devcontainer/devcontainer.json', function()
+    T.eq(file_icons.get('codecov.yml', false), char(0xe797))
+    T.eq(file_icons.get('.codecov.yaml', false), char(0xe797))
+    T.eq(file_icons.color('codecov.yml', false), '#ec407a')
+    T.eq(file_icons.get('devcontainer.json', false, '.devcontainer/devcontainer.json'), char(0xf4b7))
+    T.eq(file_icons.get('devcontainer.json', false, '/app/.devcontainer/devcontainer.json'), char(0xf4b7))
+    T.eq(file_icons.color('devcontainer.json', false, '.devcontainer/devcontainer.json'), '#00b0ff')
+    T.eq(file_icons.get('devcontainer.json', false, 'other/devcontainer.json'), char(0xe60b))
+  end)
+
+  T.it('maps .coderabbit.yaml to md-rabbit', function()
+    T.eq(file_icons.get('.coderabbit.yaml', false), char(0xf0907))
+    T.eq(file_icons.get('.coderabbit.yml', false), char(0xf0907))
+    T.eq(file_icons.color('.coderabbit.yaml', false), '#f4511e')
+  end)
+
+  T.it('maps wrangler configs to cloudflare', function()
+    T.eq(file_icons.get('wrangler.toml', false), char(0xe792))
+    T.eq(file_icons.get('wrangler.json', false), char(0xe792))
+    T.eq(file_icons.get('wrangler.jsonc', false), char(0xe792))
+    T.eq(file_icons.color('wrangler.toml', false), '#f57f17')
   end)
 
   T.it('color() returns a brand color for known icons and nil for the default', function()
     T.eq(file_icons.color('main.lua', false), '#51a0cf')
-    T.eq(file_icons.color('main.go', false), file_icons.color('go.mod', false)) -- 同じGopher色
     T.eq(file_icons.color('mystery.xyz', false), nil) -- デフォルトは色なし（文字色にフォールバック）
   end)
 

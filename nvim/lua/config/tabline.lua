@@ -4,8 +4,8 @@
 -- タブラインはアイコンの後ろに空白を1つ付けて表示する。
 local file_icons = require('config.util.file_icons')
 
-local function get_icon(filename)
-  return file_icons.get(filename, false) .. ' '
+local function get_icon(filename, path)
+  return file_icons.get(filename, false, path) .. ' '
 end
 
 local function set_highlights()
@@ -61,9 +61,9 @@ local function tabline()
   end, vim.api.nvim_list_bufs())
 
   for _, bufnr in ipairs(buffers) do
-    local name     = vim.api.nvim_buf_get_name(bufnr)
-    name           = name ~= '' and vim.fn.fnamemodify(name, ':t') or '[No Name]'
-    local icon     = get_icon(name)
+    local fullpath = vim.api.nvim_buf_get_name(bufnr)
+    local name     = fullpath ~= '' and vim.fn.fnamemodify(fullpath, ':t') or '[No Name]'
+    local icon     = get_icon(name, fullpath)
     local modified = vim.bo[bufnr].modified
     local is_cur   = bufnr == current
 
