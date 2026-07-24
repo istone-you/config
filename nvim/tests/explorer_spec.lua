@@ -189,7 +189,7 @@ T.describe('explorer', function()
     T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
   end)
 
-  T.it('Ctrl-p toggles a sidebar preview float that follows the cursor; Enter closes it', function()
+  T.it('v toggles a sidebar preview float that follows the cursor; Enter closes it', function()
     local res = run_child([[
       local dir = vim.fn.tempname()
       vim.fn.mkdir(dir, 'p')
@@ -224,9 +224,9 @@ T.describe('explorer', function()
       vim.api.nvim_win_set_cursor(win, { arow, 0 })
       assert_eq(preview_win(), nil, 'no preview before toggle')
 
-      feed('<C-p>')
+      feed('v')
       vim.wait(800)
-      assert_eq(preview_win() ~= nil, true, 'preview float appears after Ctrl-p')
+      assert_eq(preview_win() ~= nil, true, 'preview float appears after v')
       assert_eq(contains(pv_lines(), 'AAA'), true, 'shows a.txt content: ' .. vim.inspect(pv_lines()))
 
       -- z.txt へ移動 → 追従
@@ -244,12 +244,12 @@ T.describe('explorer', function()
       assert_eq(p_right < s_left or p_left > s_right, true, 'preview must not overlap the sidebar')
 
       -- もう一度で消える
-      feed('<C-p>')
+      feed('v')
       vim.wait(100)
       assert_eq(preview_win(), nil, 'preview toggles off')
 
       -- 再表示して Enter で開くと閉じる
-      feed('<C-p>')
+      feed('v')
       vim.wait(300)
       assert_eq(preview_win() ~= nil, true, 'preview on again')
       feed('<CR>')
@@ -392,7 +392,7 @@ T.describe('explorer', function()
     T.rmrf(xdg)
   end)
 
-  T.it('Tab/y/x/p: copy-paste and cut-paste move files between directories', function()
+  T.it('Tab/Ctrl-y/x/p: copy-paste and cut-paste move files between directories', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir .. '/dest', 'p')
     T.write_file(dir .. '/src.txt', { 'hello' })
@@ -406,12 +406,12 @@ T.describe('explorer', function()
       vim.api.nvim_set_current_win(win)
 
       vim.api.nvim_win_set_cursor(win, { find_row(win, 'src.txt'), 0 })
-      feed('y') -- copy
+      feed('<C-y>') -- copy
       vim.wait(50)
       vim.api.nvim_win_set_cursor(win, { find_row(win, 'dest'), 0 })
       feed('l') -- dest/ へ入る
       vim.wait(50)
-      feed('p') -- paste
+      feed('<C-p>') -- paste
       vim.wait(80)
       assert_eq(vim.fn.filereadable(%s .. '/dest/src.txt'), 1)
       assert_eq(vim.fn.filereadable(%s .. '/src.txt'), 1, 'copy should keep the original')
@@ -419,18 +419,45 @@ T.describe('explorer', function()
       feed('h') -- 親へ戻る
       vim.wait(50)
       vim.api.nvim_win_set_cursor(win, { find_row(win, 'src.txt'), 0 })
-      feed('x') -- cut
+      feed('<C-x>') -- cut
       vim.wait(50)
       vim.api.nvim_win_set_cursor(win, { find_row(win, 'dest'), 0 })
       feed('l')
       vim.wait(50)
-      feed('P') -- 上書き貼り付け
+      feed('<C-S-p>') -- 上書き貼り付け
       vim.wait(80)
       feed('h')
       vim.wait(50)
       assert_eq(vim.fn.filereadable(%s .. '/src.txt'), 0, 'cut should remove the original')
     ]], vim.inspect(dir), vim.inspect(dir), vim.inspect(dir), vim.inspect(dir)))
 
+    T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
+    T.rmrf(dir)
+  end)
+
+  T.it('y / Y copy the filename / absolute path under the cursor', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/target.txt', { 'x' })
+    local abs = vim.fn.fnamemodify(dir .. '/target.txt', ':p')
+
+    local res = run_child(string.format([[
+      vim.fn.chdir(%s)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+      vim.api.nvim_win_set_cursor(win, { find_row(win, 'target.txt'), 0 })
+
+      feed('y')
+      vim.wait(50)
+      assert_eq(vim.fn.getreg('"'), 'target.txt')
+
+      feed('Y')
+      vim.wait(50)
+      assert_eq(vim.fn.getreg('"'), %s)
+    ]], vim.inspect(dir), vim.inspect(abs)))
     T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
     T.rmrf(dir)
   end)
@@ -734,7 +761,7 @@ T.describe('explorer', function()
     T.rmrf(dir)
   end)
 
-  T.it('P (overwrite paste) replaces an existing same-named file instead of creating a "_2" copy', function()
+  T.it('Ctrl-S-p (overwrite paste) replaces an existing same-named file instead of creating a "_2" copy', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir .. '/dest', 'p')
     T.write_file(dir .. '/src.txt', { 'new content' })
@@ -749,12 +776,12 @@ T.describe('explorer', function()
       vim.api.nvim_set_current_win(win)
 
       vim.api.nvim_win_set_cursor(win, { find_row(win, 'src.txt'), 0 })
-      feed('y') -- copy
+      feed('<C-y>') -- copy
       vim.wait(50)
       vim.api.nvim_win_set_cursor(win, { find_row(win, 'dest'), 0 })
       feed('l') -- dest/ へ入る
       vim.wait(50)
-      feed('P') -- 上書き貼り付け(名前が衝突しても別名にしない)
+      feed('<C-S-p>') -- 上書き貼り付け(名前が衝突しても別名にしない)
       vim.wait(80)
       local names = {}
       for _, l in ipairs(lines(win)) do table.insert(names, l) end
@@ -767,7 +794,7 @@ T.describe('explorer', function()
     T.rmrf(dir)
   end)
 
-  T.it('a plain paste (p) onto a name collision creates a "_2" copy instead of overwriting', function()
+  T.it('a plain paste (Ctrl-p) onto a name collision creates a "_2" copy instead of overwriting', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir .. '/dest', 'p')
     T.write_file(dir .. '/src.txt', { 'new content' })
@@ -782,12 +809,12 @@ T.describe('explorer', function()
       vim.api.nvim_set_current_win(win)
 
       vim.api.nvim_win_set_cursor(win, { find_row(win, 'src.txt'), 0 })
-      feed('y')
+      feed('<C-y>')
       vim.wait(50)
       vim.api.nvim_win_set_cursor(win, { find_row(win, 'dest'), 0 })
       feed('l')
       vim.wait(50)
-      feed('p') -- 通常貼り付け: 衝突時は別名になるはず
+      feed('<C-p>') -- 通常貼り付け: 衝突時は別名になるはず
       vim.wait(80)
       local old_content = vim.fn.readfile(%s .. '/dest/src.txt')
       assert_eq(old_content[1], 'old content', 'the original file at the destination should be untouched')

@@ -939,6 +939,31 @@ local function cut_selection()
   render()
 end
 
+local function copy_path_text(kind)
+  local list = targets()
+  if #list == 0 then return end
+  local parts = {}
+  for _, e in ipairs(list) do
+    if kind == 'name' then
+      table.insert(parts, e.name)
+    else
+      table.insert(parts, e.path)
+    end
+  end
+  local text = table.concat(parts, '\n')
+  vim.fn.setreg('"', text)
+  pcall(vim.fn.setreg, '+', text)
+  vim.notify('コピーしました: ' .. (#parts > 1 and (#parts .. '件') or text), vim.log.levels.INFO)
+end
+
+local function copy_name()
+  copy_path_text('name')
+end
+
+local function copy_abs_path()
+  copy_path_text('path')
+end
+
 local function unique_dest(dest_dir, name)
   local base, ext = name:match('^(.*)(%.[^%.]+)$')
   if not base then
@@ -1211,13 +1236,15 @@ local function open(fullscreen)
   map('r',       rename)
   map('d',       trash)
   map('D',       delete_permanent)
-  map('y',       copy_selection)
-  map('x',       cut_selection)
-  map('p',       function() paste(false) end)
-  map('P',       function() paste(true) end)
+  map('<C-y>',   copy_selection)
+  map('<C-x>',   cut_selection)
+  map('<C-p>',   function() paste(false) end)
+  map('<C-S-p>', function() paste(true) end)
+  map('y',       copy_name)
+  map('Y',       copy_abs_path)
   map('/',       set_filter)
   map('s',       fd_search)
-  map('<C-p>',   toggle_sidebar_preview)
+  map('v',       toggle_sidebar_preview)
   map('<',       function() move_sidebar('left') end)
   map('>',       function() move_sidebar('right') end)
 
