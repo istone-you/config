@@ -31,7 +31,15 @@ local GIT_ENV = { GIT_DISCOVERY_ACROSS_FILESYSTEM = '1' }
 local render -- 前方宣言（gitステータス取得の非同期コールバックから参照するため）
 local render_preview -- 前方宣言（render()の末尾から参照するため）
 local teardown_ui -- 前方宣言（open_selectedから参照するため）
+local refresh -- 前方宣言（fs watcher から参照するため）
+local start_watch -- 前方宣言（render 末尾から参照するため）
+local stop_watch -- 前方宣言
 
+-- yazi の yazi-watcher 相当: 表示中ディレクトリを fs_event で監視し、外部変更を一覧へ反映する
+local fs_event = nil
+local watched_path = nil
+local watch_debounce = nil
+local WATCH_DEBOUNCE_MS = 150
 local hl_ns = vim.api.nvim_create_namespace('explorer_hl')
 local augrp = vim.api.nvim_create_augroup('explorer', { clear = true })
 
@@ -224,7 +232,10 @@ function render()
 
   for _, entry in ipairs(rows) do
     local icon = get_icon(entry.name, entry.isdir, entry.path)
-    local line = '  ' .. icon .. '  ' .. entry.name
+    -- yazi の marker_symbol("│") 相当: 選択行は左端に色付きバー、文字色は変えない
+    local marker = selection[entry.path] and '│' or ' '
+    local prefix = marker .. ' '
+    local line = prefix .. icon .. '  ' .. entry.name
     -- シンボリックリンクは yazi 風に「名前 -> ターゲット」を表示する
     local link_cs, link_ce
     if entry.link then
@@ -241,20 +252,22 @@ function render()
     local lnum = #lines - 1
     -- 薄字化するのは git 管理外＝ignore のみ（新規/未追跡ファイルは薄くしない）
     local unmanaged = git_code == GIT_CODES.ignored
-    if selection[entry.path] then
-      hl(lnum, 'ExplorerSelected')
-    elseif entry.isdir then
+    if entry.isdir then
       hl(lnum, 'ExplorerDir')
     else
       hl(lnum, 'ExplorerFile')
     end
     -- git 管理外（ignore）は行全体を薄く表示する（VSCode風。未追跡は薄くしない）
-    if unmanaged and not selection[entry.path] then
-      hl(lnum, 'ExplorerDimmed')
+    -- 選択バー自体は薄くせず残す
+    if unmanaged then
+      hl(lnum, 'ExplorerDimmed', #prefix, -1)
+    end
+    if selection[entry.path] then
+      hl(lnum, 'ExplorerSelected', 0, #marker)
     end
     if clipboard and clipboard.mode == 'cut' then
       for _, p in ipairs(clipboard.paths) do
-        if p == entry.path then hl(lnum, 'ExplorerCut') end
+        if p == entry.path then hl(lnum, 'ExplorerCut', #prefix, -1) end
       end
     end
     if sign and sign ~= '' and GIT_HL[git_code] then
@@ -264,7 +277,7 @@ function render()
     if not unmanaged then
       local icon_group = file_icons.icon_hl(entry.name, entry.isdir, entry.path)
       if icon_group then
-        hl(lnum, icon_group, 2, 2 + #icon)
+        hl(lnum, icon_group, #prefix, #prefix + #icon)
       end
     end
     if link_cs then
@@ -300,6 +313,7 @@ function render()
     pcall(vim.api.nvim_win_set_cursor, win, { target_row, 0 })
   end
 
+  start_watch(cwd)
   render_preview()
 end
 
@@ -587,8 +601,67 @@ local function toggle_hidden()
   render()
 end
 
-local function refresh()
+--- is_auto=true のときはカーソル位置を覚えてから再描画する（外部変更の自動更新用）。
+--- しないと render() が cursor_mem の古い名前へ戻してしまい、j/k 中の位置が飛ぶ。
+refresh = function(is_auto)
+  if is_auto then
+    local e = entry_at_cursor()
+    if e then cursor_mem[cwd] = e.name end
+  end
+  git_status_dirty = true
   render()
+end
+
+stop_watch = function()
+  if watch_debounce then
+    watch_debounce:stop()
+    watch_debounce:close()
+    watch_debounce = nil
+  end
+  if fs_event then
+    pcall(function() fs_event:stop() end)
+    pcall(function() fs_event:close() end)
+    fs_event = nil
+  end
+  watched_path = nil
+end
+
+start_watch = function(path)
+  if watched_path == path and fs_event then return end
+  stop_watch()
+  if not path or path == '' then return end
+  local handle = vim.uv.new_fs_event()
+  if not handle then return end
+  local ok = handle:start(path, {}, function(err)
+    if err then return end
+    vim.schedule(function()
+      if not (win and vim.api.nvim_win_is_valid(win)) then return end
+      if cwd ~= path then return end
+      if watch_debounce then
+        watch_debounce:stop()
+        watch_debounce:close()
+      end
+      watch_debounce = vim.uv.new_timer()
+      watch_debounce:start(WATCH_DEBOUNCE_MS, 0, function()
+        if watch_debounce then
+          watch_debounce:stop()
+          watch_debounce:close()
+          watch_debounce = nil
+        end
+        vim.schedule(function()
+          if not (win and vim.api.nvim_win_is_valid(win)) then return end
+          if cwd ~= path then return end
+          refresh(true)
+        end)
+      end)
+    end)
+  end)
+  if not ok then
+    pcall(function() handle:close() end)
+    return
+  end
+  fs_event = handle
+  watched_path = path
 end
 
 local function refocus_panel()
@@ -1095,6 +1168,7 @@ end
 --- ウィンドウ/バッファの後始末だけを行う(qallは含まない)。close()本体と、
 --- 全画面中にファイルを開く場合(open_selected、qallされては困る)の両方から使う
 teardown_ui = function()
+  stop_watch()
   vim.api.nvim_clear_autocmds({ group = augrp })
   if win and vim.api.nvim_win_is_valid(win) then
     vim.api.nvim_win_close(win, true)
@@ -1188,6 +1262,10 @@ local function open(fullscreen)
   end
 
   require('config.hidden_cursor').mark_buffer(buf)
+  -- 全画面(float)時は is_float で非エディタ扱い。スプリット時は mark でガードする
+  if not is_fullscreen then
+    require('config.util.win_util').mark_sidebar(win, buf)
+  end
 
   vim.wo[win].wrap           = false
   vim.wo[win].number         = true
@@ -1225,7 +1303,7 @@ local function open(fullscreen)
   map('h',       go_parent)
   map('<Left>',  go_parent)
   map('.',       toggle_hidden)
-  map('R',       refresh)
+  map('R',       function() refresh() end)
   map('<Tab>',   function() toggle_select_at_cursor(1) end)
   map('<S-Tab>', function() toggle_select_at_cursor(-1) end)
   map('<C-a>',   select_all)
@@ -1298,7 +1376,7 @@ local function setup_hl()
   vim.api.nvim_set_hl(0, 'ExplorerHeader',     { fg = '#7aa2f7', bold = true })
   vim.api.nvim_set_hl(0, 'ExplorerDir',        { fg = '#7aa2f7' })
   vim.api.nvim_set_hl(0, 'ExplorerFile',       { fg = '#c0caf5' })
-  vim.api.nvim_set_hl(0, 'ExplorerSelected',   { fg = '#e0af68', bold = true })
+  vim.api.nvim_set_hl(0, 'ExplorerSelected',   { fg = '#e0af68', bg = '#e0af68' })
   vim.api.nvim_set_hl(0, 'ExplorerCut',        { fg = '#565f89', italic = true })
   vim.api.nvim_set_hl(0, 'ExplorerConfirmBg',     { bg = 'NONE', fg = '#f7768e', bold = true })
   vim.api.nvim_set_hl(0, 'ExplorerConfirmBorder', { bg = 'NONE', fg = '#f7768e' })

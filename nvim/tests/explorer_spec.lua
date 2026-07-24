@@ -633,6 +633,31 @@ T.describe('explorer', function()
     T.rmrf(dir)
   end)
 
+  T.it('fs watcher auto-refreshes after an out-of-band filesystem change without pressing R', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/visible.txt', { 'x' })
+
+    local res = run_child(string.format([[
+      vim.fn.chdir(%s)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+
+      vim.fn.writefile({'x'}, %s .. '/added-by-watch.txt')
+      local ok = vim.wait(2000, function()
+        local text = table.concat(lines(win), '\n')
+        return text:find('added-by-watch.txt', 1, true) ~= nil
+      end)
+      assert_eq(ok, true, 'fs watcher should pick up the new file without R')
+    ]], vim.inspect(dir), vim.inspect(dir)))
+
+    T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
+    T.rmrf(dir)
+  end)
+
   T.it('Tab toggles multi-select; trash/copy act on the whole selection, not just the cursor row', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir, 'p')

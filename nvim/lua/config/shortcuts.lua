@@ -149,6 +149,7 @@ DATA[1] = {
     { 'Space m d',       'Markview: Markdownプレビューをトグル' },
     { 'Space G',         'GitHubパーマリンクをコピー' },
     { 'Space P',         'パス付きコードをコピー' },
+    { 'Space A',         'ファイル全体をコピー' },
     { 'Space ?',         'このショートカット一覧を開閉' },
   }},
   { header = '🗂️  ファイラー（Space e で開閉）', color = 'ShortcutsBuffer', rows = {
@@ -182,13 +183,15 @@ DATA[1] = {
     { 'v',               'delta side-by-side表示をトグル（deltaがある場合）' },
     { '@',               'コマンドログを画面いっぱいに拡大 / 再度で元に戻す' },
     { '+',               'Diffパネルを画面いっぱいに拡大 / 再度で元に戻す（@と排他）' },
-    { 'q / Esc',         '閉じる' },
-    { '[Files] Space',   'ステージ / アンステージ（ディレクトリは配下全て）' },
+    { 'q / Esc',         '閉じる（Filesで選択中ならEscは選択解除優先）' },
+    { '[Files] Tab/S-Tab','選択トグル（複数選択可）＋1つ下/上へ' },
+    { '[Files] C-a/C-r', '全選択 / 選択反転' },
+    { '[Files] Space',   'ステージ / アンステージ（ディレクトリは配下全て、複数選択可）' },
     { '[Files] Enter',   'ディレクトリの折り畳み / ファイルはhunkステージへ' },
     { '[Files] a',       '全ステージ / 全アンステージ切替' },
     { '[Files] c / w',   'コミット / フックなしコミット' },
     { '[Files] A',       '直前コミットをamend（ステージ済み変更で）' },
-    { '[Files] d',       '破棄メニュー（x: すべての変更を破棄 / u: 未ステージのみ破棄）' },
+    { '[Files] d',       '破棄メニュー（x: すべての変更を破棄 / u: 未ステージのみ破棄、複数選択可）' },
     { '[Files] s',       '全変更をスタッシュ' },
     { '[Files] S',       'スタッシュオプション（a:全て / u:未追跡含む / t:ステージ済み / k:keep-index）' },
     { '[Files] f',       'fetch（成功時はBranchesのPR状態も再取得）' },
@@ -464,6 +467,7 @@ local function open()
   win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, buf)
   require('config.hidden_cursor').mark_buffer(buf)
+  require('config.util.win_util').mark_sidebar(win, buf)
 
   vim.wo[win].wrap           = false
   vim.wo[win].number         = false

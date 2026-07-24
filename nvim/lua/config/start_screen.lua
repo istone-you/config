@@ -7,6 +7,7 @@ local M = {}
 -- 現在のウィンドウにスタート画面を表示する（起動時の[No Name]窓を差し替える想定）
 function M.show()
   local win = vim.api.nvim_get_current_win()
+  local old = vim.api.nvim_win_get_buf(win)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = 'nofile'
   vim.bo[buf].bufhidden = 'wipe'
@@ -18,6 +19,13 @@ function M.show()
   vim.api.nvim_win_set_buf(win, buf)
   -- window-localオプションは触らない。ここで number/statusline 等を変えると、この窓に
   -- ファイルを開いた後もその設定が残ってしまう（行番号が消える等）。空バッファなので既定表示で問題ない。
+
+  -- 差し替え前の空[No Name]が listed のまま残ると、タブラインには出ないのに
+  -- <Tab>/bnext で空画面が挟まる
+  if vim.api.nvim_buf_is_valid(old) and old ~= buf and vim.bo[old].buftype == ''
+    and vim.api.nvim_buf_get_name(old) == '' and not vim.bo[old].modified then
+    pcall(vim.api.nvim_buf_delete, old, { force = true })
+  end
 
   return buf
 end
@@ -55,11 +63,6 @@ vim.api.nvim_create_autocmd('BufDelete', {
       local old = vim.api.nvim_win_get_buf(win)
       if UTILITY_FT[vim.bo[old].filetype] then return end -- 既にstartscreen/explorer等なら何もしない
       M.show()
-      -- 差し替え前の空[No Name]バッファが残るので掃除する
-      if vim.api.nvim_buf_is_valid(old) and vim.bo[old].buftype == ''
-        and vim.api.nvim_buf_get_name(old) == '' and not vim.bo[old].modified then
-        pcall(vim.api.nvim_buf_delete, old, { force = true })
-      end
     end)
   end,
 })

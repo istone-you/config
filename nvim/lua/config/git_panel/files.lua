@@ -13,6 +13,7 @@ local collapsed = {}    -- [dir_path] = true
 local line_entries = {}
 local total_rows = 0
 local cursor_mem = nil
+local selection = {} -- [node.path] = true（Explorer と同じ複数選択。ルートは ''）
 local hunk_state = nil
 local hunk_hl_ns = vim.api.nvim_create_namespace('git_panel_hunk')
 
@@ -249,7 +250,9 @@ local function render()
       status_str = node.file.x .. node.file.y
     end
     local icon = get_icon(display_name, node.is_dir, node.path)
-    local status_prefix = '  ' .. indent
+    -- yazi の marker_symbol("│") 相当: 選択行は左端に色付きバー、文字色は変えない
+    local marker = selection[node.path] and '│' or ' '
+    local status_prefix = marker .. ' ' .. indent
     local before_name = status_prefix .. status_str .. ' '
     local line = before_name .. icon .. ' ' .. display_name
     -- name_colorはアイコン+ファイル名部分だけに適用する（ステータス文字は別配色）
@@ -267,6 +270,9 @@ local function render()
       if c1 then table.insert(hl_queue, { #lines - 1, c1, status_base, status_base + 1 }) end
       if c2 then table.insert(hl_queue, { #lines - 1, c2, status_base + 1, status_base + 2 }) end
     end
+    if selection[node.path] then
+      table.insert(hl_queue, { #lines - 1, 'GitPanelSelected', 0, #marker })
+    end
 
     if node.is_dir and not collapsed[node.path] then
       for _, c in ipairs(node.children) do
@@ -275,6 +281,15 @@ local function render()
     end
   end
   walk(tree_root, 0, nil)
+
+  -- 消えたパスの選択を刈り取る（自動更新で残骸を残さない）
+  local alive = {}
+  for _, e in pairs(line_entries) do
+    if e then alive[e.path] = true end
+  end
+  for p in pairs(selection) do
+    if not alive[p] then selection[p] = nil end
+  end
 
   total_rows = #lines
   ctx.set_left_lines(lines, hl_queue)
@@ -434,6 +449,86 @@ local function enter_staging_mode()
 end
 
 -- ══════════════════════════════════════════════
+-- 複数選択（Explorer と同じキー: Tab / S-Tab / Ctrl-a / Ctrl-r / Esc）
+-- ══════════════════════════════════════════════
+
+local function selected_nodes()
+  if vim.tbl_count(selection) > 0 then
+    local list = {}
+    for i = 1, total_rows do
+      local n = line_entries[i]
+      if n and selection[n.path] then table.insert(list, n) end
+    end
+    return list
+  end
+  local n = current_entry()
+  return n and { n } or {}
+end
+
+local function pathspec_of(node)
+  return node.path ~= '' and node.path or '.'
+end
+
+local function toggle_select_at_cursor(step)
+  step = step or 1
+  local node = current_entry()
+  if not node then return end
+  if selection[node.path] then
+    selection[node.path] = nil
+  else
+    selection[node.path] = true
+  end
+  cursor_mem = node.path
+  render()
+  local lwin = ctx.get_left_win()
+  if lwin and vim.api.nvim_win_is_valid(lwin) then
+    local row = vim.api.nvim_win_get_cursor(lwin)[1]
+    local target = row + step
+    while target >= 1 and target <= total_rows do
+      if line_entries[target] then
+        pcall(vim.api.nvim_win_set_cursor, lwin, { target, 0 })
+        show_diff_for(line_entries[target])
+        break
+      end
+      target = target + (step > 0 and 1 or -1)
+    end
+  end
+end
+
+local function select_all()
+  for i = 1, total_rows do
+    local n = line_entries[i]
+    if n then selection[n.path] = true end
+  end
+  render()
+end
+
+local function invert_selection()
+  for i = 1, total_rows do
+    local n = line_entries[i]
+    if n then
+      if selection[n.path] then
+        selection[n.path] = nil
+      else
+        selection[n.path] = true
+      end
+    end
+  end
+  render()
+end
+
+local function clear_selection_or_close()
+  if vim.tbl_count(selection) > 0 then
+    selection = {}
+    local node = current_entry()
+    if node then cursor_mem = node.path end
+    render()
+  else
+    require('config.git_panel').close()
+  end
+end
+
+-- ══════════════════════════════════════════════
 -- 操作（ファイル or ディレクトリ配下すべてに適用）
 -- ══════════════════════════════════════════════
 
@@ -451,39 +546,60 @@ local function enter_or_toggle()
   if node.is_dir then toggle_collapse() else enter_staging_mode() end
 end
 
+local batched -- 前方宣言（stage_toggle から参照）
+
 local function stage_toggle()
-  local node = current_entry()
-  if not node then return end
-  cursor_mem = node.path
-  local function done() ctx.render_cmdlog(); M.refresh() end
+  local nodes = selected_nodes()
+  if #nodes == 0 then return end
+  local cur = current_entry()
+  if cur then cursor_mem = cur.path end
+  local function done()
+    selection = {}
+    ctx.render_cmdlog()
+    M.refresh()
+  end
 
   -- lazygit(files_controller.go pressWithLock)と同じ「パス単位」方式。表示されている
   -- ファイル行を個別に列挙するのではなく、選択ノードのパス(ディレクトリならそのディレクトリ、
   -- ルートなら".")をそのままgitに渡し、配下の再帰はgitに任せる。
   -- こうすると「木に出ていないステージ済み削除」なども確実に対象へ含められる。
   -- 個別列挙だと表示に無いエントリを拾えず「Dだけアンステージされない」不具合になっていた。
-  local pathspec = node.path ~= '' and node.path or '.'
+  --
+  -- 複数選択時: 配下(自分含む)に未ステージが1つでもあれば一括ステージ、無ければ一括アンステージ
+  local any_unstaged = false
+  for _, node in ipairs(nodes) do
+    local _, u = node_flags(node)
+    if u then any_unstaged = true; break end
+  end
 
-  -- lazygit(toggleStaged): 配下(自分含む)に未ステージの変更が1つでもあれば「ステージ」、
-  -- 無ければ「アンステージ」
-  local _, any_unstaged = node_flags(node)
+  local pathspecs = {}
+  for _, node in ipairs(nodes) do
+    table.insert(pathspecs, pathspec_of(node))
+  end
 
   if any_unstaged then
     -- git add -- <path>: git2.0以降はディレクトリ指定でも配下の削除を拾う(git add -A相当)。
     -- 未ステージ削除の単体ファイルにもマッチする。ステージ済みのみの削除は
     -- any_unstaged=falseでここへ来ないので pathspec エラーにもならない
-    git.run({ 'add', '--', pathspec }, done)
+    git.run(vim.list_extend({ 'add', '--' }, pathspecs), done)
     return
   end
 
   -- 全部ステージ済み → アンステージ。lazygitはディレクトリを常にtracked扱いにして
   -- git reset HEAD -- <dir> 一発で配下全部(削除・新規追加含む)をindexから戻す。
   -- 単体の新規追加ファイル(A 等、HEADに無い)だけは git rm --cached でないと外せない
-  if node.is_dir or is_tracked(node.file) then
-    git.run({ 'reset', 'HEAD', '--', pathspec }, done)
-  else
-    git.run({ 'rm', '--cached', '--force', '--', pathspec }, done)
+  local to_reset, to_rm = {}, {}
+  for _, node in ipairs(nodes) do
+    local ps = pathspec_of(node)
+    if node.is_dir or is_tracked(node.file) then
+      table.insert(to_reset, ps)
+    else
+      table.insert(to_rm, ps)
+    end
   end
+  batched({ 'reset', 'HEAD', '--' }, to_reset, function()
+    batched({ 'rm', '--cached', '--force', '--' }, to_rm, done)
+  end)
 end
 
 local function stage_all_toggle()
@@ -511,7 +627,7 @@ local function remove_from_disk(paths)
   end
 end
 
-local function batched(args_prefix, paths, cb)
+batched = function(args_prefix, paths, cb)
   if #paths == 0 then cb(); return end
   git.run(vim.list_extend(vim.deepcopy(args_prefix), paths), cb)
 end
@@ -523,6 +639,7 @@ end
 --- checkoutで復元、新パスはindexから外してディスクから削除する(=リネームを完全に取り消す)
 local function discard_all_targets(targets)
   cursor_mem = nil
+  selection = {}
   local to_reset, to_remove, to_checkout = {}, {}, {}
   for _, f in ipairs(targets) do
     if f.previous_path then
@@ -549,6 +666,7 @@ end
 --- ステージ済みの内容はそのまま残る
 local function discard_unstaged_targets(targets)
   cursor_mem = nil
+  selection = {}
   local to_remove, to_checkout = {}, {}
   for _, f in ipairs(targets) do
     table.insert(is_untracked(f) and to_remove or to_checkout, f.path)
@@ -564,11 +682,27 @@ end
 --- の2択メニュー。後者はステージ済み+未ステージが両方ある対象を含む時だけ意味があるため、
 --- そうでなければ選択肢自体を出さない(lazygitはグレーアウト、こちらは項目自体を省く簡略化)
 local function discard()
-  local node = current_entry()
-  if not node then return end
-  local targets = collect_files(node)
+  local nodes = selected_nodes()
+  if #nodes == 0 then return end
+  local targets, seen = {}, {}
+  for _, node in ipairs(nodes) do
+    for _, f in ipairs(collect_files(node)) do
+      if not seen[f.path] then
+        seen[f.path] = true
+        table.insert(targets, f)
+      end
+    end
+  end
   if #targets == 0 then return end
-  local label = node.is_dir and (node.path .. '/ 配下 ' .. #targets .. '件') or node.file.path
+  local label
+  if vim.tbl_count(selection) > 0 then
+    label = '選択 ' .. #targets .. '件'
+  elseif nodes[1].is_dir then
+    local p = nodes[1].path
+    label = (p ~= '' and p or '/') .. '/ 配下 ' .. #targets .. '件'
+  else
+    label = nodes[1].file.path
+  end
   local any_staged, any_unstaged = false, false
   for _, f in ipairs(targets) do
     if has_staged(f) then any_staged = true end
@@ -686,11 +820,17 @@ function M.keymaps()
     S = stash_options,
     f = fetch,
     ['<CR>'] = enter_or_toggle,
+    ['<Tab>'] = function() toggle_select_at_cursor(1) end,
+    ['<S-Tab>'] = function() toggle_select_at_cursor(-1) end,
+    ['<C-a>'] = select_all,
+    ['<C-r>'] = invert_selection,
+    ['<Esc>'] = clear_selection_or_close,
   }
 end
 
 function M.activate(c)
   ctx = c
+  selection = {}
   ctx.setup_cursor_clamp(
     function() return line_entries end,
     function() return total_rows end,

@@ -29,16 +29,18 @@ vim.opt.showtabline = 2
 vim.opt.number = true
 vim.opt.relativenumber = true
 
-vim.keymap.set('n', '<Tab>',   '<cmd>bnext<cr>',  { desc = 'Next buffer' })
-vim.keymap.set('n', '<S-Tab>', '<cmd>bprev<cr>',  { desc = 'Prev buffer' })
+vim.keymap.set('n', '<Tab>', function()
+  require('config.util.buf_cycle').next()
+end, { desc = 'Next buffer' })
+vim.keymap.set('n', '<S-Tab>', function()
+  require('config.util.buf_cycle').prev()
+end, { desc = 'Prev buffer' })
 vim.keymap.set('n', '<leader>q', function()
   local cur = vim.api.nvim_get_current_buf()
   if not vim.bo[cur].buflisted then return end -- スタート画面等の非listedバッファは対象外
-  local bufs = vim.tbl_filter(function(b)
-    return vim.bo[b].buflisted and vim.api.nvim_buf_is_valid(b)
-  end, vim.api.nvim_list_bufs())
+  local bufs = require('config.util.buf_cycle').list()
   if #bufs > 1 then
-    vim.cmd('bprev')
+    require('config.util.buf_cycle').prev()
     vim.cmd('bd ' .. cur)
   else
     -- 最後の1つ: 閉じるとBufDeleteでスタート画面に戻る

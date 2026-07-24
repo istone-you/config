@@ -20,18 +20,17 @@ end
 
 _G._bufline_click = function(bufnr, _, button)
   if button == 'l' then
-    vim.api.nvim_set_current_buf(bufnr)
+    require('config.util.win_util').open_buf(bufnr)
   end
 end
 
 _G._bufline_close = function(bufnr, _, button)
   if button == 'l' then
-    local bufs = vim.tbl_filter(function(b)
-      return vim.bo[b].buflisted and vim.api.nvim_buf_is_valid(b)
-    end, vim.api.nvim_list_bufs())
+    local cycle = require('config.util.buf_cycle')
+    local bufs = cycle.list()
     if #bufs > 1 then
       if vim.api.nvim_get_current_buf() == bufnr then
-        vim.cmd('bprev')
+        cycle.prev()
       end
       vim.cmd('bd ' .. bufnr)
     end

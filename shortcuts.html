@@ -458,6 +458,7 @@
       <tr><td><kbd>Space</kbd> <kbd>m</kbd> <kbd>d</kbd></td><td class="desc">Markview: Markdownプレビューをトグル</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>G</kbd></td><td class="desc">GitHubパーマリンクをコピー（現在行 / ビジュアル選択行）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>P</kbd></td><td class="desc">パス付きコードをコピー（現在行 / ビジュアル選択行）</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>A</kbd></td><td class="desc">ファイル全体をコピー</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>?</kbd></td><td class="desc">このショートカット一覧を開閉</td></tr>
     </table>
   </div>
@@ -499,14 +500,16 @@
       <tr><td><kbd>v</kbd></td><td class="desc">delta side-by-side表示をトグル（deltaがある場合）</td></tr>
       <tr><td><kbd>@</kbd></td><td class="desc">コマンドログを画面いっぱいに拡大 / 再度で元に戻す</td></tr>
       <tr><td><kbd>+</kbd></td><td class="desc">Diffパネルを画面いっぱいに拡大 / 再度で元に戻す（@と排他）</td></tr>
-      <tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td class="desc">閉じる</td></tr>
+      <tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td class="desc">閉じる（Filesで選択中ならEscは選択解除優先）</td></tr>
       <tr><td class="section-divider" colspan="2">Files</td></tr>
-      <tr><td><kbd>Space</kbd></td><td class="desc">ステージ / アンステージ（ディレクトリは配下全て）</td></tr>
+      <tr><td><kbd>Tab</kbd> / <kbd>S-Tab</kbd></td><td class="desc">選択トグル（複数選択可）＋1つ下/上へ</td></tr>
+      <tr><td><kbd>Ctrl-a</kbd> / <kbd>Ctrl-r</kbd></td><td class="desc">全選択 / 選択反転</td></tr>
+      <tr><td><kbd>Space</kbd></td><td class="desc">ステージ / アンステージ（ディレクトリは配下全て、複数選択可）</td></tr>
       <tr><td><kbd>Enter</kbd></td><td class="desc">ディレクトリの折り畳み / ファイルはhunkステージへ</td></tr>
       <tr><td><kbd>a</kbd></td><td class="desc">全ステージ / 全アンステージ切替</td></tr>
       <tr><td><kbd>c</kbd> / <kbd>w</kbd></td><td class="desc">コミット / フックなしコミット</td></tr>
       <tr><td><kbd>A</kbd></td><td class="desc">直前コミットをamend（ステージ済み変更で）</td></tr>
-      <tr><td><kbd>d</kbd></td><td class="desc">破棄メニュー（x: すべての変更を破棄 / u: 未ステージのみ破棄）</td></tr>
+      <tr><td><kbd>d</kbd></td><td class="desc">破棄メニュー（x: すべての変更を破棄 / u: 未ステージのみ破棄、複数選択可）</td></tr>
       <tr><td><kbd>s</kbd></td><td class="desc">全変更をスタッシュ</td></tr>
       <tr><td><kbd>S</kbd></td><td class="desc">スタッシュオプション（a:全て / u:未追跡含む / t:ステージ済み / k:keep-index）</td></tr>
       <tr><td><kbd>f</kbd></td><td class="desc">fetch（成功時はBranchesのPR状態も再取得）</td></tr>
