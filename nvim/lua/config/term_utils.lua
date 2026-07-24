@@ -7,7 +7,7 @@ vim.api.nvim_create_autocmd('TermOpen', {
 
 -- ターミナルモードから Ctrl+h でエディタ（左ウィンドウ）へ戻る
 vim.keymap.set('t', '<C-h>', '<C-\\><C-n><C-w>h', { desc = 'Move to left window from terminal' })
--- ノーマルモードから Ctrl+h / Ctrl+l で左右のウィンドウへ移動（ターミナル・ファイラーなどマウス無しで切替）
+-- ノーマルモードから Ctrl+h / Ctrl+l で左右のウィンドウへ移動（ターミナル・explorerなどマウス無しで切替）
 vim.keymap.set('n', '<C-h>', '<C-w>h', { desc = 'Move to left window' })
 vim.keymap.set('n', '<C-l>', '<C-w>l', { desc = 'Move to right window' })
 

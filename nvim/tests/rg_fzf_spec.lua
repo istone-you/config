@@ -64,29 +64,35 @@ T.describe('rg_fzf dependency check', function()
       return
     end
     local prev_cwd = vim.fn.getcwd()
-    local notified = capture_notify(function()
-      local dir = vim.fn.tempname()
-      vim.fn.mkdir(dir, 'p')
-      T.write_file(dir .. '/a.txt', { 'hello world' })
-      vim.fn.chdir(dir)
-
-      rg_fzf.open('hello')
-      vim.wait(150)
-
-      local term_win
-      for _, w in ipairs(vim.api.nvim_list_wins()) do
-        local cfg = vim.api.nvim_win_get_config(w)
-        if cfg.relative ~= '' and vim.bo[vim.api.nvim_win_get_buf(w)].buftype == 'terminal' then term_win = w end
+    local missing_dep
+    local orig_notify = vim.notify
+    vim.notify = function(msg)
+      if type(msg) == 'string' and msg:find('見つかりません', 1, true) then
+        missing_dep = msg
       end
-      T.ok(term_win ~= nil, 'a floating terminal window should have opened')
+    end
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/a.txt', { 'hello world' })
+    vim.fn.chdir(dir)
 
-      local job = vim.b[vim.api.nvim_win_get_buf(term_win)].terminal_job_id
-      if job then pcall(vim.fn.jobstop, job) end
-      if term_win and vim.api.nvim_win_is_valid(term_win) then vim.api.nvim_win_close(term_win, true) end
-      vim.fn.chdir(prev_cwd)
-      T.rmrf(dir)
-    end)
-    T.ok(notified == nil, 'should not report missing dependencies when rg/fzf are installed')
+    rg_fzf.open('hello')
+    vim.wait(150)
+
+    local term_win
+    for _, w in ipairs(vim.api.nvim_list_wins()) do
+      local cfg = vim.api.nvim_win_get_config(w)
+      if cfg.relative ~= '' and vim.bo[vim.api.nvim_win_get_buf(w)].buftype == 'terminal' then term_win = w end
+    end
+    T.ok(term_win ~= nil, 'a floating terminal window should have opened')
+    T.ok(missing_dep == nil, 'should not report missing dependencies when rg/fzf are installed')
+
+    local job = vim.b[vim.api.nvim_win_get_buf(term_win)].terminal_job_id
+    if job then pcall(vim.fn.jobstop, job) end
+    if term_win and vim.api.nvim_win_is_valid(term_win) then vim.api.nvim_win_close(term_win, true) end
+    vim.notify = orig_notify
+    vim.fn.chdir(prev_cwd)
+    T.rmrf(dir)
   end)
 end)
 

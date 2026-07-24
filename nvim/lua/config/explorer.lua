@@ -1,4 +1,4 @@
--- yazi風ファイラー（右パネル・単一カラム・プラグイン不使用・自作）
+-- yazi風explorer（右パネル・単一カラム・プラグイン不使用・自作）
 
 local M = {}
 
@@ -1395,11 +1395,11 @@ end
 setup_hl()
 vim.api.nvim_create_autocmd('ColorScheme', { callback = setup_hl })
 
-vim.keymap.set('n', '<leader>e', function() M.toggle() end, { desc = 'ファイラーを開閉' })
+vim.keymap.set('n', '<leader>e', function() M.toggle() end, { desc = 'explorerを開閉' })
 
 vim.api.nvim_create_user_command('Explorer', function(cmd_opts)
   M.toggle(cmd_opts.bang)
-end, { bang = true, desc = 'ファイラーを開閉（!で全画面表示）' })
+end, { bang = true, desc = 'explorerを開閉（!で全画面表示）' })
 
 --- 起動時に -c/--cmd/+cmd で明示的なコマンドが指定されていた場合は、
 --- そちらを優先してexplorerの自動起動をしない（例: nvim +Git でGitパネルを

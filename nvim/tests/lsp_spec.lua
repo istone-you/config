@@ -128,7 +128,7 @@ T.describe('lsp.lua: yamlls reads .vscode/settings.json', function()
       '  "yaml.format.printWidth": 250, // comment',
       '  "yaml.format.bracketSpacing": false,',
       '  "yaml.schemas": { "https://example.com/schema.json": ["*.yml"] },',
-      '  "editor.formatOnSave": true',
+      '  "editor.formatOnSave": true,', -- VS Code JSONC の末尾カンマ
       '}',
     }, root .. '/.vscode/settings.json')
 

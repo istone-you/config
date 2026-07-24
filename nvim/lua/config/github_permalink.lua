@@ -55,7 +55,10 @@ vim.keymap.set('n', '<leader>G', function()
   local line = vim.api.nvim_win_get_cursor(0)[1]
   local url = get_github_permalink(line, line)
   if url then
-    vim.fn.setreg('+', url)
+    vim.fn.setreg('"', url)
+    if vim.g.clipboard ~= nil then
+      vim.fn.setreg('+', url)
+    end
     vim.notify(url, vim.log.levels.INFO)
   end
 end, { desc = 'GitHubパーマリンクをコピー（現在行）' })
@@ -67,7 +70,10 @@ vim.keymap.set('v', '<leader>G', function()
   if s > e then s, e = e, s end
   local url = get_github_permalink(s, e)
   if url then
-    vim.fn.setreg('+', url)
+    vim.fn.setreg('"', url)
+    if vim.g.clipboard ~= nil then
+      vim.fn.setreg('+', url)
+    end
     vim.schedule(function()
       vim.notify(url, vim.log.levels.INFO)
     end)

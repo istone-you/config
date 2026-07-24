@@ -83,9 +83,28 @@ end
 -- テスト用の一時git repo・ディレクトリヘルパー
 -- ══════════════════════════════════════════════
 
---- 同期でgitコマンドを実行する(テスト用途なので待つだけの単純な実装で十分)
+--- 同期でgitコマンドを実行する(テスト用途なので待つだけの単純な実装で十分)。
+--- GIT_AUTHOR_* 環境変数は `git -c user.name=` より優先されるため、args 内の
+--- `-c user.name=` / `-c user.email=` を拾って env にも同じ値を載せ、ホスト環境の
+--- 作者名がテスト結果に混ざらないようにする
 function M.git(dir, args)
-  return vim.system(vim.list_extend({ 'git' }, args), { cwd = dir, text = true }):wait()
+  local name, email = 'test', 'test@test'
+  local i = 1
+  while i <= #args do
+    if args[i] == '-c' and args[i + 1] then
+      local n = args[i + 1]:match('^user%.name=(.+)$')
+      local e = args[i + 1]:match('^user%.email=(.+)$')
+      if n then name = n end
+      if e then email = e end
+    end
+    i = i + 1
+  end
+  local env = vim.fn.environ()
+  env.GIT_AUTHOR_NAME = name
+  env.GIT_AUTHOR_EMAIL = email
+  env.GIT_COMMITTER_NAME = name
+  env.GIT_COMMITTER_EMAIL = email
+  return vim.system(vim.list_extend({ 'git' }, args), { cwd = dir, text = true, env = env }):wait()
 end
 
 --- 空リポジトリ(1個の空コミット済み)を作って dir を返す。setup_fn(dir)で追加のセットアップができる

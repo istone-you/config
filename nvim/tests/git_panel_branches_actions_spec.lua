@@ -125,16 +125,20 @@ T.describe('git_panel Branches panel: checkout-by-name/force/merge/rebase/rename
     T.write_file(dir .. '/feature.txt', { 'f' })
     GP.git(dir, { 'add', '.' })
     GP.git(dir, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'feature commit' })
+    T.eq(vim.fn.filereadable(dir .. '/base.txt'), 0, 'sanity: feature must not yet contain base.txt')
 
     GP.open(dir, false)
     GP.press('3')
-    vim.wait(200)
+    T.wait_until(function() return GP.find_row(GP.left_win(), 'main') ~= nil end)
     local left = GP.left_win()
     GP.goto_row(left, GP.find_row(left, 'main'))
     GP.press('r')
     vim.wait(80)
     GP.press_modal('y')
-    T.wait_until(function() return vim.fn.filereadable(dir .. '/base.txt') == 1 end)
+    T.wait_until(function()
+      return vim.fn.filereadable(dir .. '/base.txt') == 1
+        and GP.git(dir, { 'log', '--format=%s', 'feature' }).stdout:find('base commit', 1, true) ~= nil
+    end)
     T.eq(vim.fn.filereadable(dir .. '/base.txt'), 1, 'feature should now contain the base commit from main')
     T.eq(vim.trim(GP.git(dir, { 'log', '--format=%s', 'feature' }).stdout):find('base commit') ~= nil, true)
 

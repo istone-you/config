@@ -124,10 +124,10 @@ DATA[1] = {
   }},
   { header = '🔧 カスタムキーマップ', color = 'ShortcutsBuffer', rows = {
     { 'Space t',         'ターミナルを右に開く' },
-    { 'Ctrl-h / Ctrl-l', '左 / 右のウィンドウへ移動（エディタ↔ターミナル・ファイラー）' },
+    { 'Ctrl-h / Ctrl-l', '左 / 右のウィンドウへ移動（エディタ↔ターミナル・explorer）' },
     { 'Space y',         'yaziを開く（カレントfileのdir）' },
     { 'Space c w',       'yaziを開く（Neovimのcwd）' },
-    { 'Space e',         'ファイラーを開閉（右パネル、詳細は下のセクション）' },
+    { 'Space e',         'explorerを開閉（右パネル、詳細は下のセクション）' },
     { 'Space g',         'gitパネルを開閉（自作、詳細は下のセクション）' },
     { 'Space l g',       'lazygitを開く（ターミナル版）' },
     { 'Tab / Shift-Tab', '次 / 前のバッファへ' },
@@ -152,7 +152,7 @@ DATA[1] = {
     { 'Space A',         'ファイル全体をコピー' },
     { 'Space ?',         'このショートカット一覧を開閉' },
   }},
-  { header = '🗂️  ファイラー（Space e で開閉）', color = 'ShortcutsBuffer', rows = {
+  { header = '🗂️  explorer（Space e で開閉）', color = 'ShortcutsBuffer', rows = {
     { 'j / k',           'カーソルを下 / 上へ' },
     { 'l / →',           'ディレクトリへ入る（ファイルには無反応）' },
     { 'h / ←',           '親ディレクトリへ（元の位置にカーソル復帰）' },
@@ -172,7 +172,7 @@ DATA[1] = {
     { 's',               'fd+fzfで再帰検索して移動/開く' },
     { 'v',               'プレビューの表示トグル（エディタ上に浮かべる。Enterで開くと閉じる。全画面は常時右に表示）' },
     { '< / >',           'サイドバーを左 / 右へ移動（位置は以降も維持）' },
-    { 'q',               'ファイラーを閉じる' },
+    { 'q',               'explorerを閉じる' },
   }},
   { header = '🌱 gitパネル（Space g で開閉、1-6/←→/タブクリックでパネル切替）', color = 'ShortcutsBuffer', rows = {
     { '1-6',             'Files / Commits / Branches / Stash / Worktree / PR へ切替' },
@@ -352,7 +352,7 @@ DATA[4] = {
     { 'ctrl+b+g',                 'lazygit を開く' },
     { 'ctrl+b+y',                 'yazi を開く' },
     { 'ctrl+alt+g',               'nvim +Git（gitパネル）を開く' },
-    { 'ctrl+alt+e',               'nvim +Explorer!（ファイラー全画面）を開く' },
+    { 'ctrl+alt+e',               'nvim +Explorer!（explorer全画面）を開く' },
   }},
 }
 

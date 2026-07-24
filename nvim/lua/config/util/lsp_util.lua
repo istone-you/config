@@ -59,6 +59,19 @@ local function strip_jsonc(text)
         i = i + 1
       end
       i = i + 2
+    elseif c == ',' then
+      -- VS Code JSONC は末尾カンマを許す。`,` の直後（空白除く）が } / ] なら捨てる
+      local j = i + 1
+      while j <= n and text:sub(j, j):match('%s') do
+        j = j + 1
+      end
+      local peek = text:sub(j, j)
+      if peek == '}' or peek == ']' then
+        i = i + 1
+      else
+        out[#out + 1] = c
+        i = i + 1
+      end
     else
       out[#out + 1] = c
       i = i + 1

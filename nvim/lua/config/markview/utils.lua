@@ -6,7 +6,10 @@ local utils = {};
 utils.parser_installed = function (parser_name)
 	local has_ts, parsers = pcall(require, "nvim-treesitter.parsers");
 
-	if pcall(vim.treesitter.query.get, parser_name, "highlights") ~= nil then
+	-- query.get は未導入でもエラーにせず nil を返すことがある。
+	-- pcall の成否だけ見ると常に true になるので、戻り値の有無も見る。
+	local ok_query, query = pcall(vim.treesitter.query.get, parser_name, "highlights")
+	if ok_query and query ~= nil then
 		--- Parser installed manually.
 		return true;
 	elseif has_ts == false then

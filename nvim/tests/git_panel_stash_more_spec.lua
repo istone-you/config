@@ -17,7 +17,11 @@ T.describe('git_panel Stash panel: failure/cancel/detail', function()
 
     local notified
     local orig_notify = vim.notify
-    vim.notify = function(msg, level) notified = { msg = msg, level = level } end
+    vim.notify = function(msg, level)
+      if type(msg) == 'string' and msg:find('適用失敗', 1, true) then
+        notified = { msg = msg, level = level }
+      end
+    end
 
     GP.open(dir, false)
     GP.press('4')
@@ -46,7 +50,11 @@ T.describe('git_panel Stash panel: failure/cancel/detail', function()
 
     local notified
     local orig_notify = vim.notify
-    vim.notify = function(msg, level) notified = { msg = msg, level = level } end
+    vim.notify = function(msg, level)
+      if type(msg) == 'string' and msg:find('pop失敗', 1, true) then
+        notified = { msg = msg, level = level }
+      end
+    end
 
     GP.open(dir, false)
     GP.press('4')

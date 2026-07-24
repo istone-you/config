@@ -286,6 +286,30 @@ T.describe('git.lua: fetch_prs', function()
     T.wait_until(function() return prs ~= nil end)
     T.eq(prs, {})
   end)
+
+  T.it('keeps the auth token out of curl argv (passes it via -H @file)', function()
+    local seen
+    local orig_system = vim.system
+    vim.system = function(cmd, _, cb)
+      seen = cmd
+      cb({ code = 1, stdout = '', stderr = 'fail' })
+    end
+    local token = 'SECRET_TOKEN_SHOULD_NOT_APPEAR_IN_ARGV'
+    local prs
+    git.fetch_prs('me', 'repo', token, { 'f' }, function(r) prs = r end)
+    vim.system = orig_system
+    T.wait_until(function() return prs ~= nil end)
+    local joined = table.concat(seen, '\0')
+    T.ok(not joined:find(token, 1, true), 'token must not appear in curl argv')
+    local has_header_file = false
+    for i, arg in ipairs(seen) do
+      if arg == '-H' and seen[i + 1] and seen[i + 1]:sub(1, 1) == '@' then
+        has_header_file = true
+        break
+      end
+    end
+    T.ok(has_header_file, 'Authorization should be supplied via -H @file')
+  end)
 end)
 
 T.describe('git.lua: ref_candidates', function()

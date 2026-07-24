@@ -20,7 +20,7 @@ T.describe('github_permalink', function()
 
     feed('<leader>G')
     vim.wait(50)
-    T.eq(vim.fn.getreg('+'),
+    T.eq(vim.fn.getreg('"'),
       ('https://github.com/someone/somerepo/blob/%s/sub/file.lua#L3'):format(sha))
 
     T.rmrf(dir)
@@ -42,7 +42,7 @@ T.describe('github_permalink', function()
     vim.api.nvim_win_set_cursor(0, { 2, 0 })
     feed('<leader>G')
     vim.wait(50)
-    T.eq(vim.fn.getreg('+'),
+    T.eq(vim.fn.getreg('"'),
       ('https://github.com/someone/somerepo/blob/%s/file.lua#L2-L4'):format(sha))
 
     T.rmrf(dir)
@@ -59,8 +59,8 @@ T.describe('github_permalink', function()
     vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/file.lua'))
     feed('<leader>G')
     vim.wait(50)
-    T.contains(vim.fn.getreg('+'), 'https://github.com/someone/somerepo/blob/')
-    T.ok(not vim.fn.getreg('+'):find('token', 1, true), 'credentials must not leak into the URL')
+    T.contains(vim.fn.getreg('"'), 'https://github.com/someone/somerepo/blob/')
+    T.ok(not vim.fn.getreg('"'):find('token', 1, true), 'credentials must not leak into the URL')
 
     T.rmrf(dir)
   end)

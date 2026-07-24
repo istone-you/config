@@ -91,7 +91,23 @@ function M.status(dir)
 end
 
 function M.git(dir, args)
-  return vim.system(vim.list_extend({ 'git' }, args), { cwd = dir, text = true }):wait()
+  local name, email = 'test', 'test@test'
+  local i = 1
+  while i <= #args do
+    if args[i] == '-c' and args[i + 1] then
+      local n = args[i + 1]:match('^user%.name=(.+)$')
+      local e = args[i + 1]:match('^user%.email=(.+)$')
+      if n then name = n end
+      if e then email = e end
+    end
+    i = i + 1
+  end
+  local env = vim.fn.environ()
+  env.GIT_AUTHOR_NAME = name
+  env.GIT_AUTHOR_EMAIL = email
+  env.GIT_COMMITTER_NAME = name
+  env.GIT_COMMITTER_EMAIL = email
+  return vim.system(vim.list_extend({ 'git' }, args), { cwd = dir, text = true, env = env }):wait()
 end
 
 function M.close()

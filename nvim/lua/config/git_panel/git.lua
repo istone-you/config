@@ -514,16 +514,20 @@ function M.fetch_prs(owner, repo, token, branch_names, cb)
     table.concat(var_decls, ', '), table.concat(queries, ' '))
 
   local tmp = vim.fn.tempname()
+  local hdr = vim.fn.tempname()
   vim.fn.writefile({ vim.json.encode({ query = query, variables = variables }) }, tmp)
+  -- token を argv に載せると ps 等から見えるため、curl の -H @file で渡す
+  vim.fn.writefile({ 'Authorization: token ' .. token }, hdr)
   vim.system({
     'curl', '-s', '-X', 'POST', 'https://api.github.com/graphql',
-    '-H', 'Authorization: token ' .. token,
+    '-H', '@' .. hdr,
     '-H', 'Content-Type: application/json',
     '--max-time', '10',
     '-d', '@' .. tmp,
   }, { text = true }, function(res)
     vim.schedule(function()
       vim.fn.delete(tmp)
+      vim.fn.delete(hdr)
       if res.code ~= 0 or not res.stdout or res.stdout == '' then cb({}); return end
       local ok, decoded = pcall(vim.json.decode, res.stdout)
       local repository = ok and decoded and decoded.data and decoded.data.repository

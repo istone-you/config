@@ -43,7 +43,10 @@ local function copy_code_with_path(start_line, end_line)
   local lang  = ft_to_lang[vim.bo[buf].filetype] or vim.bo[buf].filetype
   local result = location .. '\n```' .. lang .. '\n' .. code .. '\n```'
 
-  vim.fn.setreg('+', result)
+  vim.fn.setreg('"', result)
+  if vim.g.clipboard ~= nil then
+    vim.fn.setreg('+', result)
+  end
   vim.notify('コピー: ' .. location, vim.log.levels.INFO)
 end
 
