@@ -23,9 +23,19 @@ function M.remember_cursor()
   if entry then cursor_mem = entry.ref end
 end
 
+local function current_ref_is(ref)
+  local entry = current_entry()
+  return entry and entry.ref == ref
+end
+
+local function still_current(ref)
+  return ctx.current_panel_name() == 'stash' and current_ref_is(ref)
+end
+
 local function show_detail(entry)
   if not entry then ctx.set_right_lines({}); return end
   git.stash_show(entry.ref, function(text)
+    if not still_current(entry.ref) then return end
     ctx.set_right_diff(text, entry.ref)
   end)
 end
@@ -120,7 +130,10 @@ function M.activate(c)
   ctx.setup_cursor_clamp(
     function() return line_entries end,
     function() return total_rows end,
-    show_detail
+    function(entry)
+      cursor_mem = entry.ref
+      show_detail(entry)
+    end
   )
   M.refresh()
 end

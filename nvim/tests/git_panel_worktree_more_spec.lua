@@ -18,9 +18,9 @@ T.describe('git_panel Worktree panel: detached HEAD display', function()
 
     GP.open(dir, false)
     GP.press('5')
-    T.wait_until(function() return GP.find_row(GP.left_win(), vim.fn.fnamemodify(wt_path, ':t')) ~= nil end, 3000)
+    T.wait_until(function() return GP.find_row(GP.left_win(), wt_path) ~= nil end, 3000)
     local left = GP.left_win()
-    local row = GP.find_row(left, vim.fn.fnamemodify(wt_path, ':t'))
+    local row = GP.find_row(left, wt_path)
     T.ok(row ~= nil)
     T.contains(GP.lines(left)[row], '(detached)')
 

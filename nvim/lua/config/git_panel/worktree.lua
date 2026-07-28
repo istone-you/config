@@ -136,7 +136,10 @@ function M.activate(c)
   ctx.setup_cursor_clamp(
     function() return line_entries end,
     function() return total_rows end,
-    show_detail
+    function(entry)
+      cursor_mem = entry.path
+      show_detail(entry)
+    end
   )
   M.refresh()
 end

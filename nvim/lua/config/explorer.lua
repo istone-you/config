@@ -1298,6 +1298,8 @@ local function open(fullscreen)
       if pos[1] < min_row then
         pcall(vim.api.nvim_win_set_cursor, win, { min_row, pos[2] })
       end
+      local entry = entry_at_cursor()
+      if entry then cursor_mem[cwd] = entry.name end
       render_preview()
     end,
   })

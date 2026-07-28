@@ -27,9 +27,19 @@ function M.remember_cursor()
   if entry then cursor_mem = entry.hash end
 end
 
+local function current_hash_is(hash)
+  local entry = current_entry()
+  return entry and entry.hash == hash
+end
+
+local function still_current(hash)
+  return ctx.current_panel_name() == 'commits' and current_hash_is(hash)
+end
+
 local function show_detail(entry)
   if not entry then ctx.set_right_lines({}); return end
   git.show_commit(entry.hash, function(text)
+    if not still_current(entry.hash) then return end
     ctx.set_right_diff(text, entry.hash)
   end)
 end
@@ -220,7 +230,10 @@ function M.activate(c)
   ctx.setup_cursor_clamp(
     function() return line_entries end,
     function() return total_rows end,
-    show_detail
+    function(entry)
+      cursor_mem = entry.hash
+      show_detail(entry)
+    end
   )
   M.refresh()
 end

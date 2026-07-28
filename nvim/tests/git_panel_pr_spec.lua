@@ -182,6 +182,75 @@ T.describe('git_panel PR panel', function()
     git.gh_pr_list, git.gh_pr_view, git.gh_pr_diff = orig.list, orig.view, orig.diff
     T.rmrf(dir)
   end)
+
+  T.it('keeps the PR selected by the user when a later refresh finishes', function()
+    local git = require('config.git_panel.git')
+    local orig = { list = git.gh_pr_list, view = git.gh_pr_view, diff = git.gh_pr_diff }
+    git.gh_pr_list = function(_, cb) vim.schedule(function() cb({
+      { number = 2, title = 'second pr', state = 'OPEN', author = { login = 'me' },
+        headRefName = 'b', url = 'u2' },
+      { number = 1, title = 'first pr', state = 'OPEN', author = { login = 'me' },
+        headRefName = 'a', url = 'u1' },
+    }) end) end
+    git.gh_pr_view = function(_, _, cb) vim.schedule(function() cb('body') end) end
+    git.gh_pr_diff = function(_, cb) vim.schedule(function() cb('') end) end
+
+    local dir = T.tmp_git_repo()
+    GP.open(dir, false)
+    GP.press('6')
+    local left
+    T.wait_until(function()
+      left = GP.left_win()
+      return left and GP.find_row(left, 'first pr') ~= nil
+    end)
+
+    GP.goto_row(left, GP.find_row(left, 'first pr'))
+    require('config.git_panel.pr').refresh()
+    T.wait_until(function()
+      local row = vim.api.nvim_win_get_cursor(left)[1]
+      return (GP.lines(left)[row] or ''):find('first pr', 1, true) ~= nil
+    end)
+
+    local row = vim.api.nvim_win_get_cursor(left)[1]
+    T.contains(GP.lines(left)[row], 'first pr', 'refresh completion should keep the user-selected PR')
+
+    GP.close()
+    git.gh_pr_list, git.gh_pr_view, git.gh_pr_diff = orig.list, orig.view, orig.diff
+    T.rmrf(dir)
+  end)
+
+  T.it('does not paint a loaded PR detail after switching away from the PR tab', function()
+    local git = require('config.git_panel.git')
+    local orig = { list = git.gh_pr_list, view = git.gh_pr_view, diff = git.gh_pr_diff }
+    local pending_view
+    git.gh_pr_list = function(_, cb) vim.schedule(function() cb({
+      { number = 42, title = 'slow pr', state = 'OPEN', author = { login = 'me' },
+        headRefName = 'feature', url = SAMPLE_URL },
+    }) end) end
+    git.gh_pr_view = function(_, _, cb) pending_view = cb end
+    git.gh_pr_diff = function(_, cb) vim.schedule(function() cb('') end) end
+
+    local dir = T.tmp_git_repo()
+    GP.open(dir, false)
+    GP.press('6')
+    T.wait_until(function()
+      local left = GP.left_win()
+      return left and GP.find_row(left, 'slow pr') ~= nil and pending_view ~= nil
+    end)
+
+    GP.press('1')
+    T.wait_until(function() return GP.win_by_title('Files') ~= nil end)
+    pending_view('loaded pr detail body')
+    vim.wait(120)
+
+    local right_text = table.concat(GP.lines(GP.right_win()), '\n')
+    T.ok(not right_text:find('loaded pr detail body', 1, true),
+      'PR detail callback must not update the right pane after switching tabs')
+
+    GP.close()
+    git.gh_pr_list, git.gh_pr_view, git.gh_pr_diff = orig.list, orig.view, orig.diff
+    T.rmrf(dir)
+  end)
 end)
 
 T.summary()

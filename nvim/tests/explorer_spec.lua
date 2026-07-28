@@ -334,6 +334,15 @@ T.describe('explorer', function()
       vim.wait(50)
       local back_row = vim.api.nvim_win_get_cursor(win)[1]
       assert_eq(lines(win)[back_row]:find('zdir', 1, true) ~= nil, true, 'h should restore cursor onto zdir')
+      feed('j')
+      vim.api.nvim_exec_autocmds('CursorMoved', { buffer = vim.api.nvim_win_get_buf(win) })
+      local moved_row = vim.api.nvim_win_get_cursor(win)[1]
+      assert_eq(lines(win)[moved_row]:find('afile.txt', 1, true) ~= nil, true, 'j after h should move to afile')
+      feed('.')
+      feed('.')
+      vim.wait(50)
+      local after_rerender_row = vim.api.nvim_win_get_cursor(win)[1]
+      assert_eq(lines(win)[after_rerender_row]:find('afile.txt', 1, true) ~= nil, true, 'rerender after h+j must not snap back to zdir')
 
       -- 3) a でファイル/ディレクトリ作成
       feed('a')

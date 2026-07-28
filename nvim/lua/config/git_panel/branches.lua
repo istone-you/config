@@ -76,6 +76,15 @@ function M.remember_cursor()
   if entry then cursor_mem = entry.name end
 end
 
+local function current_name_is(name)
+  local entry = current_entry()
+  return entry and entry.name == name
+end
+
+local function still_current(name)
+  return ctx.current_panel_name() == 'branches' and current_name_is(name)
+end
+
 local PR_STATE_LABEL = { OPEN = 'Open', CLOSED = 'Closed', MERGED = 'Merged', DRAFT = 'Draft' }
 
 --- branches_controller.go GetOnRenderToMain相当: 選択中のブランチにPRがあれば、
@@ -84,6 +93,7 @@ local function show_detail(entry)
   if not entry then ctx.set_right_lines({}); return end
   local pr = visible_pr(entry.name)
   git.run({ 'log', '-n', '20', '--pretty=format:%h %s (%ar)', entry.name }, function(res)
+    if not still_current(entry.name) then return end
     local lines = vim.split(res.stdout or '', '\n', { plain = true })
     local hl_queue = nil
     if pr then
@@ -457,7 +467,10 @@ function M.activate(c)
   ctx.setup_cursor_clamp(
     function() return line_entries end,
     function() return total_rows end,
-    show_detail
+    function(entry)
+      cursor_mem = entry.name
+      show_detail(entry)
+    end
   )
   M.refresh()
   M.refresh_prs()

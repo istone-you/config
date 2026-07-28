@@ -158,6 +158,15 @@ function M.remember_cursor()
   if node then cursor_mem = node.path end
 end
 
+local function current_path_is(path)
+  local node = current_entry()
+  return node and node.path == path
+end
+
+local function still_current(path)
+  return ctx.current_panel_name() == 'files' and current_path_is(path)
+end
+
 local function show_diff_for(node, prefer_staged)
   if not node then ctx.set_right_lines({}); return end
   if node.is_dir then
@@ -171,6 +180,7 @@ local function show_diff_for(node, prefer_staged)
     -- ルートノードのpathは''なので、git diffの pathspecとして無効(要"."扱い)
     local path = node.path ~= '' and node.path or '.'
     git.diff_file({ path = path, section = section }, function(diff_text)
+      if not still_current(node.path) then return end
       ctx.set_right_diff(diff_text, node.path)
     end)
     return
@@ -186,12 +196,14 @@ local function show_diff_for(node, prefer_staged)
     -- 得る(diff --git等のヘッダーが揃うのでdeltaが正しく色付けできる。バイナリ判定も
     -- gitが"Binary files ... differ"を出すのでこちらで個別に読む必要がない)
     git.diff_untracked_file(f.path, function(diff_text)
+      if not still_current(node.path) then return end
       ctx.set_right_diff(diff_text, node.path)
     end)
     return
   end
   local section = (prefer_staged and has_staged(f)) and 'staged' or (has_unstaged(f) and 'unstaged' or 'staged')
   git.diff_file({ path = f.path, section = section }, function(diff_text)
+    if not still_current(node.path) then return end
     ctx.set_right_diff(diff_text, node.path)
   end)
 end
@@ -440,6 +452,7 @@ local function enter_staging_mode()
   end
   local staged_first = has_staged(f) and not has_unstaged(f)
   git.diff_file({ path = f.path, section = staged_first and 'staged' or 'unstaged' }, function(diff_text)
+    if not still_current(node.path) then return end
     local header, hunks = git.parse_hunks(diff_text)
     if #hunks == 0 then return end
     hunk_state = { node = node, header = header, hunks = hunks, idx = 1, staged = staged_first }
@@ -838,7 +851,10 @@ function M.activate(c)
   ctx.setup_cursor_clamp(
     function() return line_entries end,
     function() return total_rows end,
-    show_diff_for
+    function(node)
+      cursor_mem = node.path
+      show_diff_for(node)
+    end
   )
   M.refresh()
 end

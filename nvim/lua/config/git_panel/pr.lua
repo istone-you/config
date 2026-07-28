@@ -61,6 +61,15 @@ function M.remember_cursor()
   if e then cursor_mem = e.number end
 end
 
+local function current_number_is(number)
+  local entry = current_entry()
+  return entry and entry.number == number
+end
+
+local function still_current(number)
+  return ctx.current_panel_name() == 'pr' and current_number_is(number)
+end
+
 local function show_detail(entry)
   if not entry then
     shown_detail = nil
@@ -77,7 +86,7 @@ local function show_detail(entry)
   -- gh pr view の出力を整形せずそのまま（色・コメント込み）表示する
   git.gh_pr_view(entry.number, ctx.right_width(), function(text)
     -- 取得中に別のPRへ移っていたら破棄
-    if shown_detail ~= entry.number then return end
+    if shown_detail ~= entry.number or not still_current(entry.number) then return end
     detail_cache[entry.number] = text
     ctx.set_right_ansi(text, 'pr:' .. entry.number)
   end)
@@ -88,6 +97,7 @@ local function show_diff(entry)
   if not entry then ctx.set_right_lines({ '  PRを選択してください' }, '', nil, 'pr:none'); return end
   git.gh_pr_diff(entry.number, function(diff)
     if right_mode ~= 'diff' then return end -- 取得中にモードが変わっていたら破棄
+    if not still_current(entry.number) then return end -- 取得中に別PR/別タブへ移っていたら破棄
     if diff == '' then
       ctx.set_right_lines({ '  diffを取得できませんでした' }, '', nil, 'pr:diff:none')
     else
@@ -287,7 +297,10 @@ function M.activate(c)
   ctx.setup_cursor_clamp(
     function() return line_entries end,
     function() return total_rows end,
-    show_right
+    function(entry)
+      cursor_mem = entry.number
+      show_right(entry)
+    end
   )
   M.refresh()
 end
