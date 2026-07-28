@@ -42,7 +42,23 @@ function M.left_win() return M.win_by_title('Files') or M.win_by_title('Commits'
   or M.win_by_title('Branches') or M.win_by_title('Stash') or M.win_by_title('Worktree')
   or M.win_by_title('PR') end
 
-function M.right_win() return M.win_by_title('Diff') or M.win_by_title('プレビュー') end
+-- 右ペインはタイトルを持たない（diff専用ではないため）。開いた時に付与される
+-- window-local変数 gitpanel_right で特定する。
+function M.right_win()
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    local ok, v = pcall(vim.api.nvim_win_get_var, w, 'gitpanel_right')
+    if ok and v then return w end
+  end
+  return nil
+end
+
+function M.review_tree_win()
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    local ok, v = pcall(vim.api.nvim_win_get_var, w, 'gitpanel_review_tree')
+    if ok and v then return w end
+  end
+  return nil
+end
 
 function M.lines(win)
   return vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false)

@@ -25,10 +25,31 @@ local function filter_label()
   return '作成 / レビュー依頼'
 end
 
-local STATE_LABEL = { OPEN = 'Open', CLOSED = 'Closed', MERGED = 'Merged', DRAFT = 'Draft' }
 local STATE_HL = {
   OPEN = 'GitPanelPrOpen', CLOSED = 'GitPanelPrClosed',
   MERGED = 'GitPanelPrMerged', DRAFT = 'GitPanelPrDraft',
+}
+-- 状態アイコン（GitHub/gh-dash と同じ Nerd Font グリフ）。CHECK_ICON同様、PUA文字の
+-- 欠落を避けるためバイト列で直書きする。色は STATE_HL を流用する。
+--   \239\144\135 = U+F407 nf-oct-git_pull_request(Open)
+--   \239\147\156 = U+F4DC nf-oct-git_pull_request_closed(Closed)
+--   \239\147\137 = U+F4C9 nf-oct-git_merge(Merged)
+--   \238\175\155 = U+EBDB nf-cod-git_pull_request_draft(Draft)
+local STATE_ICON = {
+  OPEN   = '\239\144\135',
+  CLOSED = '\239\147\156',
+  MERGED = '\239\147\137',
+  DRAFT  = '\238\175\155',
+}
+-- CI状態アイコン（GitHub風）。{glyph, 色ハイライト}。pr.checks(git.pr_check_state)の値で引く。
+-- チェック無し/不明(nil)は空白1つで桁を揃える（下のrenderで対応）。
+-- グリフはNerd Fontのバイト列で直書き（エディタ/転送でPUA文字が欠落しないように）:
+--   \239\128\140 = U+F00C nf-fa-check(✓) / \239\132\145 = U+F111 nf-fa-circle(●)
+--   \239\128\141 = U+F00D nf-fa-times(✗)
+local CHECK_ICON = {
+  success = { '\239\128\140', 'GitPanelCheckOk' },      -- 緑✓
+  pending = { '\239\132\145', 'GitPanelCheckPending' },  -- 黄●
+  failure = { '\239\128\141', 'GitPanelCheckFail' },     -- 赤✗
 }
 
 local function current_entry()
@@ -93,14 +114,23 @@ local function render()
   push('', nil)
   local remembered_row = nil
   for _, pr in ipairs(prs) do
-    local label = STATE_LABEL[pr.state] or pr.state
     local author = (pr.author and pr.author.login) or '?'
-    local prefix = string.format('  #%d [', pr.number)
-    local line = prefix .. label .. '] ' .. pr.title .. '  (' .. author .. ') ← ' .. pr.headRefName
+    local ci = CHECK_ICON[pr.checks]
+    local ci_icon = ci and ci[1] or ' ' -- チェック無し/不明は空白で桁を揃える
+    local st_icon = STATE_ICON[pr.state] or ' ' -- 状態はアイコンで表示（[Open]等の文字は廃止）
+    -- 並び: 状態アイコン → CIアイコン → タイトル。区切りは1スペース。
+    -- 行頭のアイコン幅は全行同じなのでタイトルは縦に揃う。
+    local lead = '  '
+    local head = lead .. st_icon .. ' ' .. ci_icon .. ' '
+    local line = head .. pr.title .. '  (' .. author .. ') ← ' .. pr.headRefName
     push(line, pr)
-    local hl = STATE_HL[pr.state]
-    if hl then
-      table.insert(hl_queue, { #lines - 1, hl, #prefix, #prefix + #label })
+    -- 状態アイコンを色付け（先頭2スペースの直後）
+    if STATE_ICON[pr.state] and STATE_HL[pr.state] then
+      table.insert(hl_queue, { #lines - 1, STATE_HL[pr.state], #lead, #lead + #st_icon })
+    end
+    if ci then -- CIアイコンを色付け（状態アイコン＋スペースの直後）
+      local ci_start = #lead + #st_icon + 1
+      table.insert(hl_queue, { #lines - 1, ci[2], ci_start, ci_start + #ci_icon })
     end
     if cursor_mem == pr.number then remembered_row = #lines end
   end

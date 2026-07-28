@@ -68,6 +68,19 @@ T.describe('git_panel init', function()
     T.rmrf(dir)
   end)
 
+  T.it('the right pane has no title (it is not diff-only)', function()
+    local dir = T.tmp_git_repo()
+    GP.open(dir, false)
+    local right = GP.right_win()
+    T.ok(right ~= nil, 'right pane should be found by its window var')
+    local title = vim.api.nvim_win_get_config(right).title
+    local empty = title == nil or title == ''
+      or (type(title) == 'table' and #title == 0)
+    T.ok(empty, 'right pane must not show a "Diff" (or any) title')
+    GP.close()
+    T.rmrf(dir)
+  end)
+
   T.it('+ expands the diff panel (like @ expands the command log), q/+ collapse it, and the two are mutually exclusive', function()
     local dir = T.tmp_git_repo(function(d)
       T.write_file(d .. '/a.txt', { 'a' })
@@ -82,9 +95,21 @@ T.describe('git_panel init', function()
 
     GP.press('+')
     vim.wait(80)
+    local tree = GP.review_tree_win()
     T.ok(vim.api.nvim_win_get_config(right).width > normal_width, 'diff panel should widen')
-    T.eq(vim.api.nvim_get_current_win(), right, 'focus should move into the diff panel')
+    T.eq(tree, nil, 'expanded diff should hide the file tree sidebar by default')
+    T.eq(vim.api.nvim_get_current_win(), right, 'focus should move into the expanded diff stream')
     T.ok(vim.api.nvim_win_is_valid(left), 'the left panel window must still exist (just resized away, not closed)')
+
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('t', true, false, true), 'x', false)
+    vim.wait(80)
+    tree = GP.review_tree_win()
+    T.ok(tree ~= nil, 't should show the expanded diff file tree')
+    T.eq(vim.api.nvim_get_current_win(), tree, 'showing the tree should focus it')
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('t', true, false, true), 'x', false)
+    vim.wait(80)
+    T.eq(GP.review_tree_win(), nil, 't should hide the expanded diff file tree again')
+    T.eq(vim.api.nvim_get_current_win(), right, 'hiding the tree should return focus to the diff stream')
 
     -- @(コマンドログ拡大)と同じ領域を専有するため、片方を有効にすると
     -- もう片方は自動的に元へ戻る(排他)
@@ -92,6 +117,7 @@ T.describe('git_panel init', function()
     GP.press('@')
     vim.wait(80)
     T.eq(vim.api.nvim_win_get_config(right).width, normal_width, '@ should collapse the expanded diff panel')
+    T.eq(GP.review_tree_win(), nil, '@ should close the expanded diff file tree')
     GP.press('@') -- コマンドログの拡大を戻す
     vim.wait(50)
 
@@ -103,6 +129,60 @@ T.describe('git_panel init', function()
     vim.wait(80)
     T.eq(vim.api.nvim_win_get_config(right).width, normal_width, 'q while expanded should collapse, not close')
     T.ok(vim.api.nvim_win_is_valid(left) and vim.api.nvim_win_is_valid(right), 'panel should still be open')
+
+    GP.close()
+    T.rmrf(dir)
+  end)
+
+  T.it('+ shows one combined diff stream and j/k in the file tree scrolls the right pane between file sections', function()
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/src/a.txt', { 'a' })
+      T.write_file(d .. '/src/nested/b.txt', { 'b' })
+      T.write_file(d .. '/src/deleted.txt', { 'delete-me' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'seed' })
+    end)
+    T.write_file(dir .. '/src/a.txt', { 'a', 'changed-a' })
+    T.write_file(dir .. '/src/nested/b.txt', { 'b', 'changed-b' })
+    vim.fn.delete(dir .. '/src/deleted.txt')
+    T.write_file(dir .. '/added.txt', { 'new-file' })
+
+    GP.open(dir, false)
+    GP.press('+')
+    T.wait_until(function()
+      local right_win = GP.right_win()
+      return GP.review_tree_win() == nil
+        and table.concat(GP.lines(right_win), '\n'):find('changed%-a') ~= nil
+        and table.concat(GP.lines(right_win), '\n'):find('changed%-b') ~= nil
+    end)
+
+    local right = GP.right_win()
+    local all = table.concat(GP.lines(right), '\n')
+    T.contains(all, 'changed-a', 'expanded view should contain the first file diff')
+    T.contains(all, 'changed-b', 'expanded view should contain the second file diff')
+
+    vim.api.nvim_set_current_win(right)
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('t', true, false, true), 'x', false)
+    T.wait_until(function()
+      local tree = GP.review_tree_win()
+      return tree ~= nil
+        and table.concat(GP.lines(tree), '\n'):find('a.txt', 1, true) ~= nil
+        and table.concat(GP.lines(tree), '\n'):find('b.txt', 1, true) ~= nil
+        and table.concat(GP.lines(tree), '\n'):find('D deleted.txt', 1, true) ~= nil
+        and table.concat(GP.lines(tree), '\n'):find('A added.txt', 1, true) ~= nil
+    end)
+    local tree = GP.review_tree_win()
+    T.contains(table.concat(GP.lines(tree), '\n'), '+1 -0', 'file tree should show colored-style +/- stats')
+
+    local top_before = vim.fn.line('w0', right)
+    local first_visible = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(right), top_before - 1, top_before + 12, false), '\n')
+    T.contains(first_visible, 'b.txt', 'initial right stream should follow the first file in the left tree display order')
+    vim.api.nvim_set_current_win(tree)
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('j', true, false, true), 'x', false)
+    vim.wait(120)
+    local top = vim.fn.line('w0', right)
+    local visible = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(right), top - 1, top + 12, false), '\n')
+    T.contains(visible, 'a.txt', 'j in the file tree should scroll the right stream to the next visible file section')
 
     GP.close()
     T.rmrf(dir)
@@ -160,15 +240,15 @@ T.describe('git_panel init', function()
     T.write_file(dir .. '/a.txt', { 'a', 'changed' })
 
     GP.open(dir, false)
-    local right = GP.right_win()
     local before = git.side_by_side
 
-    GP.press('+') -- expand + focus moves into the diff panel
+    GP.press('+') -- expand + focus moves into the diff stream; file tree is hidden by default
     vim.wait(80)
-    T.eq(vim.api.nvim_get_current_win(), right)
+    T.eq(GP.review_tree_win(), nil, 'expanded diff should hide the file tree by default')
+    T.eq(vim.api.nvim_get_current_win(), GP.right_win())
     vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('v', true, false, true), 'x', false)
     vim.wait(300)
-    T.eq(git.side_by_side, not before, 'v should toggle side-by-side even while focused on the expanded diff panel')
+    T.eq(git.side_by_side, not before, 'v should toggle side-by-side while focused on the expanded diff stream')
 
     GP.close()
     T.rmrf(dir)

@@ -166,6 +166,75 @@ T.describe('git.lua: diff_untracked_file', function()
   end)
 end)
 
+T.describe('git.lua: expanded review diff helpers', function()
+  T.it('diff_files extracts file sections in raw diff order with add/delete counts', function()
+    local diff = table.concat({
+      'diff --git a/src/a.txt b/src/a.txt',
+      '--- a/src/a.txt',
+      '+++ b/src/a.txt',
+      '@@ -1 +1,2 @@',
+      '-old',
+      '+new',
+      '+more',
+      'diff --git a/src/nested/b.txt b/src/nested/b.txt',
+      '--- a/src/nested/b.txt',
+      '+++ b/src/nested/b.txt',
+      '@@ -1 +1 @@',
+      '-x',
+      '+y',
+    }, '\n')
+    local files = git.diff_files(diff)
+    T.eq(#files, 2)
+    T.eq(files[1].path, 'src/a.txt')
+    T.eq(files[1].status, 'M')
+    T.eq(files[1].added, 2)
+    T.eq(files[1].deleted, 1)
+    T.eq(files[2].path, 'src/nested/b.txt')
+  end)
+
+  T.it('diff_files marks added and deleted files from /dev/null headers', function()
+    local diff = table.concat({
+      'diff --git a/added.txt b/added.txt',
+      'new file mode 100644',
+      '--- /dev/null',
+      '+++ b/added.txt',
+      '@@ -0,0 +1 @@',
+      '+new',
+      'diff --git a/deleted.txt b/deleted.txt',
+      'deleted file mode 100644',
+      '--- a/deleted.txt',
+      '+++ /dev/null',
+      '@@ -1 +0,0 @@',
+      '-old',
+    }, '\n')
+    local files = git.diff_files(diff)
+    T.eq(files[1].path, 'added.txt')
+    T.eq(files[1].status, 'A')
+    T.eq(files[2].path, 'deleted.txt')
+    T.eq(files[2].status, 'D')
+  end)
+
+  T.it('diff_worktree_all returns one stream containing tracked and untracked file diffs', function()
+    local dir = T.tmp_git_repo(function(d)
+      T.write_file(d .. '/tracked.txt', { 'old' })
+      GP.git(d, { 'add', '.' })
+      GP.git(d, { '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'seed' })
+    end)
+    T.write_file(dir .. '/tracked.txt', { 'new' })
+    T.write_file(dir .. '/untracked.txt', { 'fresh' })
+    git.root = dir
+
+    local diff_text
+    git.diff_worktree_all(function(text) diff_text = text end)
+    T.wait_until(function() return diff_text ~= nil end)
+    T.contains(diff_text, 'diff --git a/tracked.txt b/tracked.txt')
+    T.contains(diff_text, 'diff --git a/untracked.txt b/untracked.txt')
+    T.contains(diff_text, '+fresh')
+
+    T.rmrf(dir)
+  end)
+end)
+
 T.describe('git.lua: github_repo_info URL variants', function()
   local function with_origin(url, fn)
     local dir = T.tmp_git_repo()
@@ -351,6 +420,36 @@ T.describe('git.lua: ref_candidates', function()
     T.ok(vim.tbl_contains(candidates, 'FETCH_HEAD'))
 
     T.rmrf(dir)
+  end)
+end)
+
+T.describe('git.lua: pr_check_state (statusCheckRollup畳み込み)', function()
+  local function run(c) return git.pr_check_state(c) end
+  T.it('チェックが無ければ nil', function()
+    T.eq(run(nil), nil)
+    T.eq(run({}), nil)
+  end)
+  T.it('全て成功なら success（SKIPPED/NEUTRALも成功扱い）', function()
+    T.eq(run({
+      { __typename = 'CheckRun', status = 'COMPLETED', conclusion = 'SUCCESS' },
+      { __typename = 'CheckRun', status = 'COMPLETED', conclusion = 'SKIPPED' },
+      { __typename = 'CheckRun', status = 'COMPLETED', conclusion = 'NEUTRAL' },
+      { __typename = 'StatusContext', state = 'SUCCESS' },
+    }), 'success')
+  end)
+  T.it('未完了(IN_PROGRESS/QUEUED)や PENDING があれば pending', function()
+    T.eq(run({
+      { __typename = 'CheckRun', status = 'COMPLETED', conclusion = 'SUCCESS' },
+      { __typename = 'CheckRun', status = 'IN_PROGRESS', conclusion = '' },
+    }), 'pending')
+    T.eq(run({ { __typename = 'StatusContext', state = 'PENDING' } }), 'pending')
+  end)
+  T.it('失敗は pending より優先（GitHubと同じく赤を最優先）', function()
+    T.eq(run({
+      { __typename = 'CheckRun', status = 'IN_PROGRESS' },
+      { __typename = 'CheckRun', status = 'COMPLETED', conclusion = 'FAILURE' },
+    }), 'failure')
+    T.eq(run({ { __typename = 'StatusContext', state = 'ERROR' } }), 'failure')
   end)
 end)
 

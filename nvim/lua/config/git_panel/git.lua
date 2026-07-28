@@ -171,6 +171,53 @@ function M.diff_file(entry, cb)
   M.run(args, function(res) cb(res.stdout or '') end, { dont_log = true })
 end
 
+local function status_untracked_paths(output)
+  local records = vim.split(output or '', '\0', { plain = true })
+  local paths = {}
+  local i = 1
+  while i <= #records do
+    local rec = records[i]
+    if rec ~= '' then
+      local x, y, path = rec:sub(1, 1), rec:sub(2, 2), rec:sub(4):gsub('/$', '')
+      if x == 'R' or x == 'C' then i = i + 1 end
+      if x == '?' and y == '?' then table.insert(paths, path) end
+    end
+    i = i + 1
+  end
+  table.sort(paths)
+  return paths
+end
+
+--- Filesパネルの拡大レビュー用: tracked/staged/unstaged は `git diff HEAD` で
+--- 1本の変更ストリームにし、git diff が拾わない未追跡ファイルは no-index diff を後ろへ連結する。
+function M.diff_worktree_all(cb)
+  M.run({ 'diff', 'HEAD', '--' }, function(diff_res)
+    local parts = {}
+    if diff_res.stdout and diff_res.stdout ~= '' then table.insert(parts, diff_res.stdout) end
+    M.status(function(status_out)
+      local paths = status_untracked_paths(status_out)
+      local idx = 1
+      local function next_untracked()
+        local path = paths[idx]
+        idx = idx + 1
+        if not path then
+          cb(table.concat(parts, '\n'))
+          return
+        end
+        if vim.fn.isdirectory(M.root .. '/' .. path) == 1 then
+          next_untracked()
+          return
+        end
+        M.diff_untracked_file(path, function(text)
+          if text and text ~= '' then table.insert(parts, text) end
+          next_untracked()
+        end)
+      end
+      next_untracked()
+    end)
+  end, { dont_log = true })
+end
+
 --- lazygit(working_tree.go WorktreeFileDiffCmdObj、noIndex分岐)と同じ:
 --- 未追跡ファイルは`git diff --no-index -- /dev/null <path>`で本物のunified diffを
 --- 得る。exit code(--no-indexは差分がある時1を返す)はエラー扱いしない。
@@ -178,6 +225,67 @@ end
 --- 疑似diffだと、diff --git等のヘッダーが無くdeltaに一切色付けされなかった)
 function M.diff_untracked_file(path, cb)
   M.run({ 'diff', '--no-index', '--', '/dev/null', path }, function(res) cb(res.stdout or '') end, { dont_log = true })
+end
+
+local function clean_diff_path(raw)
+  if not raw or raw == '/dev/null' then return nil end
+  raw = vim.trim(raw)
+  if raw:sub(1, 1) == '"' and raw:sub(-1) == '"' then
+    raw = raw:sub(2, -2)
+  end
+  return raw:gsub('^[ab]/', '')
+end
+
+--- raw unified diff をファイル単位へ分割し、review stream のサイドバー/ジャンプに必要な
+--- ファイル境界と増減行数を返す。start_line/end_line は raw diff 上の 1-indexed 行。
+function M.diff_files(diff_text)
+  local lines = vim.split(diff_text or '', '\n', { plain = true })
+  local files = {}
+  local current = nil
+
+  local function finish(end_line)
+    if not current then return end
+    current.end_line = end_line
+    current.raw_text = table.concat(vim.list_slice(lines, current.start_line, end_line), '\n')
+    current.path = current.path or current.new_path or current.old_path or current.fallback_path or '(unknown)'
+    table.insert(files, current)
+  end
+
+  for i, line in ipairs(lines) do
+    if line:match('^diff %-%-git ') then
+      finish(i - 1)
+      local fallback = line:match(' b/(.+)$')
+      current = {
+        start_line = i,
+        path = nil,
+        old_path = nil,
+        new_path = nil,
+        fallback_path = clean_diff_path(fallback),
+        status = 'M',
+        added = 0,
+        deleted = 0,
+      }
+    elseif current then
+      if line:match('^new file mode ') then current.status = 'A' end
+      if line:match('^deleted file mode ') then current.status = 'D' end
+      if line:match('^rename from ') then current.status = 'R' end
+      local old = line:match('^%-%-%- (.+)$')
+      local new = line:match('^%+%+%+ (.+)$')
+      if old then
+        current.old_path = clean_diff_path(old)
+        if not current.old_path then current.status = 'A' end
+      end
+      if new then
+        current.new_path = clean_diff_path(new)
+        if not current.new_path then current.status = 'D' end
+        current.path = current.new_path or current.old_path
+      end
+      if line:sub(1, 1) == '+' and not line:match('^%+%+%+') then current.added = current.added + 1 end
+      if line:sub(1, 1) == '-' and not line:match('^%-%-%-') then current.deleted = current.deleted + 1 end
+    end
+  end
+  finish(#lines)
+  return files
 end
 
 function M.stage(path, cb) M.run({ 'add', '--', path }, cb) end
@@ -552,10 +660,36 @@ end
 
 --- オープンなPR一覧を gh CLI で取得。extra_args でフィルタ(--author/--search等)を足せる。
 --- gh未インストール/未認証/GitHub以外なら空配列。
+--- statusCheckRollup(個々のCheckRun/StatusContextの配列)を、GitHubのUIと同じ1つの
+--- 状態へ畳む。優先度は「失敗 > 進行中 > 成功」。チェックが1つも無ければ nil。
+---   CheckRun     : status が COMPLETED でなければ進行中。COMPLETEDなら conclusion で判定
+---                  (SUCCESS/NEUTRAL/SKIPPED=成功、それ以外=失敗)
+---   StatusContext: state で判定 (SUCCESS=成功、PENDING/EXPECTED=進行中、FAILURE/ERROR=失敗)
+function M.pr_check_state(checks)
+  if type(checks) ~= 'table' or #checks == 0 then return nil end
+  local fail, pending = false, false
+  for _, c in ipairs(checks) do
+    if c.__typename == 'StatusContext' then
+      if c.state == 'FAILURE' or c.state == 'ERROR' then fail = true
+      elseif c.state == 'PENDING' or c.state == 'EXPECTED' then pending = true end
+    else -- CheckRun（__typename欠落時もこちら扱い）
+      if c.status ~= 'COMPLETED' then
+        pending = true
+      else
+        local con = c.conclusion
+        if con ~= 'SUCCESS' and con ~= 'NEUTRAL' and con ~= 'SKIPPED' then fail = true end
+      end
+    end
+  end
+  if fail then return 'failure' end
+  if pending then return 'pending' end
+  return 'success'
+end
+
 function M.gh_pr_list(extra_args, cb)
   local cmd = {
     'gh', 'pr', 'list', '--limit', '50',
-    '--json', 'number,title,state,author,headRefName,url,isDraft,updatedAt',
+    '--json', 'number,title,state,author,headRefName,url,isDraft,updatedAt,statusCheckRollup',
   }
   for _, a in ipairs(extra_args or {}) do table.insert(cmd, a) end
   vim.system(cmd, { cwd = M.root, text = true }, function(res)
@@ -565,6 +699,7 @@ function M.gh_pr_list(extra_args, cb)
       if not ok or type(list) ~= 'table' then cb({}); return end
       for _, pr in ipairs(list) do
         if pr.isDraft and pr.state == 'OPEN' then pr.state = 'DRAFT' end
+        pr.checks = M.pr_check_state(pr.statusCheckRollup)
       end
       cb(list)
     end)

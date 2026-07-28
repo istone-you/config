@@ -3,6 +3,10 @@
 
 local git = require('config.git_panel.git')
 local ui = require('config.git_panel.ui')
+-- delta のANSI出力を通常バッファへ忠実に写す（端末バッファではなく通常バッファにするため、
+-- CursorLineの選択ハイライトや通常のカーソル移動が効く。色/背景/行番号/side-by-sideは
+-- delta の出力そのまま）。
+local ansi_view = require('config.git_panel.ansi_view')
 
 local M = {}
 
@@ -30,6 +34,10 @@ local last_right_content = nil
 --- （set_right_ansi/set_right_linesのキャッシュとは別に、deltaサブプロセス自体の起動も省く）
 local last_right_raw_key = nil
 local last_right_raw_text = nil
+--- 右ペインに今表示している内容の種別: 'diff'(delta出力) | 'ansi'(gh pr view等の生ANSI) |
+--- 'lines'(プレーン) | nil。+で拡大した時、diffだけは新しい幅でローカル再生成し、それ以外
+--- (PR詳細のANSI等)は再取得せずそのまま拡大する、という出し分けに使う。
+local right_kind = nil
 -- recreate_right_buf(ctx.set_right_lines/set_right_ansiより上で必要)がbind_click/
 -- bind_diff_keys(パネル切替セクションで定義)を使うための前方宣言
 local bind_click
@@ -81,12 +89,18 @@ end
 
 local ctx = {}
 
+--- 右ペインのdiff(delta出力)を、今のウィンドウ幅でローカル再生成する（前方宣言。
+--- 実体は set_right_* の定義後）。ネットワーク再取得はせず、キャッシュ済みのraw diffを
+--- deltaに通し直すだけ。diff以外(PR詳細のANSI等)は何もしない。
+local rerender_right_for_width
+local render_review_stream
+
 --- vキー(delta side-by-side切替)相当。left_buf(GLOBAL_KEYS経由)と、diffパネルを
---- +で拡大してフォーカスが移った時(bind_diff_keys)の両方から使うため共通化する
+--- +で拡大してフォーカスが移った時(bind_diff_keys)の両方から使うため共通化する。
+--- side-by-sideの切替はdeltaの出力形式が変わるだけなので、再取得せずローカル再生成で足りる。
 local function toggle_side_by_side_key()
   local on = git.toggle_side_by_side()
-  ctx.invalidate_right_cache()
-  refresh_current_panel()
+  rerender_right_for_width()
   vim.notify('delta side-by-side: ' .. (on and 'ON' or 'OFF'), vim.log.levels.INFO)
 end
 
@@ -202,7 +216,9 @@ end
 --- 変化なし判定の対象外（静的なメッセージ表示などで使う）
 function ctx.set_right_lines(lines, filetype, hl_queue, key)
   if not (win.right_buf and vim.api.nvim_buf_is_valid(win.right_buf)) then return end
+  if win.right_win and vim.api.nvim_win_is_valid(win.right_win) then vim.wo[win.right_win].cursorline = false end
   if unchanged(key, table.concat(lines, '\n')) then return end
+  right_kind = 'lines'
   if vim.bo[win.right_buf].buftype == 'terminal' then recreate_right_buf(false) end
   vim.bo[win.right_buf].modifiable = true
   vim.bo[win.right_buf].filetype = filetype or 'diff'
@@ -218,10 +234,26 @@ end
 --- 解釈させる。実プロセスは繋がず、静的な色付きテキストの表示器として使うだけ）
 function ctx.set_right_ansi(ansi_text, key)
   if not (win.right_win and vim.api.nvim_win_is_valid(win.right_win)) then return end
+  if win.right_win and vim.api.nvim_win_is_valid(win.right_win) then vim.wo[win.right_win].cursorline = false end
   if unchanged(key, ansi_text) then return end
+  right_kind = 'ansi'
   recreate_right_buf(true)
   local chan = vim.api.nvim_open_term(win.right_buf, {})
   vim.api.nvim_chan_send(chan, ansi_text)
+end
+
+--- delta のANSI出力を「通常バッファ」へ写す（端末バッファのset_right_ansiとは別経路）。
+--- こうすると通常バッファなので CursorLine の選択ハイライトが効く。色・背景（ブロック帯）・
+--- 行番号・side-by-side は delta の出力をそのまま再現する。
+local function set_right_delta(ansi_text, key)
+  if not (win.right_buf and vim.api.nvim_buf_is_valid(win.right_buf)) then return end
+  if unchanged(key, ansi_text) then return end -- 同じ内容なら触らない（スクロール保持）
+  right_kind = 'diff'
+  if vim.bo[win.right_buf].buftype == 'terminal' then recreate_right_buf(false) end
+  ansi_view.render(win.right_buf, hl_ns, ansi_text)
+  if win.right_win and vim.api.nvim_win_is_valid(win.right_win) then
+    vim.wo[win.right_win].cursorline = true -- 選択（カーソル行）ハイライト
+  end
 end
 
 --- deltaが使えれば自動で通して色付き表示、無ければ素のテキスト表示にフォールバックする。
@@ -246,7 +278,7 @@ function ctx.set_right_diff(text, key)
     and vim.api.nvim_win_get_width(win.right_win) or 80
   git.run_delta(text, width, function(ansi)
     if ansi then
-      ctx.set_right_ansi(ansi, key)
+      set_right_delta(ansi, key) -- delta出力を通常バッファへ忠実に描画（選択ハイライトが効く）
     else
       ctx.set_right_lines(vim.split(text, '\n', { plain = true }), 'diff', nil, key)
     end
@@ -260,6 +292,28 @@ end
 function ctx.invalidate_right_cache()
   last_right_key, last_right_content = nil, nil
   last_right_raw_key, last_right_raw_text = nil, nil
+end
+
+--- 右ペインのdiff(delta出力)だけを、今のウィンドウ幅で再生成する（実体。前方で宣言済み）。
+--- +拡大/縮小・vのside-by-side切替から呼ぶ。deltaの出力は生成時の幅で固定されるため
+--- 幅が変わると追従しないが、raw diffはキャッシュ済みなので再取得せずdeltaに通し直すだけ。
+--- diff以外(PR詳細のANSI・プレーンlines)は幅が変わっても再取得しない＝そのまま拡大する。
+function rerender_right_for_width()
+  if right_kind ~= 'diff' then return end
+  if not (git.delta_available and last_right_raw_text and last_right_raw_text ~= '') then return end
+  if diff_focused and review_tree.win and vim.api.nvim_win_is_valid(review_tree.win) then
+    render_review_stream(last_right_raw_text, last_right_raw_key, review_tree.selected)
+    return
+  end
+  local raw, key = last_right_raw_text, last_right_raw_key
+  local width = ctx.right_width()
+  git.run_delta(raw, width, function(ansi)
+    if ansi then
+      set_right_delta(ansi, key)
+    else
+      ctx.set_right_lines(vim.split(raw, '\n', { plain = true }), 'diff', nil, key)
+    end
+  end)
 end
 
 function ctx.current_entry(get_line_entries)
@@ -354,6 +408,19 @@ local collapse_cmdlog
 -- 必要がある。定義順の都合で先に前方宣言しておく
 local diff_focused = false
 local collapse_diff_focus
+local review_tree = {
+  win = nil,
+  buf = nil,
+  files = {},
+  row_entries = {},
+  visible_order = {},
+  selected = 1,
+  anchors = {},
+  previous = nil,
+  hidden = false,
+  active = false,
+}
+local review_render_seq = 0
 
 -- render_tabbarで再計算するタブごとのクリック判定用バイト列範囲: { {start_col,end_col,idx}, ... }
 local tab_click_ranges = {}
@@ -387,7 +454,9 @@ local function switch_to(idx)
   -- 拡大解除とleft_winへのフォーカス復帰は行う（キー/クリックどちらの経路でも
   -- 一貫して「拡大表示から抜けてそのパネルを見る」動きになるようにする）
   collapse_cmdlog()
-  collapse_diff_focus()
+  -- 別パネルへ切り替える時は直後の activate_panel が右ペインを描き直すので rerender 不要。
+  -- 同じパネルへ（＝拡大から抜けるだけ）の時だけ、狭い幅でdiffを再生成する。
+  collapse_diff_focus(idx == current_panel_idx)
   if idx ~= current_panel_idx then activate_panel(idx) end
   if win.left_win and vim.api.nvim_win_is_valid(win.left_win) then
     vim.api.nvim_set_current_win(win.left_win)
@@ -474,6 +543,353 @@ local function toggle_cmdlog_focus()
   end
 end
 
+local function review_tree_width(L)
+  return math.min(math.max(24, math.floor(L.tabbar_w * 0.28)), math.max(18, L.tabbar_w - 42))
+end
+
+local function close_review_tree()
+  review_render_seq = review_render_seq + 1
+  if review_tree.win and vim.api.nvim_win_is_valid(review_tree.win) then
+    pcall(vim.api.nvim_win_close, review_tree.win, true)
+  end
+  if review_tree.buf and vim.api.nvim_buf_is_valid(review_tree.buf) then
+    pcall(vim.api.nvim_buf_delete, review_tree.buf, { force = true })
+  end
+  review_tree.win, review_tree.buf = nil, nil
+  review_tree.files, review_tree.row_entries, review_tree.visible_order, review_tree.anchors = {}, {}, {}, {}
+  review_tree.selected = 1
+  review_tree.previous = nil
+  review_tree.hidden = false
+  review_tree.active = false
+end
+
+local function visible_line_count(text)
+  if not text or text == '' then return 0 end
+  local _, n = text:gsub('\n', '')
+  return text:sub(-1) == '\n' and n or (n + 1)
+end
+
+local function build_review_tree(files)
+  local root = { name = '', path = '', is_dir = true, children = {} }
+  local dirs = { [''] = root }
+  local function dir(path)
+    if dirs[path] then return dirs[path] end
+    local parent_path = path:match('^(.*)/[^/]+$') or ''
+    local parent = dir(parent_path)
+    local node = { name = path:match('([^/]+)$') or path, path = path, is_dir = true, children = {} }
+    table.insert(parent.children, node)
+    dirs[path] = node
+    return node
+  end
+  for i, f in ipairs(files) do
+    local parent_path = f.path:match('^(.*)/[^/]+$') or ''
+    table.insert(dir(parent_path).children, {
+      name = f.path:match('([^/]+)$') or f.path,
+      path = f.path,
+      is_dir = false,
+      index = i,
+      status = f.status or 'M',
+      added = f.added or 0,
+      deleted = f.deleted or 0,
+    })
+  end
+  local function sort(node)
+    table.sort(node.children, function(a, b)
+      if a.is_dir ~= b.is_dir then return a.is_dir end
+      return a.name:lower() < b.name:lower()
+    end)
+    for _, c in ipairs(node.children) do if c.is_dir then sort(c) end end
+  end
+  sort(root)
+  return root
+end
+
+local function scroll_review_to_selected()
+  local rwin = win.right_win
+  if not (rwin and vim.api.nvim_win_is_valid(rwin)) then return end
+  local row = review_tree.anchors[review_tree.selected] or 1
+  pcall(vim.api.nvim_win_set_cursor, rwin, { math.max(1, row), 0 })
+  vim.api.nvim_win_call(rwin, function() vim.cmd('normal! zt') end)
+end
+
+local function render_review_tree()
+  local lines, hls = {}, {}
+  review_tree.row_entries = {}
+  review_tree.visible_order = {}
+  local selected_row = 1
+  local tree = build_review_tree(review_tree.files)
+
+  local function push(text, entry, hl)
+    table.insert(lines, text)
+    review_tree.row_entries[#lines] = entry
+    if entry and entry.index == review_tree.selected then selected_row = #lines end
+    if hl then table.insert(hls, { #lines - 1, hl, 0, -1 }) end
+  end
+
+  push('  Changed files', nil, 'GitPanelHeader')
+  local function walk(node, depth)
+    for _, child in ipairs(node.children) do
+      local indent = string.rep('  ', depth)
+      if child.is_dir then
+        push('  ' .. indent .. '▼ ' .. child.name .. '/', nil, 'GitPanelSection')
+        walk(child, depth + 1)
+      else
+        local status = child.status or 'M'
+        local status_hl = ({
+          A = 'GitPanelAdded',
+          M = 'GitPanelModified',
+          D = 'GitPanelDeleted',
+          R = 'GitPanelRenamed',
+        })[status] or 'GitPanelModified'
+        local stat = ''
+        if child.added > 0 or child.deleted > 0 then
+          stat = string.format('  +%d -%d', child.added, child.deleted)
+        end
+        table.insert(review_tree.visible_order, child.index)
+        local line = '  ' .. indent .. status .. ' ' .. child.name .. stat
+        push(line, { index = child.index }, nil)
+        local row = #lines - 1
+        local status_col = #('  ' .. indent)
+        table.insert(hls, { row, status_hl, status_col, status_col + 1 })
+        local plus_col = line:find('+%d+', 1)
+        local minus_col = line:find('-%d+', 1)
+        if plus_col then table.insert(hls, { row, 'GitPanelReviewAdded', plus_col - 1, plus_col - 1 + #tostring(child.added) + 1 }) end
+        if minus_col then table.insert(hls, { row, 'GitPanelReviewDeleted', minus_col - 1, minus_col - 1 + #tostring(child.deleted) + 1 }) end
+      end
+    end
+  end
+  walk(tree, 0)
+  if #lines == 1 then push('  (差分なし)', nil) end
+
+  if not (review_tree.buf and vim.api.nvim_buf_is_valid(review_tree.buf)) then return end
+
+  vim.bo[review_tree.buf].modifiable = true
+  vim.api.nvim_buf_set_lines(review_tree.buf, 0, -1, false, lines)
+  vim.bo[review_tree.buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(review_tree.buf, hl_ns, 0, -1)
+  for _, h in ipairs(hls) do
+    vim.api.nvim_buf_add_highlight(review_tree.buf, hl_ns, h[2], h[1], h[3], h[4])
+  end
+  if review_tree.win and vim.api.nvim_win_is_valid(review_tree.win) then
+    pcall(vim.api.nvim_win_set_cursor, review_tree.win, { selected_row, 0 })
+  end
+end
+
+local function move_review_selection(delta)
+  if #review_tree.files == 0 then return end
+  local order = review_tree.visible_order
+  local pos = 1
+  for i, idx in ipairs(order) do
+    if idx == review_tree.selected then pos = i; break end
+  end
+  pos = math.max(1, math.min(#order, pos + delta))
+  review_tree.selected = order[pos] or review_tree.selected
+  render_review_tree()
+  scroll_review_to_selected()
+end
+
+local toggle_review_tree
+
+local function bind_review_tree_keys(buf)
+  if not (buf and vim.api.nvim_buf_is_valid(buf)) then return end
+  local function collapse_and_refocus()
+    collapse_diff_focus(true)
+    if win.left_win and vim.api.nvim_win_is_valid(win.left_win) then
+      vim.api.nvim_set_current_win(win.left_win)
+    end
+  end
+  vim.keymap.set('n', 'j', function() move_review_selection(1) end, { buffer = buf, nowait = true, silent = true })
+  vim.keymap.set('n', '<Down>', function() move_review_selection(1) end, { buffer = buf, nowait = true, silent = true })
+  vim.keymap.set('n', 'k', function() move_review_selection(-1) end, { buffer = buf, nowait = true, silent = true })
+  vim.keymap.set('n', '<Up>', function() move_review_selection(-1) end, { buffer = buf, nowait = true, silent = true })
+  vim.keymap.set('n', 't', toggle_review_tree, { buffer = buf, nowait = true, silent = true })
+  vim.keymap.set('n', 'v', toggle_side_by_side_key, { buffer = buf, nowait = true, silent = true })
+  vim.keymap.set('n', '@', toggle_cmdlog_focus, { buffer = buf, nowait = true, silent = true })
+  vim.keymap.set('n', '+', collapse_and_refocus, { buffer = buf, nowait = true, silent = true })
+  for _, key in ipairs({ 'q', '<Esc>' }) do
+    vim.keymap.set('n', key, collapse_and_refocus, { buffer = buf, nowait = true, silent = true })
+  end
+  for _, k in ipairs({ '1', '2', '3', '4', '5', '6' }) do
+    vim.keymap.set('n', k, function() switch_to(tonumber(k)) end, { buffer = buf, nowait = true, silent = true })
+  end
+  vim.keymap.set('n', '<Left>', function() switch_relative(-1) end, { buffer = buf, nowait = true, silent = true })
+  vim.keymap.set('n', '<Right>', function() switch_relative(1) end, { buffer = buf, nowait = true, silent = true })
+end
+
+local function position_review_windows()
+  local L = layout()
+  if review_tree.hidden then
+    if review_tree.win and vim.api.nvim_win_is_valid(review_tree.win) then
+      pcall(vim.api.nvim_win_close, review_tree.win, true)
+      review_tree.win = nil
+    end
+    vim.api.nvim_win_set_config(win.right_win, {
+      relative = 'editor', row = L.top_row, col = L.outer_col,
+      width = L.tabbar_w, height = L.box_h + L.cmdlog_h + 2,
+      zindex = 70,
+    })
+    return
+  end
+
+  local tree_w = review_tree_width(L)
+  if not (review_tree.buf and vim.api.nvim_buf_is_valid(review_tree.buf)) then
+    review_tree.buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[review_tree.buf].buftype = 'nofile'
+    vim.bo[review_tree.buf].buflisted = false
+    vim.bo[review_tree.buf].modifiable = false
+    vim.bo[review_tree.buf].filetype = 'gitpanel'
+    require('config.hidden_cursor').mark_buffer(review_tree.buf)
+    bind_click(review_tree.buf)
+    bind_review_tree_keys(review_tree.buf)
+  end
+  if not (review_tree.win and vim.api.nvim_win_is_valid(review_tree.win)) then
+    review_tree.win = vim.api.nvim_open_win(review_tree.buf, false, {
+      relative = 'editor', row = L.top_row, col = L.outer_col,
+      width = tree_w, height = L.box_h + L.cmdlog_h + 2,
+      style = 'minimal', border = 'single', title = ' Changed ', title_pos = 'center',
+      zindex = 70,
+    })
+    vim.api.nvim_win_set_var(review_tree.win, 'gitpanel_review_tree', true)
+    vim.wo[review_tree.win].wrap = false
+    vim.wo[review_tree.win].number = false
+    vim.wo[review_tree.win].signcolumn = 'no'
+    vim.wo[review_tree.win].cursorline = true
+    vim.wo[review_tree.win].winhighlight = 'Normal:GitPanelBg,CursorLine:GitPanelCursorLine,FloatBorder:GitPanelBorder'
+  else
+    vim.api.nvim_win_set_config(review_tree.win, {
+      relative = 'editor', row = L.top_row, col = L.outer_col,
+      width = tree_w, height = L.box_h + L.cmdlog_h + 2,
+      zindex = 70,
+    })
+  end
+  vim.api.nvim_win_set_config(win.right_win, {
+    relative = 'editor', row = L.top_row, col = L.outer_col + tree_w + 2,
+    width = L.tabbar_w - tree_w - 2, height = L.box_h + L.cmdlog_h + 2,
+    zindex = 70,
+  })
+end
+
+toggle_review_tree = function()
+  if not review_tree.active then return end
+  review_tree.hidden = not review_tree.hidden
+  position_review_windows()
+  if review_tree.hidden then
+    if win.right_win and vim.api.nvim_win_is_valid(win.right_win) then
+      vim.api.nvim_set_current_win(win.right_win)
+    end
+  else
+    render_review_tree()
+    if review_tree.win and vim.api.nvim_win_is_valid(review_tree.win) then
+      vim.api.nvim_set_current_win(review_tree.win)
+    end
+  end
+  scroll_review_to_selected()
+end
+
+function render_review_stream(raw, key, selected)
+  if not (win.right_buf and vim.api.nvim_buf_is_valid(win.right_buf)) then return end
+  review_render_seq = review_render_seq + 1
+  local seq = review_render_seq
+  local files = git.diff_files(raw)
+  review_tree.files = files
+  review_tree.selected = math.max(1, math.min(selected or review_tree.selected or 1, math.max(1, #files)))
+  render_review_tree()
+  if not selected and review_tree.visible_order[1] then
+    review_tree.selected = review_tree.visible_order[1]
+    render_review_tree()
+  end
+  last_right_raw_key, last_right_raw_text = key, raw
+  right_kind = 'diff'
+  if #files == 0 then
+    ctx.set_right_lines({ '  (差分なし)' }, 'diff', nil, key)
+    return
+  end
+
+  local width = ctx.right_width()
+  local outputs, pending = {}, #files
+  local function finish()
+    if seq ~= review_render_seq then return end
+    if not (win.right_buf and vim.api.nvim_buf_is_valid(win.right_buf)) then return end
+    local anchors = {}
+    local row = 1
+    local parts = {}
+    local order = review_tree.visible_order
+    if #order == 0 then
+      order = {}
+      for i = 1, #files do table.insert(order, i) end
+    end
+    for _, i in ipairs(order) do
+      local f = files[i]
+      local text = outputs[i] or f.raw_text or ''
+      anchors[i] = row
+      table.insert(parts, text)
+      row = row + visible_line_count(text) + 1
+      table.insert(parts, '')
+    end
+    local rendered = table.concat(parts, '\n')
+    review_tree.anchors = anchors
+    if not unchanged(key, rendered) then
+      if vim.bo[win.right_buf].buftype == 'terminal' then recreate_right_buf(false) end
+      ansi_view.render(win.right_buf, hl_ns, rendered)
+      if win.right_win and vim.api.nvim_win_is_valid(win.right_win) then
+        vim.wo[win.right_win].cursorline = true
+      end
+    end
+    render_review_tree()
+    scroll_review_to_selected()
+  end
+
+  local function done_one(i, text)
+    outputs[i] = text and text ~= '' and text or files[i].raw_text
+    pending = pending - 1
+    if pending == 0 then finish() end
+  end
+
+  if not git.delta_available then
+    for i, f in ipairs(files) do outputs[i] = f.raw_text end
+    finish()
+    return
+  end
+  for i, f in ipairs(files) do
+    git.run_delta(f.raw_text, width, function(text) done_one(i, text) end)
+  end
+end
+
+local function enter_review_diff_focus()
+  diff_focused = true
+  review_tree.previous = {
+    raw_key = last_right_raw_key,
+    raw_text = last_right_raw_text,
+  }
+  review_tree.hidden = true
+  review_tree.active = true
+  position_review_windows()
+  if win.right_win and vim.api.nvim_win_is_valid(win.right_win) then
+    vim.api.nvim_set_current_win(win.right_win)
+  end
+
+  local spec = PANELS[current_panel_idx]
+  local panel = spec and require(spec.mod)
+  local function show(raw)
+    if not diff_focused then return end
+    position_review_windows()
+    render_review_stream(raw or '', 'review:' .. (spec and spec.name or 'diff'))
+    if review_tree.hidden then
+      if win.right_win and vim.api.nvim_win_is_valid(win.right_win) then
+        vim.api.nvim_set_current_win(win.right_win)
+      end
+    elseif review_tree.win and vim.api.nvim_win_is_valid(review_tree.win) then
+      vim.api.nvim_set_current_win(review_tree.win)
+    end
+  end
+  ctx.set_right_lines({ '  読み込み中...' }, 'diff', nil, 'review:loading')
+  if panel and panel.review_diff then
+    panel.review_diff(show)
+  else
+    show(last_right_raw_text or '')
+  end
+end
+
 --- Diffパネルの拡大表示。lazygit本体は+/_でNORMAL/HALF/FULLの3段階の画面モードを
 --- 切り替え、main(diff)にフォーカスがある時だけ左の一覧が縮む/消えるという仕組み
 --- (window_arrangement_helper.go getMidSectionWeights)だが、ここではコマンドログの
@@ -481,25 +897,41 @@ end
 --- 下、Files/Diff/コマンドログが占めていた範囲全体)を専有する
 --- 拡大表示を元の大きさに戻す（フォーカスの移動はしない）。switch_toからも呼ぶため、
 --- toggle_diff_focusのelse分岐から切り出している
-function collapse_diff_focus()
+--- rerenderを呼ぶかどうかは呼び出し側が制御する。パネル切替(switch_to)経由では、
+--- 直後のactivate_panelが右ペインを normal幅で描き直すため rerender は不要（=false）。
+--- +で同じパネル内を縮小する時だけ、新しい(狭い)幅でdiffを再生成する必要がある。
+function collapse_diff_focus(rerender)
   if not diff_focused then return end
+  local previous = review_tree.previous
+  local had_review_tree = review_tree.win and vim.api.nvim_win_is_valid(review_tree.win)
   diff_focused = false
+  close_review_tree()
   if not (win.right_win and vim.api.nvim_win_is_valid(win.right_win)) then return end
   local L = layout()
   vim.api.nvim_win_set_config(win.right_win, {
     relative = 'editor', row = L.top_row, col = L.right_col,
     width = L.right_w, height = L.box_h,
+    zindex = 50,
   })
-  -- delta出力は生成時の幅で固定されているため、ウィンドウ幅が変わっただけでは
-  -- 見た目が追従しない。キャッシュを無効化して同じ内容を新しい幅で再描画させる
-  ctx.invalidate_right_cache()
-  refresh_current_panel()
+  -- delta出力は生成時の幅で固定されているため、幅が変わったら新しい幅で再生成する。
+  -- ただし再取得(ネットワーク/git)はせず、キャッシュ済みraw diffをdeltaに通し直すだけ。
+  -- PR詳細等のdiff以外は rerender_right_for_width が何もしない＝再取得なしでそのまま。
+  if rerender and had_review_tree and previous and previous.raw_text then
+    ctx.invalidate_right_cache()
+    ctx.set_right_diff(previous.raw_text, previous.raw_key)
+  elseif rerender then
+    rerender_right_for_width()
+  end
 end
 
 local function toggle_diff_focus()
   if not (win.right_win and vim.api.nvim_win_is_valid(win.right_win)) then return end
   if not diff_focused then
     collapse_cmdlog() -- 同じ領域を専有するため排他
+    if right_kind == 'diff' and last_right_raw_text and last_right_raw_text ~= '' then
+      enter_review_diff_focus()
+      return
+    end
     local L = layout()
     diff_focused = true
     vim.api.nvim_win_set_config(win.right_win, {
@@ -507,11 +939,10 @@ local function toggle_diff_focus()
       width = L.tabbar_w, height = L.box_h + L.cmdlog_h + 2,
     })
     vim.api.nvim_set_current_win(win.right_win)
-    -- 同じ理由で、拡大した新しい幅でdelta出力を再生成する
-    ctx.invalidate_right_cache()
-    refresh_current_panel()
+    -- 拡大後の幅でdiffだけローカル再生成する（PR詳細のANSIは再取得せずそのまま拡大）。
+    rerender_right_for_width()
   else
-    collapse_diff_focus()
+    collapse_diff_focus(true)
     if win.left_win and vim.api.nvim_win_is_valid(win.left_win) then
       vim.api.nvim_set_current_win(win.left_win)
     end
@@ -523,6 +954,9 @@ end
 function bind_diff_keys(buf)
   if not (buf and vim.api.nvim_buf_is_valid(buf)) then return end
   vim.keymap.set('n', '+', toggle_diff_focus, { buffer = buf, nowait = true, silent = true })
+  vim.keymap.set('n', 't', function()
+    if diff_focused and review_tree.active then toggle_review_tree() end
+  end, { buffer = buf, nowait = true, silent = true })
   vim.keymap.set('n', 'v', toggle_side_by_side_key, { buffer = buf, nowait = true, silent = true })
   for _, key in ipairs({ 'q', '<Esc>' }) do
     vim.keymap.set('n', key, function()
@@ -769,6 +1203,8 @@ end
 local function close_wins()
   stop_auto_refresh()
   cmdlog_focused = false
+  diff_focused = false
+  close_review_tree()
   for _, key in ipairs({ 'tabbar_win', 'left_win', 'right_win', 'cmdlog_win' }) do
     local w = win[key]
     if w and vim.api.nvim_win_is_valid(w) then
@@ -834,13 +1270,18 @@ local function open(fullscreen)
   vim.bo[win.right_buf].modifiable = false
   vim.bo[win.right_buf].filetype   = 'diff'
   require('config.hidden_cursor').mark_buffer(win.right_buf)
+  -- 右ペインはdiff専用ではなく、PR詳細やプレビューも出すため、固定の 'Diff' タイトルは付けない。
   win.right_win = vim.api.nvim_open_win(win.right_buf, false, {
     relative = 'editor', width = L.right_w, height = L.box_h, col = L.right_col, row = L.top_row,
-    style = 'minimal', border = 'single', title = ' Diff ', title_pos = 'center',
+    style = 'minimal', border = 'single',
   })
   vim.wo[win.right_win].wrap = false
   vim.wo[win.right_win].signcolumn = 'no'
-  vim.wo[win.right_win].winhighlight = 'Normal:GitPanelBg,FloatBorder:GitPanelBorder'
+  vim.wo[win.right_win].winhighlight = 'Normal:GitPanelBg,CursorLine:GitPanelCursorLine,FloatBorder:GitPanelBorder'
+  vim.wo[win.right_win].cursorline = false -- diff表示時のみ set_right_delta が有効化する
+  -- タイトルで判別できなくなるため、右ペインである印を window-local 変数で持たせておく
+  -- （テストや内部からの特定用。ウィンドウは開いている間ID不変なので消えない）
+  vim.api.nvim_win_set_var(win.right_win, 'gitpanel_right', true)
   bind_click(win.right_buf)
   bind_diff_keys(win.right_buf)
 
@@ -931,8 +1372,14 @@ local function setup_hl()
   vim.api.nvim_set_hl(0, 'GitPanelPrClosed',     { fg = '#C9453C' })
   vim.api.nvim_set_hl(0, 'GitPanelPrMerged',     { fg = '#8259DD' })
   vim.api.nvim_set_hl(0, 'GitPanelPrDraft',      { fg = '#676C75' })
+  -- PRのCI状態（GitHub風: 緑✓ / 黄○ / 赤✗）
+  vim.api.nvim_set_hl(0, 'GitPanelCheckOk',      { fg = '#3fb950' })
+  vim.api.nvim_set_hl(0, 'GitPanelCheckPending', { fg = '#d29922' })
+  vim.api.nvim_set_hl(0, 'GitPanelCheckFail',    { fg = '#f85149' })
   vim.api.nvim_set_hl(0, 'GitPanelHunkSelected', { bg = '#2d3250' })
   vim.api.nvim_set_hl(0, 'GitPanelSelected',     { fg = '#e0af68', bg = '#e0af68' })
+  vim.api.nvim_set_hl(0, 'GitPanelReviewAdded',  { fg = '#9ece6a' })
+  vim.api.nvim_set_hl(0, 'GitPanelReviewDeleted',{ fg = '#f7768e' })
   vim.api.nvim_set_hl(0, 'GitPanelTabActive',    { fg = '#7aa2f7', bold = true })
   vim.api.nvim_set_hl(0, 'GitPanelTabInactive',  { fg = '#565f89' })
   ui.setup_hl()

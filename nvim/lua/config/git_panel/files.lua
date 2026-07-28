@@ -325,6 +325,10 @@ function M.refresh(auto_capture)
   git.status(function(out) files = parse_status(out); done() end)
 end
 
+function M.review_diff(cb)
+  git.diff_worktree_all(cb)
+end
+
 -- ══════════════════════════════════════════════
 -- hunk単位ステージング
 -- ══════════════════════════════════════════════
