@@ -499,7 +499,10 @@ T.describe('explorer', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir .. '/subdir', 'p')
     T.write_file(dir .. '/subdir/inner.txt', { 'x' })
-    T.write_file(dir .. '/a.txt', { 'hello', 'world' })
+    T.write_file(dir .. '/init.lua', { 'local msg = "hello"', 'print(msg)' })
+    local img = assert(io.open(dir .. '/z.png', 'wb'))
+    img:write(string.char(0x89) .. 'PNG\r\n\26\n\0\0\0\rIHDR')
+    img:close()
 
     local res = run_child(string.format([[
       vim.o.columns, vim.o.lines = 160, 40
@@ -515,8 +518,11 @@ T.describe('explorer', function()
       table.sort(wins, function(a, b) return a.col < b.col end)
       assert_eq(#wins, 2)
       local list_w, preview_w = wins[1].win, wins[2].win
+      local function preview_buf()
+        return vim.api.nvim_win_get_buf(preview_w)
+      end
       local function preview_text()
-        return table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(preview_w), 0, -1, false), '\n')
+        return table.concat(vim.api.nvim_buf_get_lines(preview_buf(), 0, -1, false), '\n')
       end
       assert_eq(preview_text():find('inner.txt', 1, true) ~= nil, true, 'dir preview should list contents')
 
@@ -525,6 +531,14 @@ T.describe('explorer', function()
       vim.api.nvim_exec_autocmds('CursorMoved', { buffer = vim.api.nvim_win_get_buf(list_w) })
       vim.wait(1500, function() return preview_text():find('hello', 1, true) ~= nil end, 20)
       assert_eq(preview_text():find('hello', 1, true) ~= nil, true, 'file preview should show its content')
+      assert_eq(vim.bo[preview_buf()].buftype, 'nofile', 'file preview should use a normal scratch buffer')
+      assert_eq(vim.bo[preview_buf()].filetype, 'lua', 'file preview should use nvim filetype detection')
+      assert_eq(vim.bo[preview_buf()].syntax, 'lua', 'file preview should use nvim syntax highlighting')
+
+      vim.api.nvim_win_set_cursor(list_w, { find_row(list_w, 'z.png'), 0 })
+      vim.api.nvim_exec_autocmds('CursorMoved', { buffer = vim.api.nvim_win_get_buf(list_w) })
+      vim.wait(100)
+      assert_eq(preview_text():find('バイナリファイル', 1, true) ~= nil, true, 'binary/image preview should show a placeholder')
     ]], vim.inspect(dir)))
 
     T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))

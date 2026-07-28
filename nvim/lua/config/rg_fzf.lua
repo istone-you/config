@@ -1,13 +1,9 @@
 -- rg + fzf による全ファイル文字列検索 / 置換（プラグイン不使用・自作）
--- Requirements: rg, fzf（bat があればプレビューに使う）
+-- Requirements: rg, fzf
 
 local M = {}
 
 local win_util = require('config.util.win_util')
-
-local function has_bat()
-  return vim.fn.executable('bat') == 1
-end
 
 local function has_cmd(name)
   return vim.fn.executable(name) == 1
@@ -139,9 +135,6 @@ function M.apply_replace_to_path(abs_path, search, replace)
 end
 
 local function preview_cmd()
-  if has_bat() then
-    return [[bat --style=numbers --color=always --highlight-line {2} -- {1} 2>/dev/null || sed -n '1,200p' -- {1}]]
-  end
   return [[sed -n '1,200p' -- {1}]]
 end
 
@@ -294,9 +287,6 @@ local function ensure_file_deps()
 end
 
 local function file_preview_cmd()
-  if has_bat() then
-    return [[bat --style=numbers --color=always -- {} 2>/dev/null || sed -n '1,200p' -- {}]]
-  end
   return [[sed -n '1,200p' -- {}]]
 end
 

@@ -14,8 +14,7 @@ Neovim・yazi・lazygit の設定ファイル群。
 | `delta` | `git_panel` の diff 色付き表示（任意、無くても素のテキストにフォールバック） |
 | `rg` (ripgrep) | `rg_fzf.lua` の全文検索・置換 |
 | `fzf` | `rg_fzf.lua`（検索UI）、`explorer.lua`（ファイル検索） |
-| `fd` | `explorer.lua` のファイル検索（`fd`/`fzf` の両方が必要） |
-| `bat` | `rg_fzf.lua` のプレビュー表示（任意、無くても動作する） |
+| `fd` | `rg_fzf.lua` / `explorer.lua` のファイル検索（`fd`/`fzf` の両方が必要） |
 | `lazygit` | `lazygit.lua`（`<leader>lg` でターミナル起動） |
 | `yazi` (>= 0.2.5) | `yazi.lua`（`--chooser-file` 利用、`<leader>y` / `<leader>cw`） |
 

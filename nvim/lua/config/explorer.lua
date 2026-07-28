@@ -17,7 +17,6 @@ local filter = ''
 -- 幅が狭く単一カラムのままにする（トップのコメント通り）
 local preview_win, preview_buf
 local last_preview_path = nil
-local BAT_AVAILABLE = vim.fn.executable('bat') == 1
 local is_fullscreen = false
 local sidebar_side = 'left' -- サイドバー表示位置（'left' / 'right'）。< / > で切替、以降も維持
 
@@ -327,17 +326,11 @@ end
 -- プレビュー（全画面表示のみ）
 -- ══════════════════════════════════════════════
 
---- bat(ANSI付きカラー出力)はterminalバッファ(nvim_open_term)でしか描画できず、
---- 通常のディレクトリ一覧/cat結果は普通のバッファで済むため、切り替わる時だけ
---- バッファを作り直す。新規作成→ウィンドウへ差し込み→旧バッファ削除の順にする
---- (逆順だと表示中のterminalバッファ削除でウィンドウ自体が閉じることがある)
-local function recreate_preview_buf(as_terminal)
+local function recreate_preview_buf()
   local old = preview_buf
   preview_buf = vim.api.nvim_create_buf(false, true)
-  if not as_terminal then
-    vim.bo[preview_buf].buftype = 'nofile'
-    vim.bo[preview_buf].buflisted = false
-  end
+  vim.bo[preview_buf].buftype = 'nofile'
+  vim.bo[preview_buf].buflisted = false
   -- nvim_win_set_bufは対象ウィンドウがフォーカスされていなくてもBufEnterを発火し、
   -- その一瞬だけ「カレントバッファ」がこのバッファとして扱われる。hidden_cursorの
   -- 判定(vim.b.hide_cursor)がその瞬間に走るため、差し込む前に必ずマークしておく
@@ -361,24 +354,18 @@ end
 local preview_hl_ns = vim.api.nvim_create_namespace('explorer_preview_hl')
 
 -- highlights: { {lnum0, group, col_start, col_end}, ... }（任意）
-local function set_preview_lines(lines, filetype, highlights)
+local function set_preview_lines(lines, filetype, highlights, syntax)
   if not (preview_buf and vim.api.nvim_buf_is_valid(preview_buf)) then return end
-  if vim.bo[preview_buf].buftype == 'terminal' then recreate_preview_buf(false) end
+  if vim.bo[preview_buf].buftype ~= 'nofile' then recreate_preview_buf() end
   vim.bo[preview_buf].modifiable = true
-  vim.bo[preview_buf].filetype = filetype or ''
   vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, lines)
+  vim.bo[preview_buf].filetype = filetype or ''
+  vim.bo[preview_buf].syntax = syntax or filetype or ''
   vim.bo[preview_buf].modifiable = false
   vim.api.nvim_buf_clear_namespace(preview_buf, preview_hl_ns, 0, -1)
   for _, h in ipairs(highlights or {}) do
     vim.api.nvim_buf_add_highlight(preview_buf, preview_hl_ns, h[2], h[1], h[3], h[4])
   end
-end
-
-local function set_preview_ansi(ansi_text)
-  if not (preview_win and vim.api.nvim_win_is_valid(preview_win)) then return end
-  recreate_preview_buf(true)
-  local chan = vim.api.nvim_open_term(preview_buf, {})
-  vim.api.nvim_chan_send(chan, ansi_text)
 end
 
 -- ディレクトリプレビュー。本体一覧(list_dir)と同じ並び・色で lines と highlights を返す。
@@ -427,42 +414,64 @@ local function preview_dir_lines(path)
   return lines, hls
 end
 
---- batが無い/失敗した時のフォールバック。実際にcatを起動する代わりに直接読むが、
---- 得られる見た目(生テキストをそのまま表示)はcatと同じ
-local function preview_file_plain(path)
+local function preview_filetype(path)
+  local ok, ft = pcall(vim.filetype.match, { filename = path })
+  if ok then return ft end
+  return nil
+end
+
+local function preview_syntax(filetype)
+  if not filetype or filetype == '' then return '' end
+  return filetype:match('^[^%.%-]+') or filetype
+end
+
+local BINARY_PREVIEW_EXT = {
+  avif = true, bmp = true, gif = true, heic = true, ico = true, jpeg = true, jpg = true,
+  pdf = true, png = true, tiff = true, webp = true, zip = true,
+}
+
+local function is_probably_binary(path)
+  local ext = vim.fn.fnamemodify(path, ':e'):lower()
+  if BINARY_PREVIEW_EXT[ext] then return true end
+
+  local fd = vim.uv.fs_open(path, 'r', 438)
+  if not fd then return false end
+  local chunk = vim.uv.fs_read(fd, 8192, 0) or ''
+  pcall(vim.uv.fs_close, fd)
+  if chunk == '' then return false end
+  if chunk:find('\0', 1, true) then return true end
+
+  local suspicious = 0
+  for i = 1, #chunk do
+    local b = chunk:byte(i)
+    if b < 9 or (b > 13 and b < 32) then suspicious = suspicious + 1 end
+  end
+  return suspicious > (#chunk * 0.3)
+end
+
+local function sanitize_preview_lines(lines)
+  local out = {}
+  for _, line in ipairs(lines) do
+    line = tostring(line):gsub('[\r\n]', '')
+    out[#out + 1] = line
+  end
+  return out
+end
+
+--- Neovimの通常バッファに読み込み、filetype/syntaxを設定してハイライトさせる。
+--- 先頭だけで十分なので、巨大ファイルでも固まらないよう読み込み行数を制限する。
+local function preview_file(path)
+  if is_probably_binary(path) then
+    set_preview_lines({ '  (バイナリファイルのためプレビューできません)' })
+    return
+  end
   local ok, content = pcall(vim.fn.readfile, path, '', 2000)
   if not ok then
     set_preview_lines({ '  (読み込み不可)' })
     return
   end
-  set_preview_lines(content, '')
-end
-
---- 1000行/画面幅分だけ取得すれば十分なので、巨大ファイルでも固まらないよう
---- --line-rangeで上限を切る
-local function preview_file(path)
-  if not BAT_AVAILABLE then
-    preview_file_plain(path)
-    return
-  end
-  local width = (preview_win and vim.api.nvim_win_is_valid(preview_win))
-    and vim.api.nvim_win_get_width(preview_win) or 80
-  vim.system(
-    {
-      'bat', '--color=always', '--paging=never', '--style=numbers',
-      '--terminal-width=' .. tostring(width), '--line-range=:1000', '--', path,
-    },
-    { text = true },
-    function(res)
-      vim.schedule(function()
-        if res.code == 0 and res.stdout and res.stdout ~= '' then
-          set_preview_ansi(res.stdout)
-        else
-          preview_file_plain(path)
-        end
-      end)
-    end
-  )
+  local ft = preview_filetype(path)
+  set_preview_lines(sanitize_preview_lines(content), ft or '', nil, preview_syntax(ft))
 end
 
 --- 一覧のCursorMoved、render()末尾、ディレクトリ移動後などから呼ばれる。

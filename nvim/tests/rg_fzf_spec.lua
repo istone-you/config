@@ -26,6 +26,40 @@ local function capture_notify(fn)
   return notified
 end
 
+local function capture_term_shell(fn)
+  local before_wins = {}
+  local before_bufs = {}
+  for _, w in ipairs(vim.api.nvim_list_wins()) do before_wins[w] = true end
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do before_bufs[b] = true end
+
+  local shells = {}
+  local orig_termopen = vim.fn.termopen
+  local orig_executable = vim.fn.executable
+  vim.fn.executable = function() return 1 end
+  vim.fn.termopen = function(cmd)
+    if type(cmd) == 'table' and cmd[1] == 'sh' and cmd[2] == '-c' then
+      shells[#shells + 1] = cmd[3]
+    else
+      shells[#shells + 1] = vim.inspect(cmd)
+    end
+    return 1234
+  end
+
+  local ok, err = pcall(fn)
+  vim.fn.termopen = orig_termopen
+  vim.fn.executable = orig_executable
+
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    if not before_wins[w] then pcall(vim.api.nvim_win_close, w, true) end
+  end
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if not before_bufs[b] then pcall(vim.api.nvim_buf_delete, b, { force = true }) end
+  end
+
+  if not ok then error(err, 0) end
+  return table.concat(shells, '\n')
+end
+
 T.describe('rg_fzf dependency check', function()
   T.it('M.open() reports an error and does not open anything when rg is missing', function()
     local opened_win_count_before = #vim.api.nvim_list_wins()
@@ -91,6 +125,26 @@ T.describe('rg_fzf dependency check', function()
     if job then pcall(vim.fn.jobstop, job) end
     if term_win and vim.api.nvim_win_is_valid(term_win) then vim.api.nvim_win_close(term_win, true) end
     vim.notify = orig_notify
+    vim.fn.chdir(prev_cwd)
+    T.rmrf(dir)
+  end)
+
+  T.it('fzf previews use sed directly and never call bat', function()
+    local prev_cwd = vim.fn.getcwd()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/a.txt', { 'hello world' })
+    vim.fn.chdir(dir)
+
+    local shell = table.concat({
+      capture_term_shell(function() rg_fzf.open('hello') end),
+      capture_term_shell(function() rg_fzf.open_files('a') end),
+      capture_term_shell(function() rg_fzf.replace('hello', 'world') end),
+    }, '\n')
+
+    T.contains(shell, 'sed -n')
+    T.eq(shell:find('bat', 1, true), nil)
+
     vim.fn.chdir(prev_cwd)
     T.rmrf(dir)
   end)
