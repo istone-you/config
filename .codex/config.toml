@@ -1,0 +1,10 @@
+[tui]
+status_line = [
+  "current-dir",
+  "git-branch",
+  "branch-changes",
+  "model-with-reasoning",
+  "context-used",
+  "usage-limit",
+  "weekly-limit",
+]

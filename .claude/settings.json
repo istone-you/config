@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(herdr pane *)",
+      "Bash(herdr wait *)",
+      "Bash(herdr tab *)",
+      "Bash(herdr workspace *)",
+      "Bash(herdr worktree *)",
+      "Bash(test *)"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline-command.sh"
+  }
+}
