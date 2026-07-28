@@ -1197,8 +1197,8 @@ teardown_ui = function()
   pcall(vim.cmd, 'redrawtabline')
 end
 
---- 全画面表示は「これがこのnvimプロセスの用件そのもの」という前提(herdrの
---- popupから nvim +Explorer! で直接立ち上げる運用等)なので、閉じる操作(q/Esc/:q
+--- 全画面表示は「これがこのnvimプロセスの用件そのもの」という前提(例: nvim +Explorer!
+--- で直接立ち上げる運用等)なので、閉じる操作(q/Esc/:q
 --- どれでも最終的にここを通る)がそのまま裏側の元バッファへ戻るのではなく、
 --- nvim自体を終了させる。通常のサイドパネル表示ではこれまで通り単に閉じるだけ
 local function close()

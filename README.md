@@ -1,6 +1,6 @@
 # .config
 
-Neovim・yazi・lazygit の設定ファイル群。
+Neovim 等の設定ファイル群。
 
 ## nvim が依存する CLI ツール
 
@@ -15,8 +15,6 @@ Neovim・yazi・lazygit の設定ファイル群。
 | `rg` (ripgrep) | `rg_fzf.lua` の全文検索・置換 |
 | `fzf` | `rg_fzf.lua`（検索UI）、`explorer.lua`（ファイル検索） |
 | `fd` | `rg_fzf.lua` / `explorer.lua` のファイル検索（`fd`/`fzf` の両方が必要） |
-| `lazygit` | `lazygit.lua`（`<leader>lg` でターミナル起動） |
-| `yazi` (>= 0.2.5) | `yazi.lua`（`--chooser-file` 利用、`<leader>y` / `<leader>cw`） |
 
 ## ローカル設定
 

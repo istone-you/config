@@ -1221,8 +1221,8 @@ local function close_wins()
   fullscreen_mode = false
 end
 
---- 全画面表示は「これがこのnvimプロセスの用件そのもの」という前提(herdrの
---- popupから nvim +Git! で直接立ち上げる運用等)なので、閉じる操作(q/Esc/:q
+--- 全画面表示は「これがこのnvimプロセスの用件そのもの」という前提(例: nvim +Git!
+--- で直接立ち上げる運用等)なので、閉じる操作(q/Esc/:q
 --- どれでも最終的にここを通る)がそのまま裏側の元バッファへ戻るのではなく、
 --- nvim自体を終了させる。通常の90%表示ではこれまで通り単に閉じるだけ
 function M.close()

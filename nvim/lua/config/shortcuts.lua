@@ -125,11 +125,8 @@ DATA[1] = {
   { header = '🔧 カスタムキーマップ', color = 'ShortcutsBuffer', rows = {
     { 'Space t',         'ターミナルを右に開く' },
     { 'Ctrl-h / Ctrl-l', '左 / 右のウィンドウへ移動（エディタ↔ターミナル・explorer）' },
-    { 'Space y',         'yaziを開く（カレントfileのdir）' },
-    { 'Space c w',       'yaziを開く（Neovimのcwd）' },
     { 'Space e',         'explorerを開閉（右パネル、詳細は下のセクション）' },
     { 'Space g',         'gitパネルを開閉（自作、詳細は下のセクション）' },
-    { 'Space l g',       'lazygitを開く（ターミナル版）' },
     { 'Tab / Shift-Tab', '次 / 前のバッファへ' },
     { 'Space q',         '現在のバッファを閉じる' },
     { ':q / :qa 等',     '通常の終了コマンド。Neovimを閉じる直前に確認が入る（:q! など ! 付きは確認なしで即終了）' },
@@ -351,10 +348,6 @@ DATA[4] = {
   }},
   { header = '🔧 カスタムコマンド', color = 'ShortcutsHerdr', rows = {
     { 'ctrl+b+Enter / ctrl+alt+t', 'ターミナルを開く' },
-    { 'ctrl+b+g',                 'lazygit を開く' },
-    { 'ctrl+b+y',                 'yazi を開く' },
-    { 'ctrl+alt+g',               'nvim +Git（gitパネル）を開く' },
-    { 'ctrl+alt+e',               'nvim +Explorer!（explorer全画面）を開く' },
   }},
 }
 

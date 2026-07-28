@@ -13,22 +13,6 @@ focus_pane_left    = "ctrl+shift+left"
 focus_pane_right   = "ctrl+shift+right"
 
 [[keys.command]]
-key         = "prefix+g"
-command     = "lazygit"
-type        = "popup"
-description = "lazygit"
-width       = "90%"
-height      = "90%"
-
-[[keys.command]]
-key         = "prefix+y"
-command     = "yazi"
-type        = "popup"
-description = "yazi"
-width       = "90%"
-height      = "90%"
-
-[[keys.command]]
 key         = "prefix+enter"
 command     = "zsh"
 type        = "popup"
@@ -49,22 +33,6 @@ key         = "prefix+h"
 command     = "bash -lc 'r=$(herdr tab create --label \"hunk diff\" --no-focus); p=$(printf \"%s\" \"$r\" | jq -r \".result.root_pane.pane_id\"); t=$(printf \"%s\" \"$r\" | jq -r \".result.tab.tab_id\"); herdr pane run \"$p\" \"mise exec -- hunk diff; herdr tab close $t\"; herdr tab focus \"$t\"'"
 type        = "shell"
 description = "hunk diff"
-
-[[keys.command]]
-key         = "ctrl+alt+g"
-command     = "zsh -ic 'nvim +Git!'"
-type        = "popup"
-description = "git panel"
-width       = "90%"
-height      = "90%"
-
-[[keys.command]]
-key         = "ctrl+alt+e"
-command     = "zsh -ic 'nvim +Explorer!'"
-type        = "popup"
-description = "explorer"
-width       = "90%"
-height      = "90%"
 
 [[keys.command]]
 key         = "ctrl+alt+t"
