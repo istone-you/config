@@ -39,6 +39,15 @@ T.describe('git_panel.ui', function()
     end
   end)
 
+  T.it('confirm() hides the text cursor while focused', function()
+    ui.confirm('本当に実行しますか？', {}, function() end)
+
+    T.eq(vim.b.hide_cursor, true, 'confirm buffer should be marked for hidden cursor')
+    T.contains(vim.o.guicursor, 'HiddenCursor', 'cursor should be hidden while confirm is focused')
+
+    feed('n')
+  end)
+
   T.it('input() submits typed text on <CR>, nil on <Esc>', function()
     local result
     ui.input('名前', '', {}, function(r) result = r end)

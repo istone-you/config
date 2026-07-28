@@ -16,6 +16,19 @@ local function bounding_box()
 end
 
 T.describe('git_panel init', function()
+  T.it('keeps the panel and border backgrounds transparent across ColorScheme changes', function()
+    require('config.git_panel')
+    vim.api.nvim_set_hl(0, 'GitPanelBg', { bg = '#123456' })
+    vim.api.nvim_set_hl(0, 'GitPanelBorder', { bg = '#123456', fg = '#ffffff' })
+
+    vim.api.nvim_exec_autocmds('ColorScheme', {})
+
+    T.eq(vim.api.nvim_get_hl(0, { name = 'GitPanelBg' }).bg, nil,
+      'GitPanelBg should have no background')
+    T.eq(vim.api.nvim_get_hl(0, { name = 'GitPanelBorder' }).bg, nil,
+      'GitPanelBorder should have no background')
+  end)
+
   T.it('layout: normal open is a 90% centered box', function()
     -- fullscreenは close()がqall()を呼ぶ設計(下のテストで確認)なので、同じ
     -- プロセス内でfullscreenを開いてからclose()するとテストプロセス自体が

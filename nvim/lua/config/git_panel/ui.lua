@@ -1,6 +1,7 @@
 -- gitパネル共通のフローティングUIヘルパー（確認モーダル・単一行入力・複数行エディタ・メニュー）
 
 local M = {}
+local hidden_cursor = require('config.hidden_cursor')
 
 local function refocus(win)
   if win and vim.api.nvim_win_is_valid(win) then
@@ -28,6 +29,7 @@ function M.confirm(message, opts, on_result)
   vim.bo[buf].bufhidden = 'wipe'
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
+  hidden_cursor.mark_buffer(buf)
 
   local win = vim.api.nvim_open_win(buf, true, {
     relative = 'editor', width = width, height = height, col = col, row = row,
@@ -276,6 +278,7 @@ function M.menu(title, items, opts, on_choice)
   vim.bo[buf].bufhidden = 'wipe'
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
+  hidden_cursor.mark_buffer(buf)
 
   local win = vim.api.nvim_open_win(buf, true, {
     relative = 'editor', width = width, height = height, col = col, row = row,

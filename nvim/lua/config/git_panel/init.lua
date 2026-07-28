@@ -1351,8 +1351,8 @@ end
 -- ══════════════════════════════════════════════
 
 local function setup_hl()
-  vim.api.nvim_set_hl(0, 'GitPanelBg',           { bg = '#282828' })
-  vim.api.nvim_set_hl(0, 'GitPanelBorder',       { bg = '#282828', fg = '#565f89' })
+  vim.api.nvim_set_hl(0, 'GitPanelBg',           { bg = 'NONE' })
+  vim.api.nvim_set_hl(0, 'GitPanelBorder',       { bg = 'NONE', fg = '#565f89' })
   vim.api.nvim_set_hl(0, 'GitPanelCursorLine',   { bg = '#2d3250' })
   vim.api.nvim_set_hl(0, 'GitPanelHeader',       { fg = '#7aa2f7', bold = true })
   vim.api.nvim_set_hl(0, 'GitPanelSection',      { fg = '#e0af68', bold = true })

@@ -2,7 +2,9 @@
 configstore
 gh
 git
+lazygit
 Microsoft\\VisualStudio Services/
+vim
 xbuild
 
 herdr-client.log
@@ -10,3 +12,5 @@ herdr-server.log
 session.json
 state.json
 release-notes.json
+nvim.log
+lefthook.yml
