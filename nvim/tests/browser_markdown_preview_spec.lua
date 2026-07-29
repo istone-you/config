@@ -263,7 +263,7 @@ T.describe('browser_markdown_preview.lua: http response', function()
 end)
 
 T.describe('browser_markdown_preview.lua: commands/keymap', function()
-  T.it('registers commands and <leader>mc', function()
+  T.it('registers commands and <leader>md', function()
     T.ok(vim.api.nvim_get_commands({}).BrowserMarkdownPreview ~= nil, 'open command should exist')
     T.ok(vim.api.nvim_get_commands({}).BrowserMarkdownPreviewRefresh ~= nil, 'refresh command should exist')
 
@@ -272,7 +272,7 @@ T.describe('browser_markdown_preview.lua: commands/keymap', function()
     for _, map in ipairs(maps) do
       if map.desc == 'Open markdown preview in default browser' then found = true end
     end
-    T.ok(found, '<leader>mc should be mapped')
+    T.ok(found, '<leader>md should be mapped')
   end)
 
   T.it('BufWritePost refreshes silently to avoid hit-enter prompts on save', function()

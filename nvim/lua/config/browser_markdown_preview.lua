@@ -692,7 +692,7 @@ vim.api.nvim_create_user_command('BrowserMarkdownPreviewRefresh', function() M.r
   desc = 'Refresh browser markdown preview HTML',
 })
 
-vim.keymap.set('n', '<leader>mc', M.open, {
+vim.keymap.set('n', '<leader>md', M.open, {
   desc = 'Open markdown preview in default browser',
 })
 

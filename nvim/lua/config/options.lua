@@ -1,6 +1,6 @@
 vim.g.mapleader = " "
 
--- markview 等の guifg/guibg を端末で有効にする（これがないとインラインコード等の色が付かない）
+-- guifg/guibg を端末で有効にする（これがないとインラインコード等の色が付かない）
 vim.opt.termguicolors = true
 
 vim.cmd.colorscheme('retrobox')
@@ -24,7 +24,9 @@ vim.api.nvim_create_autocmd('ColorScheme', {
   end,
 })
 
-vim.opt.statusline = '%F%h%m%r%=%-14.(%l,%c%V%) %P'
+-- 下部ステータスラインは廃止（ファイルパスは winbar に出す）。フォーカス表示は
+-- config.active_cursorline がアクティブ窓の cursorline で担う。
+vim.opt.laststatus = 0
 vim.opt.showtabline = 2
 vim.opt.number = true
 vim.opt.relativenumber = true
