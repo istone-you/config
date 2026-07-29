@@ -144,6 +144,7 @@ DATA[1] = {
     { 'Space /',         'rg+fzf: 検索。開いた後 Ctrl-f:ファイル名 / Ctrl-r:置換 / Ctrl-g:内容 に切替' },
     { 'Space *',         'rg+fzf: カーソル単語で検索（Ctrl-f/Ctrl-r/Ctrl-g で切替）' },
     { 'Space m d',       'Markview: Markdownプレビューをトグル' },
+    { 'Space m c',       'Markdownプレビューを既定ブラウザで開く' },
     { 'Space G',         'GitHubパーマリンクをコピー' },
     { 'Space P',         'パス付きコードをコピー' },
     { 'Space A',         'ファイル全体をコピー' },

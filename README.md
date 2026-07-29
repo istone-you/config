@@ -11,6 +11,7 @@ Neovim 等の設定ファイル群。
 | `git` | git_panel, github_permalink, terminal など git 操作全般 |
 | `gh` | `git_panel` の GitHub PR 取得・認証（branches.lua の PR 表示、pr.lua の PRパネル: 一覧/詳細/diff/checkout/ブラウザ表示） |
 | `curl` | `git_panel/git.lua` の GitHub GraphQL API 呼び出し（PR情報取得） |
+| `xdg-open` | `browser_markdown_preview.lua` のプレビューURLを既定ブラウザで開く（無くてもURLは通知される） |
 | `delta` | `git_panel` の diff 色付き表示（任意、無くても素のテキストにフォールバック） |
 | `rg` (ripgrep) | `rg_fzf.lua` の全文検索・置換 |
 | `fzf` | `rg_fzf.lua`（検索UI）、`explorer.lua`（ファイル検索） |
@@ -25,10 +26,16 @@ Neovim 等の設定ファイル群。
 | キー | 説明 |
 |------|------|
 | `tsserver_path` | `typescript-language-server` が使う `tsserver.js` の絶対パス |
+| `browser_markdown_preview.opener` | opener 実行ファイル名または絶対パス（未指定時は `xdg-open`） |
+| `browser_markdown_preview.host` | プレビューサーバの bind host（未指定時は Dev Container から見やすい `0.0.0.0`） |
 
 ```lua
 -- nvim/local.lua
 return {
   tsserver_path = '/app/web/node_modules/typescript/lib/tsserver.js',
+  browser_markdown_preview = {
+    opener = 'xdg-open',
+    host = '0.0.0.0',
+  },
 }
 ```
