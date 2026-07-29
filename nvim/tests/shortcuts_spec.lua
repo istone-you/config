@@ -26,11 +26,10 @@ local function open_fresh()
 end
 
 T.describe('shortcuts', function()
-  T.it('<leader>? opens the panel on the Neovim tab, toggles closed on a second press', function()
+  T.it('<leader>? opens the panel, toggles closed on a second press', function()
     local win = open_fresh()
     T.ok(win ~= nil, 'panel should open')
     local text = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false), '\n')
-    T.contains(text, 'Neovim')
     T.contains(text, '移動（ノーマル）')
 
     vim.api.nvim_set_current_win(win)
@@ -39,44 +38,23 @@ T.describe('shortcuts', function()
     T.ok(shortcuts_win() == nil, 'panel should close on second toggle')
   end)
 
-  T.it('all 4 tabs render without error (basic DATA integrity check)', function()
+  T.it('renders all sections without error (basic SECTIONS integrity check)', function()
     local win = open_fresh()
+    local lines = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false)
+    T.ok(#lines > 3, 'should render a non-trivial number of lines')
     vim.api.nvim_set_current_win(win)
-    for _, key in ipairs({ '2', '3', '4', '1' }) do
-      feed(key)
-      vim.wait(30)
-      local lines = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false)
-      T.ok(#lines > 3, 'tab ' .. key .. ' should render a non-trivial number of lines')
-    end
     feed('q')
     vim.wait(50)
   end)
 
-  T.it('<Tab>/<S-Tab> cycle through tabs (wrapping at both ends)', function()
+  T.it('panel window hides the number column and uses a transparent background', function()
     local win = open_fresh()
+    T.ok(vim.wo[win].number == false, 'number column should be off')
+    T.ok(vim.wo[win].relativenumber == false, 'relativenumber should be off')
+    T.contains(vim.wo[win].winhighlight, 'Normal:ShortcutsBg')
+    local bg = vim.api.nvim_get_hl(0, { name = 'ShortcutsBg' })
+    T.ok(bg.bg == nil, 'ShortcutsBg should have no background (transparent)')
     vim.api.nvim_set_current_win(win)
-    local function tab_line() return vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, 1, false)[1] end
-
-    T.contains(tab_line(), 'Neovim') -- 初期タブ
-    feed('<Tab>')
-    vim.wait(30)
-    T.contains(tab_line(), 'yazi')
-    feed('<Tab>')
-    vim.wait(30)
-    T.contains(tab_line(), 'lazygit')
-    feed('<Tab>')
-    vim.wait(30)
-    T.contains(tab_line(), 'herdr')
-    feed('<Tab>') -- 末尾から先頭へ折り返す
-    vim.wait(30)
-    T.contains(tab_line(), 'Neovim')
-
-    feed('<S-Tab>') -- 先頭から末尾へ折り返す(逆回り)
-    vim.wait(30)
-    T.contains(tab_line(), 'herdr')
-
-    feed('1') -- cur_tabはモジュール内で保持され次のitへ持ち越るため、必ず1へ戻す
-    vim.wait(30)
     feed('q')
     vim.wait(50)
   end)

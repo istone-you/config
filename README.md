@@ -59,7 +59,7 @@ Neovim 等の設定ファイル群。
 | `browser_markdown_preview` | マークダウンを既定ブラウザでプレビュー（保存時に自動リフレッシュ） | `Space m d` |
 | `copy_with_path` | 選択コードをファイルパス（行番号付き）とともにコピー | `Space P` |
 | `copy_all` | バッファ全内容をコピー | `Space A` |
-| `shortcuts` | Neovim / yazi / lazygit / herdr のショートカット一覧パネル | `Space ?` |
+| `shortcuts` | Neovim のショートカット一覧パネル | `Space ?` |
 
 ## nvim が依存する CLI ツール
 

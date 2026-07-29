@@ -1,6 +1,6 @@
 # .config
 
-Neovim・yazi・lazygit などの設定ファイル群。
+Neovim 等の設定ファイル群。
 
 ## ルール
 

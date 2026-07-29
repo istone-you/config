@@ -4,18 +4,13 @@ local win       = nil
 local buf       = nil
 local hl_ns     = vim.api.nvim_create_namespace('shortcuts_hl')
 local augrp     = vim.api.nvim_create_augroup('shortcuts', { clear = true })
-local cur_tab   = 1
 local query     = ''
 
 -- ══════════════════════════════════════════════
 -- データ定義
 -- ══════════════════════════════════════════════
 
-local TABS = { 'Neovim', 'yazi', 'lazygit', 'herdr' }
-
-local DATA = {}
-
-DATA[1] = {
+local SECTIONS = {
   { header = '🧭 移動（ノーマル）', color = 'ShortcutsNormal', rows = {
     { 'h j k l',         '左・下・上・右' },
     { 'w / W',           '次の単語の先頭へ' },
@@ -225,132 +220,6 @@ DATA[1] = {
   }},
 }
 
-DATA[2] = {
-  { header = '🧭 移動・ナビゲーション', color = 'ShortcutsYazi', rows = {
-    { 'h / ←',           '親ディレクトリへ' },
-    { 'l / → / Enter',   'ディレクトリへ入る / ファイルを開く' },
-    { 'j / k',           'カーソルを下 / 上へ' },
-    { 'H / M / L',       'リストの先頭 / 中央 / 末尾へ' },
-    { 'gg / G',          '一番上 / 下へ' },
-    { 'Ctrl-u / Ctrl-d', '半ページ上 / 下へ' },
-    { 'Ctrl-b / Ctrl-f', '1ページ上 / 下へ' },
-  }},
-  { header = '📁 ファイル操作', color = 'ShortcutsYazi', rows = {
-    { 'o / O',           'ファイルを開く / アプリ選択で開く' },
-    { 'a',               'ファイル/ディレクトリを作成' },
-    { 'r',               '名前を変更' },
-    { 'd / D',           'ゴミ箱へ移動 / 完全削除' },
-    { 'c / x / p / P',   'コピー / カット / ペースト / 上書き' },
-    { '.',               '隠しファイルの表示トグル' },
-  }},
-  { header = '✅ 選択', color = 'ShortcutsYazi', rows = {
-    { 'Space',           '選択/解除のトグル' },
-    { 'v',               'ビジュアル選択モード' },
-    { 'Ctrl-a / Ctrl-r', 'すべて選択 / 選択を反転' },
-    { 'Esc',             '選択をキャンセル' },
-  }},
-  { header = '🔍 検索・フィルター', color = 'ShortcutsYazi', rows = {
-    { '/',               'ファイル名を検索' },
-    { 'n / N',           '次 / 前のマッチへ' },
-    { 'f / F',           'フィルター / クリア' },
-    { 's / S',           'fd/findで検索 / ripgrepで内容検索' },
-  }},
-  { header = '📋 パスのコピー', color = 'ShortcutsYazi', rows = {
-    { 'y n',             'ファイル名をコピー' },
-    { 'y p',             '絶対パスをコピー' },
-    { 'y d',             'ディレクトリパスをコピー' },
-  }},
-  { header = '📑 タブ操作', color = 'ShortcutsYazi', rows = {
-    { 't',               '新規タブを作成' },
-    { '1 〜 9',          'N番目のタブへ切り替え' },
-    { '[ / ]',           '前 / 次のタブへ' },
-  }},
-}
-
-DATA[3] = {
-  { header = '🌍 グローバル', color = 'ShortcutsGit', rows = {
-    { '?',               'キーバインド一覧を表示' },
-    { 'q',               '終了' },
-    { ':',               'カスタムコマンドを実行' },
-    { '+ / _',           'パネルを拡大 / 縮小' },
-    { 'x',               'コンテキストメニューを開く' },
-    { 'Ctrl-r',          '最近のリポジトリへ切り替え' },
-  }},
-  { header = '🧭 パネル・ナビゲーション', color = 'ShortcutsGit', rows = {
-    { 'h / l',           '左 / 右のパネルへ' },
-    { 'j / k',           'リストを下 / 上へ' },
-    { '[ / ]',           '前 / 次のタブへ' },
-    { 'H / L',           '差分ビューを左 / 右にスクロール' },
-    { 'Ctrl-u / Ctrl-d', '差分を半ページ上 / 下へ' },
-    { '} / {',           '差分のhunkを次 / 前へ' },
-  }},
-  { header = '📄 ファイルパネル', color = 'ShortcutsGit', rows = {
-    { 'Space',           'ステージ/アンステージのトグル' },
-    { 'a',               'すべてステージ/アンステージ' },
-    { 'Enter',           '行/hunk単位でステージ' },
-    { 'c / w',           'コミット / フックなしでコミット' },
-    { 'A',               '直前のコミットにamend' },
-    { 'd / e / o',       '変更破棄 / 編集 / 開く' },
-    { 'i / S',           '.gitignoreに追加 / スタッシュ' },
-  }},
-  { header = '🌿 ブランチパネル', color = 'ShortcutsGit', rows = {
-    { 'Space',           'ブランチをチェックアウト' },
-    { 'n / d',           '新規作成 / 削除' },
-    { 'r / M / f',       'リベース / マージ / fast-forward' },
-    { 'u',               '上流ブランチを設定' },
-    { 'g',               'リセットオプションを表示' },
-  }},
-  { header = '📝 コミットパネル', color = 'ShortcutsGit', rows = {
-    { 'r / R',           'メッセージ編集 / エディタで編集' },
-    { 'd / e',           'ドロップ / 編集（rebase）' },
-    { 'f / s',           'fixup / squash' },
-    { 'Ctrl-j / Ctrl-k', 'コミットを下 / 上へ移動' },
-    { 'T / c',           'タグ付け / SHAをコピー' },
-    { 'g',               'リセットオプションを表示' },
-  }},
-  { header = '📦 スタッシュ / リモート', color = 'ShortcutsGit', rows = {
-    { 'Space / g',       'スタッシュを適用 / pop' },
-    { 'd / n',           'スタッシュ削除 / ブランチ作成' },
-    { 'P / p / f',       'プッシュ / プル / フェッチ' },
-  }},
-}
-
-DATA[4] = {
-  { header = '⚙️  基本操作', color = 'ShortcutsHerdr', rows = {
-    { 'ctrl+b + ?',       'ヘルプを表示' },
-    { 'ctrl+b + q',       'デタッチ（セッションを保持して離脱）' },
-    { 'ctrl+b + s',       '設定を開く' },
-    { 'ctrl+b + b',       'サイドバーの表示/非表示' },
-    { 'ctrl+b + e',       'スクロールバックを編集' },
-  }},
-  { header = '📑 タブ操作', color = 'ShortcutsHerdr', rows = {
-    { 'ctrl+b + c',         '新規タブを作成' },
-    { 'ctrl+b + n',         '次のタブへ' },
-    { 'ctrl+b + p',         '前のタブへ' },
-    { 'ctrl+b + 1..9',      'タブを切り替え' },
-    { 'ctrl+shift + →/←',  '次 / 前のタブへ' },
-    { 'ctrl+shift + 1..9',  'タブを番号で切り替え' },
-  }},
-  { header = '🪟 ペイン操作', color = 'ShortcutsHerdr', rows = {
-    { 'ctrl+b + v',         '垂直分割' },
-    { 'ctrl+b + -',         '水平分割' },
-    { 'ctrl+b + h/j/k/l',   'ペインを左/下/上/右へフォーカス' },
-    { 'ctrl+alt + ↑/↓/←/→', 'ペインを上/下/左/右へフォーカス' },
-    { 'ctrl+b + Tab',       '次のペインへ' },
-    { 'ctrl+b + x',         'ペインを閉じる' },
-    { 'ctrl+b + z',         'ズーム（全画面トグル）' },
-    { 'ctrl+b + r',         'リサイズモード' },
-  }},
-  { header = '🗂️  ワークスペース', color = 'ShortcutsHerdr', rows = {
-    { 'ctrl+b + w',         'ワークスペース選択' },
-    { 'ctrl+b + t',         'ペインへ移動（goto）' },
-    { 'ctrl+shift + ↑/↓',   '前 / 次のワークスペースへ' },
-  }},
-  { header = '🔧 カスタムコマンド', color = 'ShortcutsHerdr', rows = {
-    { 'ctrl+b+Enter / ctrl+alt+t', 'ターミナルを開く' },
-  }},
-}
-
 -- ══════════════════════════════════════════════
 -- レンダリング
 -- ══════════════════════════════════════════════
@@ -358,7 +227,7 @@ DATA[4] = {
 local function render()
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
 
-  local sections = DATA[cur_tab]
+  local sections = SECTIONS
   local q = query:lower()
   local lines    = {}
   local hl_queue = {}
@@ -367,25 +236,10 @@ local function render()
     table.insert(hl_queue, { lnum, group, cs or 0, ce or -1 })
   end
 
-  -- タブバー
-  local tab_line = ' '
-  local tab_cols = {}
-  for i, name in ipairs(TABS) do
-    local label = ' ' .. name .. ' '
-    local s = #tab_line
-    tab_line = tab_line .. label
-    table.insert(tab_cols, { i, s, s + #label })
-    if i < #TABS then tab_line = tab_line .. ' ' end
-  end
-  table.insert(lines, tab_line)
-  for _, tc in ipairs(tab_cols) do
-    hl(0, tc[1] == cur_tab and 'ShortcutsTabActive' or 'ShortcutsTabInactive', tc[2], tc[3])
-  end
-
   -- 検索バー
   local shint = query == '' and '絞り込む…' or query
   table.insert(lines, ' 🔍 ' .. shint)
-  hl(1, query == '' and 'ShortcutsSearchHint' or 'ShortcutsSearchQuery')
+  hl(0, query == '' and 'ShortcutsSearchHint' or 'ShortcutsSearchQuery')
 
   table.insert(lines, '')
 
@@ -464,14 +318,31 @@ local function open()
   require('config.hidden_cursor').mark_buffer(buf)
   require('config.util.win_util').mark_sidebar(win, buf)
 
-  vim.wo[win].wrap           = false
-  vim.wo[win].number         = false
-  vim.wo[win].relativenumber = false
-  vim.wo[win].signcolumn     = 'no'
-  vim.wo[win].cursorline     = false
-  vim.wo[win].winfixwidth    = true
-  vim.wo[win].winhighlight   = 'Normal:ShortcutsBg'
-  vim.wo[win].statusline     = '%#ShortcutsBg#' -- ステータスラインを隠す（パネル背景に溶け込ませる）
+  -- 番号列・余白オフと背景を適用する。他モジュールの autocmd がフォーカス時などに
+  -- 番号を復活させることがあるため、関数化して WinEnter 等でも再適用する
+  local function apply_win_opts()
+    if not (win and vim.api.nvim_win_is_valid(win)) then return end
+    vim.wo[win].wrap           = false
+    vim.wo[win].number         = false
+    vim.wo[win].relativenumber = false
+    vim.wo[win].signcolumn     = 'no'
+    vim.wo[win].foldcolumn     = '0'
+    vim.wo[win].statuscolumn   = ''
+    vim.wo[win].cursorline     = false
+    vim.wo[win].winfixwidth    = true
+    -- 地の背景は透明（ターミナル背景を透かす）。非フォーカス時(NormalNC)と
+    -- バッファ末尾(~)も同じ透明地に揃える
+    vim.wo[win].winhighlight   = 'Normal:ShortcutsBg,NormalNC:ShortcutsBg,EndOfBuffer:ShortcutsBg'
+    vim.wo[win].statusline     = '%#ShortcutsBg#' -- ステータスラインを隠す（パネル背景に溶け込ませる）
+  end
+  apply_win_opts()
+
+  -- フォーカス移動などで番号列が復活しても、このパネルでは常にオフへ戻す
+  vim.api.nvim_create_autocmd({ 'WinEnter', 'BufWinEnter', 'BufEnter' }, {
+    group    = augrp,
+    buffer   = buf,
+    callback = apply_win_opts,
+  })
 
   render()
 
@@ -479,12 +350,6 @@ local function open()
     vim.keymap.set('n', key, fn, { buffer = buf, nowait = true, silent = true })
   end
 
-  map('<Tab>',   function() cur_tab = cur_tab % #TABS + 1;       render() end)
-  map('<S-Tab>', function() cur_tab = (cur_tab - 2) % #TABS + 1; render() end)
-  map('1',       function() cur_tab = 1; render() end)
-  map('2',       function() cur_tab = 2; render() end)
-  map('3',       function() cur_tab = 3; render() end)
-  map('4',       function() cur_tab = 4; render() end)
   map('/',       function()
     vim.ui.input({ prompt = '絞り込む: ', default = query }, function(input)
       if input ~= nil then query = input; render() end
@@ -521,9 +386,7 @@ end
 -- ══════════════════════════════════════════════
 
 local function setup_hl()
-  vim.api.nvim_set_hl(0, 'ShortcutsBg',          { bg = '#1a1b26' })
-  vim.api.nvim_set_hl(0, 'ShortcutsTabActive',    { bg = '#2d3250', fg = '#7aa2f7', bold = true })
-  vim.api.nvim_set_hl(0, 'ShortcutsTabInactive',  { fg = '#565f89' })
+  vim.api.nvim_set_hl(0, 'ShortcutsBg',          { bg = 'none' })
   vim.api.nvim_set_hl(0, 'ShortcutsKey',          { fg = '#e0af68', bold = true })
   vim.api.nvim_set_hl(0, 'ShortcutsDesc',         { fg = '#9aa5ce' })
   vim.api.nvim_set_hl(0, 'ShortcutsSearchHint',   { fg = '#565f89', italic = true })
