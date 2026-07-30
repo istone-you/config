@@ -1,5 +1,10 @@
 vim.g.mapleader = " "
 
+-- 素の <Space>（デフォルトは右移動＝l と同じで実質使わない）を無効化する。
+-- leader を <Space> にしたので、単独 <Space> には意味を持たせない。<Space>◯ の
+-- マッピングやバッファローカルな Space（git パネル等）はこれに影響されない。
+vim.keymap.set({ 'n', 'x' }, '<Space>', '<Nop>')
+
 -- guifg/guibg を端末で有効にする（これがないとインラインコード等の色が付かない）
 vim.opt.termguicolors = true
 
