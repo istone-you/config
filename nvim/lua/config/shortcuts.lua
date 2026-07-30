@@ -143,6 +143,7 @@ local SECTIONS = {
     { 'Space P',         'パス付きコードをコピー' },
     { 'Space A',         'ファイル全体をコピー' },
     { '( [ { " \' `',    'autopairs: 閉じを自動補完 / 閉じの上でスキップ / 空ペアで BS 両削除 / 括弧内 <CR> でインデント展開' },
+    { 'Space s ( ) [ ] { } " \' `', 'surround: 単語(iw)/選択を囲む・再度で外す（トグル。開き括弧キー ( [ { はスペース付き）' },
     { 'Space ?',         'このショートカット一覧を開閉' },
   }},
   { header = '🗂️  explorer（Space e で開閉）', color = 'ShortcutsBuffer', rows = {
