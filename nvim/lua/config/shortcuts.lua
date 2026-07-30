@@ -142,6 +142,7 @@ local SECTIONS = {
     { 'Space G',         'GitHubパーマリンクをコピー' },
     { 'Space P',         'パス付きコードをコピー' },
     { 'Space A',         'ファイル全体をコピー' },
+    { '( [ { " \' `',    'autopairs: 閉じを自動補完 / 閉じの上でスキップ / 空ペアで BS 両削除 / 括弧内 <CR> でインデント展開' },
     { 'Space ?',         'このショートカット一覧を開閉' },
   }},
   { header = '🗂️  explorer（Space e で開閉）', color = 'ShortcutsBuffer', rows = {

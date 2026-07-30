@@ -1,4 +1,5 @@
 require("config.options")
+require("config.autopairs")
 require("config.hidden_cursor")
 require("config.auto_quit")
 require("config.quit_confirm")
