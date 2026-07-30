@@ -296,4 +296,99 @@ T.describe('browser_markdown_preview.lua: commands/keymap', function()
   end)
 end)
 
+T.describe('browser_markdown_preview.lua: external edits (e.g. by an AI tool)', function()
+  -- nvim 側では一切操作しない(保存も checktime もしない)まま、
+  -- ディスク上の変更だけでプレビューが更新されることを見る
+  local function watch_and_expect(path, write_fn, needle)
+    P.start_watch(path)
+    local version_before = P.state.version
+    write_fn()
+    T.wait_until(function()
+      return P.state.html and P.state.html:find(needle, 1, true) ~= nil
+    end)
+    local html = P.state.html
+    local served = P.response_for_path('/')
+    local version = P.response_for_path('/__version')
+    P.stop_watch()
+    return html, served, version, version_before
+  end
+
+  T.it('reflects an out-of-band in-place edit, and serves it over HTTP so the browser reloads', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    local path = dir .. '/doc.md'
+    T.write_file(path, { '# Original' })
+
+    local html, served, version, version_before = watch_and_expect(path, function()
+      vim.fn.writefile({ '# Edited by AI' }, path)
+    end, 'Edited by AI')
+
+    T.rmrf(dir)
+
+    T.ok(html:find('Edited by AI', 1, true) ~= nil, 'preview html should reflect the on-disk edit')
+    T.ok(html:find('Original', 1, true) == nil, 'stale content should be gone')
+    T.contains(served, 'Edited by AI', 'the HTTP handler must serve the updated html')
+    T.ok(tonumber(version:match('(%d+)%s*$')) > version_before, '/__version must bump so the page reloads')
+  end)
+
+  -- 「一時ファイルに書いて rename」方式で保存するツール対策。ファイル自体ではなく
+  -- 親ディレクトリを監視していないと、inode が差し替わって以後反映されなくなる
+  T.it('reflects an atomic (write-temp-then-rename) replacement, not just in-place writes', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    local path = dir .. '/doc.md'
+    T.write_file(path, { '# Original' })
+
+    local html = watch_and_expect(path, function()
+      local tmp = dir .. '/.doc.md.tmp'
+      vim.fn.writefile({ '# Replaced by rename' }, tmp)
+      vim.uv.fs_rename(tmp, path)
+    end, 'Replaced by rename')
+
+    T.rmrf(dir)
+
+    T.ok(html:find('Replaced by rename', 1, true) ~= nil, 'a renamed-over file must still be picked up')
+  end)
+
+  T.it('keeps watching across successive external edits, not just the first one', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    local path = dir .. '/doc.md'
+    T.write_file(path, { '# v0' })
+
+    P.start_watch(path)
+    local seen = {}
+    for i = 1, 3 do
+      vim.fn.writefile({ '# v' .. i }, path)
+      T.wait_until(function()
+        return P.state.html and P.state.html:find('v' .. i, 1, true) ~= nil
+      end)
+      seen[i] = P.state.html:find('v' .. i, 1, true) ~= nil
+    end
+    P.stop_watch()
+    T.rmrf(dir)
+
+    T.eq(seen, { true, true, true }, 'every external edit should be reflected, not only the first')
+  end)
+
+  T.it('start_watch is idempotent for the same path and stop_watch tears the handle down', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    local path = dir .. '/doc.md'
+    T.write_file(path, { '# X' })
+
+    P.start_watch(path)
+    local handle = P.state.watch_handle
+    T.ok(handle ~= nil, 'a watch handle should be created')
+    P.start_watch(path)
+    T.eq(P.state.watch_handle, handle, 're-watching the same path should be a no-op')
+
+    P.stop_watch()
+    T.eq(P.state.watch_handle, nil)
+    T.eq(P.state.watched_path, nil)
+
+    T.rmrf(dir)
+  end)
+end)
+
 T.summary()

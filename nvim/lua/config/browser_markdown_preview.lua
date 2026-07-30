@@ -8,7 +8,12 @@ local state = {
   port = nil,
   host = nil,
   root_dir = nil,
+  watch_handle = nil,
+  watch_debounce = nil,
+  watched_path = nil,
 }
+
+local WATCH_DEBOUNCE_MS = 150
 
 local augrp = vim.api.nvim_create_augroup('browser_markdown_preview', { clear = true })
 
@@ -468,14 +473,26 @@ local function document_html(lines, title, base_dir, version)
   }, '\n')
 end
 
-local function update_preview_html(source_buf)
-  local name = vim.api.nvim_buf_get_name(source_buf)
+local function set_preview_html(lines, name)
   local title = name ~= '' and vim.fn.fnamemodify(name, ':t') or 'Markdown Preview'
   local base_dir = name ~= '' and vim.fn.fnamemodify(name, ':p:h') or vim.fn.getcwd()
   state.root_dir = base_dir
   state.version = state.version + 1
-  state.html = document_html(vim.api.nvim_buf_get_lines(source_buf, 0, -1, false), title, base_dir, state.version)
+  state.html = document_html(lines, title, base_dir, state.version)
   return state.html
+end
+
+local function update_preview_html(source_buf)
+  local name = vim.api.nvim_buf_get_name(source_buf)
+  return set_preview_html(vim.api.nvim_buf_get_lines(source_buf, 0, -1, false), name)
+end
+
+-- ソースファイルはエディタの外(AI エージェント等)から書き換えられることがあり、
+-- そのときは nvim のバッファ/checktime を経由しないので、ディスクを直接読んで反映する。
+local function refresh_preview_from_disk(path)
+  if not path or path == '' or vim.fn.filereadable(path) ~= 1 then return false end
+  set_preview_html(vim.fn.readfile(path), path)
+  return true
 end
 
 local function server_url()
@@ -565,7 +582,65 @@ local function response_for_path(path)
   return http_response('404 Not Found', 'text/plain', 'not found')
 end
 
+local function stop_watch()
+  if state.watch_debounce then
+    pcall(function() state.watch_debounce:stop() end)
+    pcall(function() state.watch_debounce:close() end)
+    state.watch_debounce = nil
+  end
+  if state.watch_handle then
+    pcall(function() state.watch_handle:stop() end)
+    pcall(function() state.watch_handle:close() end)
+    state.watch_handle = nil
+  end
+  state.watched_path = nil
+end
+
+-- ファイル自体ではなく親ディレクトリを監視する。「一時ファイルに書いてrename」方式で
+-- 保存するツールだとinodeが差し替わり、ファイル直接監視では以後イベントが来なくなるため
+-- (explorer.lua のディレクトリ監視と同じ方針)。
+local function start_watch(path)
+  if state.watched_path == path and state.watch_handle then return end
+  stop_watch()
+  if not path or path == '' then return end
+  local uv = vim.uv or vim.loop
+  local dir = vim.fn.fnamemodify(path, ':p:h')
+  local base = vim.fn.fnamemodify(path, ':t')
+  local handle = uv.new_fs_event()
+  if not handle then return end
+  local ok = handle:start(dir, {}, function(err, filename)
+    if err then return end
+    -- filename はプラットフォームによっては nil。その場合は判定せず更新側に倒す
+    if filename and filename ~= base then return end
+    vim.schedule(function()
+      if state.watched_path ~= path then return end
+      if state.watch_debounce then
+        pcall(function() state.watch_debounce:stop() end)
+        pcall(function() state.watch_debounce:close() end)
+      end
+      state.watch_debounce = uv.new_timer()
+      state.watch_debounce:start(WATCH_DEBOUNCE_MS, 0, function()
+        if state.watch_debounce then
+          pcall(function() state.watch_debounce:stop() end)
+          pcall(function() state.watch_debounce:close() end)
+          state.watch_debounce = nil
+        end
+        vim.schedule(function()
+          if state.watched_path == path then refresh_preview_from_disk(path) end
+        end)
+      end)
+    end)
+  end)
+  if not ok then
+    pcall(function() handle:close() end)
+    return
+  end
+  state.watch_handle = handle
+  state.watched_path = path
+end
+
 local function stop_server()
+  stop_watch()
   if state.server then
     pcall(function() state.server:close() end)
   end
@@ -643,11 +718,14 @@ function M.open_on_port(port)
   local source_buf = vim.api.nvim_get_current_buf()
   state.source_buf = source_buf
   update_preview_html(source_buf)
+  -- start_server は別ポートの既存サーバーを stop_server (= stop_watch) するので、
+  -- 監視の開始はサーバー起動が確定した後に行う
   local ok, err = start_server(port)
   if not ok then
     notify(err or 'failed to start markdown preview server', vim.log.levels.ERROR)
     return
   end
+  start_watch(vim.api.nvim_buf_get_name(source_buf))
   local url = server_url()
   open_with_default_browser(url)
   notify('Markdown preview URL: ' .. url)
@@ -675,6 +753,7 @@ function M.refresh(opts)
     state.source_buf = source_buf
   end
   update_preview_html(source_buf)
+  start_watch(vim.api.nvim_buf_get_name(source_buf))
   if not opts.silent then
     local url = server_url()
     notify(url and ('Updated markdown preview: ' .. url) or 'Updated markdown preview')
@@ -719,6 +798,9 @@ M._private = {
   parse_port = parse_port,
   start_server = start_server,
   stop_server = stop_server,
+  start_watch = start_watch,
+  stop_watch = stop_watch,
+  refresh_preview_from_disk = refresh_preview_from_disk,
   slugify_heading = slugify_heading,
   url_decode = url_decode,
   url_encode_path = url_encode_path,
