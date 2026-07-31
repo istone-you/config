@@ -59,6 +59,7 @@ Neovim 等の設定ファイル群。
 | 機能 | 説明 | 主なキー |
 |---|---|---|
 | `browser_markdown_preview` | マークダウンを既定ブラウザでプレビュー（保存時に自動リフレッシュ） | `Space m d` |
+| `http_client` | `.http` / `.rest` ファイルに書いた HTTP リクエストを実行し、結果を右パネルに表示（変数・環境ファイル対応） | `Space h r` |
 | `copy_with_path` | 選択コードをファイルパス（行番号付き）とともにコピー | `Space P` |
 | `copy_all` | バッファ全内容をコピー | `Space A` |
 | `shortcuts` | Neovim のショートカット一覧パネル | `Space ?` |
@@ -71,7 +72,7 @@ Neovim 等の設定ファイル群。
 |---|---|
 | `git` | git_panel, github_permalink, terminal など git 操作全般 |
 | `gh` | `git_panel` の GitHub PR 取得・認証（branches.lua の PR 表示、pr.lua の PRパネル: 一覧/詳細/diff/checkout/ブラウザ表示） |
-| `curl` | `git_panel/git.lua` の GitHub GraphQL API 呼び出し（PR情報取得） |
+| `curl` | `git_panel/git.lua` の GitHub GraphQL API 呼び出し（PR情報取得）、`http_client` のリクエスト実行 |
 | `xdg-open` | `browser_markdown_preview.lua` のプレビューURLを既定ブラウザで開く（無くてもURLは通知される） |
 | `delta` | `git_panel` の diff 色付き表示（任意、無くても素のテキストにフォールバック） |
 | `rg` (ripgrep) | `rg_fzf.lua` の全文検索・置換 |

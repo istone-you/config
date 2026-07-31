@@ -17,10 +17,13 @@ M.by_ext = {
   lua     = 0xe620,
   ts      = 0xe628,
   mts     = 0xe628,
+  cts     = 0xe628,
   js      = 0xe74e,
+  mjs     = 0xe74e,
+  cjs     = 0xe74e,
   jsx     = 0xf0708,
   tsx     = 0xf0708,
-  go      = 0xe626,
+  go      = 0xe65e,
   py      = 0xe606,
   pkl     = 0xf013,
   rs      = 0xe7a8,
@@ -47,6 +50,13 @@ M.by_ext = {
   template = 0xf0613,
   txt     = 0xf15c,
   text    = 0xf15c,
+  pdf     = 0xf0226,
+  csv     = 0xeefc,
+  -- 設定ファイル系はまとめて歯車（pkl と同じアイコン・同じ色になる）
+  conf       = 0xf013,
+  ini        = 0xf013,
+  cfg        = 0xf013,
+  properties = 0xf013,
   crt     = 0xf0124,
   rego    = 0xf0498,
   tf      = 0xe69a,
@@ -71,6 +81,9 @@ M.by_ext = {
   zip     = 0xe6aa,
   npmrc   = 0xe71e,
   hcl     = 0xf0c01,
+  http    = 0xf0ac, -- fa-globe（.http / .rest のリクエストファイル）
+  rest    = 0xf0ac,
+  ghostty = 0xf165d, -- md-ghost-outline
 }
 
 -- 拡張子ではなくファイル名で判定する特殊ファイル
@@ -89,7 +102,7 @@ local SPECIAL = {
   playwright   = 0xe863,
   claude       = 0xf0bf1,
   agents       = 0xf0beb,
-  gomod        = 0xe626,
+  gomod        = 0xe65e,
   codeowners   = 0xf09b,
   license      = 0xf0fc3,
   githubactions = 0xe7e9, -- dev-githubactions
@@ -98,6 +111,8 @@ local SPECIAL = {
   container    = 0xf4b7, -- oct-container
   coderabbit   = 0xf0907, -- md-rabbit
   wrangler     = 0xe792, -- dev-cloudflare
+  ghostty      = 0xf165d, -- md-ghost-outline
+  httpenv      = 0xf0ac, -- fa-globe（http-client.env.json）
 }
 
 -- ファイル名（+ ディレクトリか否か・任意でフルパス）からアイコンのコードポイントを返す
@@ -123,7 +138,13 @@ function M.code(name, isdir, path)
     if lower == 'devcontainer.json' and (p:match('/%.devcontainer/devcontainer%.json$') or p:match('^%.devcontainer/devcontainer%.json$')) then
       return SPECIAL.container
     end
+    -- ghostty の設定は拡張子が無くファイル名も config なので、ghostty/ 配下かで判定する
+    if p:match('/ghostty/[^/]*$') or p:match('^ghostty/[^/]*$') then
+      return SPECIAL.ghostty
+    end
   end
+  -- http-client.env.json / http-client.private.env.json（汎用 json / .env より優先）
+  if lower:match('^http%-client%..*env%.json$') then return SPECIAL.httpenv end
   if lower == 'codecov.yml' or lower == '.codecov.yml' or lower == 'codecov.yaml' or lower == '.codecov.yaml' then
     return SPECIAL.codecov
   end
@@ -170,7 +191,7 @@ M.color_by_code = {
   [0xe628] = '#519aba',
   [0xe74e] = '#cbcb41',
   [0xf0708] = '#61dafb',
-  [0xe626] = '#519aba',
+  [0xe65e] = '#519aba',
   [0xe606] = '#ffbc03',
   [0xf013] = '#689f38',
   [0xe7a8] = '#dea584',
@@ -220,6 +241,8 @@ M.color_by_code = {
   [0xf09b] = '#dddddd',
   [0xf0fc3] = '#e5c07b',
   [0xf15c] = '#6d8086',
+  [0xf0226] = '#e5252a',
+  [0xeefc] = '#89e051',
   [0xf0124] = '#e5c07b',
   [0xf0498] = '#5181b1',
   [0xf0613] = '#9c9c9c',
@@ -229,6 +252,8 @@ M.color_by_code = {
   [0xf4b7] = '#00b0ff',
   [0xf0907] = '#f4511e',
   [0xe792] = '#f57f17',
+  [0xf0ac] = '#4db6ac',
+  [0xf165d] = '#3551f3', -- ghostty.org の --brand-color
   [0xe5ff] = '#7aa2f7',
 }
 

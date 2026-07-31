@@ -143,6 +143,39 @@ function M.win_title_text(win)
   return table.concat(out)
 end
 
+--- テスト用の極小 HTTP サーバを 127.0.0.1 の空きポートに立てる。
+--- handler(受信したリクエスト全文) が返した文字列をそのままレスポンスとして書き戻す。
+--- 戻り値は server, port（テスト側で server:close() すること）
+function M.http_server(handler)
+  local uv = vim.uv or vim.loop
+  local server = uv.new_tcp()
+  server:bind('127.0.0.1', 0)
+  local port = server:getsockname().port
+  server:listen(16, function(err)
+    if err then return end
+    local client = uv.new_tcp()
+    server:accept(client)
+    local buf = ''
+    client:read_start(function(rerr, chunk)
+      if rerr or not chunk then
+        pcall(function() client:close() end)
+        return
+      end
+      buf = buf .. chunk
+      -- ヘッダを受け切り、Content-Length 分のボディが揃ってから返す
+      local head, body = buf:match('^(.-\r\n\r\n)(.*)$')
+      if not head then return end
+      local len = tonumber(head:match('[Cc]ontent%-[Ll]ength:%s*(%d+)') or '0') or 0
+      if #body < len then return end
+      client:write(handler(buf))
+      client:shutdown(function()
+        pcall(function() client:close() end)
+      end)
+    end)
+  end)
+  return server, port
+end
+
 function M.floating_wins()
   local out = {}
   for _, w in ipairs(vim.api.nvim_list_wins()) do

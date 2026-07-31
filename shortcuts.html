@@ -414,12 +414,34 @@
       <tr><td><kbd>Space</kbd> <kbd>/</kbd></td><td class="desc">rg+fzf: 検索（ビジュアル選択時はその文字列）。開いた後 Ctrl-f:ファイル名 / Ctrl-r:置換 / Ctrl-g:内容 に切替</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>*</kbd></td><td class="desc">rg+fzf: カーソル単語で検索（Ctrl-f/Ctrl-r/Ctrl-g で切替）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>m</kbd> <kbd>d</kbd></td><td class="desc">Markdownプレビューを既定ブラウザで開く</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>h</kbd> <kbd>r</kbd></td><td class="desc">.httpファイル: カーソル位置のリクエストを実行（詳細は下のセクション）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>G</kbd></td><td class="desc">GitHubパーマリンクをコピー（現在行 / ビジュアル選択行）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>P</kbd></td><td class="desc">パス付きコードをコピー（現在行 / ビジュアル選択行）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>A</kbd></td><td class="desc">ファイル全体をコピー</td></tr>
       <tr><td><kbd>(</kbd> <kbd>[</kbd> <kbd>{</kbd> <kbd>"</kbd> <kbd>'</kbd> <kbd>`</kbd></td><td class="desc">autopairs: 閉じを自動補完 / 閉じの上でスキップ / 空ペアで <kbd>BS</kbd> 両削除 / 括弧内 <kbd>&lt;CR&gt;</kbd> でインデント展開</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>s</kbd> <kbd>( ) [ ] { } " ' `</kbd></td><td class="desc">surround: 単語（<kbd>iw</kbd>）/選択を囲む・再度で外す（トグル。開き括弧キー <kbd>( [ {</kbd> はスペース付き）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>?</kbd></td><td class="desc">このショートカット一覧を開閉</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-buffer">🌐 .http リクエスト（.http / .rest ファイル内）</div>
+    <table>
+      <tr><td><kbd>Space</kbd> <kbd>h</kbd> <kbd>r</kbd></td><td class="desc">カーソル位置のリクエストを実行（結果は右に縦分割で表示）</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>h</kbd> <kbd>e</kbd></td><td class="desc">環境を選択（http-client.env.json）。ポップアップで選ぶ</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>h</kbd> <kbd>j</kbd></td><td class="desc">ファイル内のリクエスト一覧からジャンプ（ポップアップ）</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>h</kbd> <kbd>c</kbd></td><td class="desc">カーソル位置のリクエストを curl コマンドとしてコピー</td></tr>
+      <tr><td><kbd>]]</kbd> / <kbd>[[</kbd></td><td class="desc">次 / 前のリクエストへ</td></tr>
+      <tr><td><kbd>:HttpRun</kbd> 等</td><td class="desc">コマンド版（:HttpRun / :HttpEnv / :HttpList）</td></tr>
+      <tr><td class="section-divider" colspan="2">リクエスト / 環境の一覧ポップアップ内</td></tr>
+      <tr><td><kbd>Ctrl-j</kbd> / <kbd>↓</kbd></td><td class="desc">次の候補へ（そのまま入力すると絞り込み）</td></tr>
+      <tr><td><kbd>Ctrl-k</kbd> / <kbd>↑</kbd></td><td class="desc">前の候補へ</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td class="desc">決定（リクエストへジャンプ / 環境を切り替え）</td></tr>
+      <tr><td><kbd>Esc</kbd> / <kbd>Ctrl-c</kbd></td><td class="desc">閉じる</td></tr>
+      <tr><td class="section-divider" colspan="2">レスポンスパネル内</td></tr>
+      <tr><td><kbd>q</kbd></td><td class="desc">レスポンスパネルを閉じる</td></tr>
+      <tr><td><kbd>R</kbd></td><td class="desc">直前のリクエストを再実行</td></tr>
+      <tr><td><kbd>y</kbd></td><td class="desc">レスポンスボディをコピー</td></tr>
     </table>
   </div>
 
