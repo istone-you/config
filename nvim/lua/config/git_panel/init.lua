@@ -1112,6 +1112,13 @@ local function do_pull()
   git.pull(function(res)
     clear_loading()
     ctx.render_cmdlog()
+    -- 衝突で止まった場合は「失敗」ではなく解消フローへ誘導する（VSCode が
+    -- 衝突時に Source Control の Merge Changes へ寄せるのと同じ考え方）
+    if res.code ~= 0 and git.is_conflict_result(res) then
+      switch_to(1) -- Files パネル
+      vim.notify('コンフリクトが発生しました。m で解消メニュー', vim.log.levels.WARN)
+      return
+    end
     notify_result(res, 'pull失敗')
     refresh_current_panel()
     if res.code == 0 then require('config.git_panel.branches').refresh_prs() end
@@ -1362,6 +1369,8 @@ local function setup_hl()
   vim.api.nvim_set_hl(0, 'GitPanelStatusStaged',   { fg = '#9ece6a' })
   vim.api.nvim_set_hl(0, 'GitPanelStatusUnstaged', { fg = '#f7768e' })
   vim.api.nvim_set_hl(0, 'GitPanelRenamed',      { fg = '#2ac3de' })
+  -- 衝突（VSCode の Source Control と同じく赤・太字で最優先に見せる）
+  vim.api.nvim_set_hl(0, 'GitPanelConflict',     { fg = '#f7768e', bold = true })
   vim.api.nvim_set_hl(0, 'GitPanelUntracked',    { fg = '#9ece6a', italic = true })
   vim.api.nvim_set_hl(0, 'GitPanelCurrent',      { fg = '#9ece6a', bold = true })
   vim.api.nvim_set_hl(0, 'GitPanelUnpushed',     { fg = '#f7768e' })

@@ -18,6 +18,13 @@ local hunk_state = nil
 local hunk_hl_ns = vim.api.nvim_create_namespace('git_panel_hunk')
 
 local function is_untracked(f) return f.x == '?' and f.y == '?' end
+-- porcelain の未マージ状態（git status のドキュメントにある衝突の組み合わせ）。
+-- どちらか片方でも 'U' なら衝突、DD と AA も両者が触った衝突扱い
+local CONFLICT_CODES = {
+  DD = true, AU = true, UD = true, UA = true, DU = true, AA = true, UU = true,
+}
+local function is_conflicted(f) return CONFLICT_CODES[f.x .. f.y] == true end
+M.is_conflicted = is_conflicted
 local function has_staged(f) return f.x ~= ' ' and f.x ~= '?' end
 local function has_unstaged(f) return f.y ~= ' ' or is_untracked(f) end
 -- lazygit(models/file.go deriveStatusFields)のTrackedと同じ: 新規追加(A /AM)と未追跡(??)
@@ -122,6 +129,15 @@ local function node_flags(node)
     any_u = any_u or u
   end
   return any_s, any_u
+end
+
+--- 配下（ファイルなら自分自身）に衝突があるか。ディレクトリも赤で示すために使う
+local function node_conflicted(node)
+  if not node.is_dir then return is_conflicted(node.file) end
+  for _, c in ipairs(node.children) do
+    if node_conflicted(c) then return true end
+  end
+  return false
 end
 
 local function collect_files(node, out)
@@ -250,8 +266,10 @@ local function render()
     local s, u = node_flags(node)
     -- ファイル名(+アイコン/ディレクトリの矢印)の色: 実物のnameColorと同じ
     -- staged onlyなら緑、staged+unstagedなら黄、それ以外は無色
+    local conflicted = node_conflicted(node)
     local name_color
-    if s and not u then name_color = 'GitPanelAdded'
+    if conflicted then name_color = 'GitPanelConflict' -- 衝突は VSCode と同じく赤で目立たせる
+    elseif s and not u then name_color = 'GitPanelAdded'
     elseif s then name_color = 'GitPanelModified'
     end
     local indent = string.rep('  ', depth)
@@ -276,6 +294,8 @@ local function render()
       if name_color then
         table.insert(hl_queue, { #lines - 1, name_color, status_base, status_base + #status_str })
       end
+    elseif conflicted then
+      table.insert(hl_queue, { #lines - 1, 'GitPanelConflict', status_base, status_base + #status_str })
     else
       local c1 = status_char_hl(node.file.x, true)
       local c2 = status_char_hl(node.file.y, false)
@@ -821,9 +841,51 @@ local function stash_options()
   end)
 end
 
+--- コンフリクト解消メニュー（m）。
+--- ファイル単位の一括採用（VSCode の Accept Current/Incoming に相当）と、
+--- マージ/リベースの続行・中断をまとめる。行単位の採用はファイルを開いて
+--- config.git_conflict（Space x 系）で行う
+local function conflict_menu()
+  local node = current_entry()
+  local target = (node and not node.is_dir and is_conflicted(node.file)) and node.file or nil
+
+  git.merge_state(function(state)
+    local items = {}
+    if target then
+      table.insert(items, { key = 'c', label = '現在の変更を採用（ours）: ' .. target.path, value = 'ours' })
+      table.insert(items, { key = 'i', label = '入力側の変更を採用（theirs）: ' .. target.path, value = 'theirs' })
+      table.insert(items, { key = 'e', label = 'エディタで開いて1つずつ解消する', value = 'edit' })
+    end
+    if state then
+      table.insert(items, { key = 'n', label = state .. ' を続行する', value = 'continue' })
+      table.insert(items, { key = 'a', label = state .. ' を中断する', value = 'abort' })
+    end
+    if #items == 0 then
+      vim.notify('解消が必要な衝突はありません', vim.log.levels.INFO)
+      return
+    end
+
+    ctx.menu('コンフリクト', items, function(choice)
+      if choice == 'ours' or choice == 'theirs' then
+        git.take_side(target.path, choice, ctx.done_refresh(function() M.refresh() end, '衝突の解消'))
+      elseif choice == 'edit' then
+        open_file()
+      elseif choice == 'continue' then
+        git.continue_in_progress(state, ctx.done_refresh(function() cursor_mem = nil; M.refresh() end, state .. 'の続行'))
+      elseif choice == 'abort' then
+        ctx.confirm(state .. ' を中断して元の状態に戻しますか？', function(ok)
+          if not ok then return end
+          git.abort_in_progress(state, ctx.done_refresh(function() cursor_mem = nil; M.refresh() end, state .. 'の中断'))
+        end)
+      end
+    end)
+  end)
+end
+
 function M.keymaps()
   return {
     ['<Space>'] = stage_toggle,
+    m = conflict_menu,
     a = stage_all_toggle,
     d = discard,
     c = function() commit(false) end,

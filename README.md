@@ -37,6 +37,7 @@ Neovim 等の設定ファイル群。
 | `git_panel` | lazygit 風の git 管理パネル（中央ポップアップ）。Files / Commits / Branches / Stash / Worktree / PR を切替 | `Space g` |
 | `git_blame` | GitLens 風のインライン git blame 表示 | — |
 | `git_gutter` | VSCode 風にエディタ余白（ガター）へ git 差分を表示 | — |
+| `git_conflict` | VSCode 風のコンフリクト解消。衝突ブロックを色分けし、現在 / 入力側 / 両方を採用（ファイル全体も可）・衝突間の移動・左右 diff 比較。pull で衝突したら git パネルが Files へ切り替わり `m` で解消メニュー | `Space x c` / `]x` |
 | `github_permalink` | 現在行 / 選択行の GitHub パーマリンクを生成してコピー | `Space G` |
 
 ### LSP

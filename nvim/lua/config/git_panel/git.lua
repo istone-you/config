@@ -543,6 +543,70 @@ function M.push_force_with_lease(cb) M.run({ 'push', '--force-with-lease' }, cb,
 function M.push_force(cb) M.run({ 'push', '--force' }, cb, { stream_output = true }) end
 function M.push_set_upstream(remote, branch_name, cb) M.run({ 'push', '-u', remote, branch_name }, cb, { stream_output = true }) end
 function M.pull(cb) M.run({ 'pull' }, cb, { stream_output = true }) end
+
+-- ══════════════════════════════════════════════
+-- マージ / コンフリクト
+-- ══════════════════════════════════════════════
+
+--- pull/merge の結果がコンフリクトで止まったかを判定する（git は終了コード1を返し、
+--- 進捗は stdout、"Automatic merge failed" は stderr 側に出る）
+function M.is_conflict_result(res)
+  local text = (res.stdout or '') .. '\n' .. (res.stderr or '')
+  return text:find('CONFLICT', 1, true) ~= nil
+    or text:find('Automatic merge failed', 1, true) ~= nil
+    or text:find('could not apply', 1, true) ~= nil
+    or text:find('fix conflicts', 1, true) ~= nil
+end
+
+--- 中断中の作業を返す: 'merge' | 'rebase' | 'cherry-pick' | 'revert' | nil。
+--- .git はワークツリーだとファイルになるので rev-parse --git-path で解決する
+function M.merge_state(cb)
+  M.run({ 'rev-parse', '--git-path', 'MERGE_HEAD' }, function(res)
+    local git_dir = vim.trim(res.stdout or ''):gsub('/MERGE_HEAD$', '')
+    if git_dir == '' then cb(nil); return end
+    if not git_dir:match('^/') then git_dir = M.root .. '/' .. git_dir end
+    local function exists(p) return vim.fn.filereadable(p) == 1 or vim.fn.isdirectory(p) == 1 end
+    if exists(git_dir .. '/MERGE_HEAD') then cb('merge')
+    elseif exists(git_dir .. '/rebase-merge') or exists(git_dir .. '/rebase-apply') then cb('rebase')
+    elseif exists(git_dir .. '/CHERRY_PICK_HEAD') then cb('cherry-pick')
+    elseif exists(git_dir .. '/REVERT_HEAD') then cb('revert')
+    else cb(nil)
+    end
+  end, { dont_log = true })
+end
+
+--- 衝突ファイルの片側だけを採用する（VSCode の Accept Current/Incoming をファイル単位でやる版）。
+--- checkout 後は add まで行って「解消済み」にする
+function M.take_side(path, side, cb)
+  M.run({ 'checkout', side == 'ours' and '--ours' or '--theirs', '--', path }, function(res)
+    if res.code ~= 0 then cb(res); return end
+    M.run({ 'add', '--', path }, cb)
+  end)
+end
+
+function M.merge_abort(cb) M.run({ 'merge', '--abort' }, cb, { stream_output = true }) end
+function M.rebase_abort(cb) M.run({ 'rebase', '--abort' }, cb, { stream_output = true }) end
+function M.cherry_pick_abort(cb) M.run({ 'cherry-pick', '--abort' }, cb, { stream_output = true }) end
+function M.revert_abort(cb) M.run({ 'revert', '--abort' }, cb, { stream_output = true }) end
+-- どちらもエディタを開かせない形にする（merge --continue はコミットメッセージの
+-- エディタを起動するため、等価な commit --no-edit を使う）
+function M.merge_continue(cb) M.run({ 'commit', '--no-edit' }, cb, { stream_output = true }) end
+function M.rebase_continue(cb)
+  M.run({ '-c', 'core.editor=true', 'rebase', '--continue' }, cb, { stream_output = true })
+end
+
+--- 中断中の作業に応じた abort / continue を投げ分ける
+function M.abort_in_progress(state, cb)
+  if state == 'rebase' then return M.rebase_abort(cb) end
+  if state == 'cherry-pick' then return M.cherry_pick_abort(cb) end
+  if state == 'revert' then return M.revert_abort(cb) end
+  return M.merge_abort(cb)
+end
+
+function M.continue_in_progress(state, cb)
+  if state == 'rebase' then return M.rebase_continue(cb) end
+  return M.merge_continue(cb)
+end
 function M.fetch(cb) M.run({ 'fetch' }, cb, { stream_output = true }) end
 function M.remote_names(cb)
   M.run({ 'remote' }, function(res)
