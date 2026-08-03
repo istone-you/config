@@ -2,6 +2,10 @@ local T = dofile(TESTS_DIR .. '/helpers.lua')
 local H = dofile(TESTS_DIR .. '/git_panel_helpers.lua')
 local git = require('config.git_panel.git')
 local files = require('config.git_panel.files')
+-- 実運用では init.lua が起動時に require してBufReadPost等のautocmdを登録している。
+-- テストは -u NONE で init.lua を読まないため、ファイルを開く前にここで読み込んで
+-- autocmdを登録しておかないと、衝突ファイルを開いてもattachされない（is_attached=false）
+require('config.git_conflict')
 
 --- main と feature で同じ行を書き換えてマージ衝突を起こしたリポジトリを作る。
 --- 戻り値は dir（衝突が発生した状態で main に居る）

@@ -79,6 +79,7 @@ Neovim 等の設定ファイル群。
 | `rg` (ripgrep) | `rg_fzf.lua` の全文検索・置換 |
 | `fzf` | `rg_fzf.lua`（検索UI）、`explorer.lua`（ファイル検索） |
 | `fd` | `rg_fzf.lua` / `explorer.lua` のファイル検索（`fd`/`fzf` の両方が必要） |
+| `herdr` | `git_panel` Worktree パネルの `w`（カーソル行の worktree を herdr ワークスペースとして開く）。`HERDR_ENV=1` の herdr セッション内でのみ有効、無ければ警告のみ |
 
 ## ローカル設定
 

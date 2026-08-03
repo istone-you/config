@@ -103,6 +103,44 @@ local function create()
   end)
 end
 
+--- herdr連携: カーソル行のworktreeを新しいherdrワークスペースとして開く。
+--- 判定と実行をMのフィールドに分けているのは、テストからherdrを実際に起動せず
+--- 差し替えられるようにするため（nvimはherdrペイン内=HERDR_ENV=1で動く前提だが、
+--- headlessなテスト環境ではその前提が無いため）
+function M._has_herdr()
+  return vim.env.HERDR_ENV == '1' and vim.fn.executable('herdr') == 1
+end
+
+function M._run_herdr(hargs, cb)
+  vim.system(vim.list_extend({ 'herdr' }, hargs), { text = true }, function(res)
+    vim.schedule(function() cb(res) end)
+  end)
+end
+
+local function open_in_herdr()
+  local entry = current_entry()
+  if not entry then return end
+  if not M._has_herdr() then
+    vim.notify('herdr が使えません（HERDR_ENV=1 の herdr セッション内で実行してください）', vim.log.levels.WARN)
+    return
+  end
+  local path = entry.path
+  -- ラベルはブランチ名が最も分かりやすい。detachedやブランチ不明時はディレクトリ名で代替する
+  local label = entry.branch or (entry.detached and 'detached' or vim.fn.fnamemodify(path, ':t'))
+  ctx.confirm('herdr ワークスペースを作成しますか？\n' .. path, function(ok)
+    if not ok then return end
+    -- --no-focus: モーダルのgitパネルを開いたまま実行するので、フォーカスは奪わず
+    -- 裏でワークスペースだけ作る。ユーザーが必要な時に自分で切り替える
+    M._run_herdr({ 'workspace', 'create', '--cwd', path, '--label', label, '--no-focus' }, function(res)
+      if res.code == 0 then
+        vim.notify('herdr ワークスペースを作成しました: ' .. label, vim.log.levels.INFO)
+      else
+        vim.notify('herdr ワークスペース作成に失敗: ' .. (res.stderr or ''), vim.log.levels.ERROR)
+      end
+    end)
+  end)
+end
+
 local function delete()
   local entry = current_entry()
   if not entry then return end
@@ -127,6 +165,7 @@ function M.keymaps()
   return {
     ['<Space>'] = checkout,
     n = create,
+    w = open_in_herdr,
     d = delete,
   }
 end

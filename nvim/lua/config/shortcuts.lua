@@ -238,6 +238,7 @@ local SECTIONS = {
     { '[Stash] d/n',     '削除 / このスタッシュから新規ブランチ' },
     { '[Worktree] Space','移動（cd）' },
     { '[Worktree] n/d',  '新規作成 / 削除' },
+    { '[Worktree] w',    'カーソル行のworktreeをherdrワークスペースとして開く' },
     { '[PR] o / Enter',  'PRをブラウザで開く（開けなければURLをコピー）' },
     { '[PR] y',          'PRのURLをコピー' },
     { '[PR] d',          '詳細 ⇄ diff を切替（diff中はvでside-by-side）' },
