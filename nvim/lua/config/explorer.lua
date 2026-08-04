@@ -8,10 +8,13 @@ local cwd
 local initialized = false
 local rows = {}
 local cursor_mem = {}
+local tree_cursor_mem = {}
 local selection = {}
 local clipboard = nil
 local show_hidden = true
 local filter = ''
+local view_mode = 'list' -- 'list': yazi風 / 'tree': gitパネル風の折りたたみツリー
+local tree_expanded = {} -- [path] = true
 
 -- 全画面表示(:Explorer!)の時だけ有効になるプレビューパネル。通常のサイドパネル表示は
 -- 幅が狭く単一カラムのままにする（トップのコメント通り）
@@ -63,6 +66,9 @@ end
 local file_icons = require('config.util.file_icons')
 
 local FOLDER_ICON = file_icons.FOLDER
+local FOLDER_OPEN_ICON = 0xe5fe -- nvim-tree.lua default folder.open: ""
+local TREE_ARROW_CLOSED = '' -- nvim-tree.lua default folder.arrow_closed
+local TREE_ARROW_OPEN = ''   -- nvim-tree.lua default folder.arrow_open
 local function icon_char(code) return file_icons.char(code) end
 local function get_icon(name, isdir, path) return file_icons.get(name, isdir, path) end
 
@@ -195,6 +201,53 @@ local function list_dir(path)
   return list
 end
 
+local function build_tree_rows(path)
+  local list = {}
+
+  local function walk(dir, depth)
+    for _, entry in ipairs(list_dir(dir)) do
+      entry.depth = depth
+      entry.expandable = entry.isdir and not entry.link
+      table.insert(list, entry)
+      if entry.expandable and tree_expanded[entry.path] then
+        walk(entry.path, depth + 1)
+      end
+    end
+  end
+
+  walk(path, 0)
+  return list
+end
+
+local function remember_entry(entry)
+  if not entry then return end
+  if view_mode == 'tree' then
+    tree_cursor_mem[cwd] = entry.path
+  else
+    cursor_mem[cwd] = entry.name
+  end
+end
+
+local function top_child_name(path)
+  if not path or not cwd then return nil end
+  local prefix = cwd == '/' and '/' or (cwd .. '/')
+  if path:sub(1, #prefix) ~= prefix then return nil end
+  local rest = path:sub(#prefix + 1)
+  return rest:match('^[^/]+')
+end
+
+local function is_under_cwd(path)
+  if not path or not cwd then return false end
+  if cwd == '/' then return path:sub(1, 1) == '/' and path ~= '/' end
+  return path:sub(1, #cwd + 1) == cwd .. '/'
+end
+
+local function is_under_dir(path, dir)
+  if not path or not dir then return false end
+  if dir == '/' then return path:sub(1, 1) == '/' and path ~= '/' end
+  return path:sub(1, #dir + 1) == dir .. '/'
+end
+
 local function status_text()
   local parts = {}
   local sel_count = vim.tbl_count(selection)
@@ -211,7 +264,7 @@ end
 function render()
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
 
-  rows = list_dir(cwd)
+  rows = view_mode == 'tree' and build_tree_rows(cwd) or list_dir(cwd)
 
   if git_status_cwd ~= cwd or git_status_dirty then
     git_status_dirty = false
@@ -225,15 +278,30 @@ function render()
     table.insert(hl_queue, { lnum, group, cs or 0, ce or -1 })
   end
 
-  table.insert(lines, ' ' .. icon_char(FOLDER_ICON) .. ' ' .. build_display_path(cwd) .. status_text())
+  local mode_label = view_mode == 'tree' and 'tree' or 'yazi'
+  table.insert(lines, ' ' .. icon_char(FOLDER_ICON) .. ' ' .. build_display_path(cwd) .. '  [' .. mode_label .. ']' .. status_text())
   hl(0, 'ExplorerHeader')
   table.insert(lines, '')
 
   for _, entry in ipairs(rows) do
-    local icon = get_icon(entry.name, entry.isdir, entry.path)
+    local icon = view_mode == 'tree' and entry.expandable and tree_expanded[entry.path]
+      and icon_char(FOLDER_OPEN_ICON) or get_icon(entry.name, entry.isdir, entry.path)
     -- yazi の marker_symbol("│") 相当: 選択行は左端に色付きバー、文字色は変えない
     local marker = selection[entry.path] and '│' or ' '
-    local prefix = marker .. ' '
+    local prefix
+    local arrow_cs, arrow_ce
+    if view_mode == 'tree' then
+      local indent = string.rep('  ', entry.depth or 0)
+      local arrow = entry.expandable and (tree_expanded[entry.path] and TREE_ARROW_OPEN or TREE_ARROW_CLOSED) or ' '
+      local tree_marker = selection[entry.path] and marker or ''
+      prefix = tree_marker .. indent .. arrow .. ' '
+      if entry.expandable then
+        arrow_cs = #tree_marker + #indent
+        arrow_ce = arrow_cs + #arrow
+      end
+    else
+      prefix = marker .. ' '
+    end
     local line = prefix .. icon .. '  ' .. entry.name
     -- シンボリックリンクは yazi 風に「名前 -> ターゲット」を表示する
     local link_cs, link_ce
@@ -263,6 +331,9 @@ function render()
     end
     if selection[entry.path] then
       hl(lnum, 'ExplorerSelected', 0, #marker)
+    end
+    if arrow_cs then
+      hl(lnum, 'ExplorerTreeArrow', arrow_cs, arrow_ce)
     end
     if clipboard and clipboard.mode == 'cut' then
       for _, p in ipairs(clipboard.paths) do
@@ -299,12 +370,22 @@ function render()
 
   if win and vim.api.nvim_win_is_valid(win) and #rows > 0 then
     local target_row = ENTRY_OFFSET + 1
-    local remembered = cursor_mem[cwd]
-    if remembered then
+    if view_mode == 'tree' then
+      local remembered = tree_cursor_mem[cwd]
       for i, entry in ipairs(rows) do
-        if entry.name == remembered then
+        if entry.path == remembered then
           target_row = ENTRY_OFFSET + i
           break
+        end
+      end
+    else
+      local remembered = cursor_mem[cwd]
+      if remembered then
+        for i, entry in ipairs(rows) do
+          if entry.name == remembered then
+            target_row = ENTRY_OFFSET + i
+            break
+          end
         end
       end
     end
@@ -564,9 +645,128 @@ local function move_sidebar(side)
   vim.cmd('redrawtabline')
 end
 
+local function toggle_view_mode()
+  local entry = entry_at_cursor()
+  if view_mode == 'list' then
+    if entry then tree_cursor_mem[cwd] = entry.path end
+    view_mode = 'tree'
+  else
+    if entry then cursor_mem[cwd] = top_child_name(entry.path) or entry.name end
+    view_mode = 'list'
+  end
+  render()
+end
+
+local function toggle_tree_node()
+  local entry = entry_at_cursor()
+  if not entry or not entry.expandable then return end
+  if tree_expanded[entry.path] then
+    tree_expanded[entry.path] = nil
+  else
+    tree_expanded[entry.path] = true
+  end
+  tree_cursor_mem[cwd] = entry.path
+  render()
+end
+
+local function collapse_all_tree_nodes()
+  tree_expanded = {}
+  local entry = entry_at_cursor()
+  remember_entry(entry)
+  render()
+end
+
+local function expand_all_tree_nodes()
+  if view_mode ~= 'tree' then view_mode = 'tree' end
+  local count = 0
+  local capped = false
+  local max_dirs = 10000
+
+  local function walk(dir)
+    if capped then return end
+    for _, entry in ipairs(list_dir(dir)) do
+      if entry.isdir and not entry.link then
+        tree_expanded[entry.path] = true
+        count = count + 1
+        if count >= max_dirs then
+          capped = true
+          return
+        end
+        walk(entry.path)
+      end
+    end
+  end
+
+  local entry = entry_at_cursor()
+  remember_entry(entry)
+  walk(cwd)
+  if capped then
+    vim.notify('展開数が多すぎるため途中で止めました', vim.log.levels.WARN)
+  end
+  render()
+end
+
+local function editor_file_path()
+  local win_util = require('config.util.win_util')
+  local function from_win(w)
+    if not (w and vim.api.nvim_win_is_valid(w) and win_util.is_editor(w)) then return nil end
+    local b = vim.api.nvim_win_get_buf(w)
+    if vim.bo[b].buftype ~= '' then return nil end
+    local name = vim.api.nvim_buf_get_name(b)
+    if name == '' then return nil end
+    return vim.fn.fnamemodify(name, ':p'):gsub('/$', '')
+  end
+
+  return from_win(vim.api.nvim_get_current_win())
+    or from_win(origin_win)
+    or (function()
+      for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        local path = from_win(w)
+        if path then return path end
+      end
+    end)()
+end
+
+local function expand_tree_to_path(path)
+  local dir = vim.fn.fnamemodify(path, ':h')
+  while dir and dir ~= '' and dir ~= cwd and is_under_dir(dir, cwd) do
+    tree_expanded[dir] = true
+    local parent = vim.fn.fnamemodify(dir, ':h')
+    if parent == dir then break end
+    dir = parent
+  end
+end
+
+local function reveal_current_file()
+  local path = editor_file_path()
+  if not path or vim.fn.filereadable(path) == 0 then
+    vim.notify('現在の編集ファイルが見つかりません', vim.log.levels.WARN)
+    return
+  end
+
+  local parent = vim.fn.fnamemodify(path, ':h')
+  local name = vim.fn.fnamemodify(path, ':t')
+  if view_mode == 'tree' then
+    if not (path == cwd or is_under_dir(path, cwd)) then
+      cwd = parent
+    end
+    expand_tree_to_path(path)
+    tree_cursor_mem[cwd] = path
+  else
+    cwd = parent
+    cursor_mem[cwd] = name
+  end
+  selection = {}
+  render()
+end
+
 local function enter_dir()
   local entry = entry_at_cursor()
   if not entry or not entry.isdir then return end
+  if view_mode == 'tree' then
+    toggle_tree_node()
+    return
+  end
   cwd = entry.path
   selection = {}
   render()
@@ -576,6 +776,10 @@ local function open_selected()
   local entry = entry_at_cursor()
   if not entry then return end
   if entry.isdir then
+    if view_mode == 'tree' then
+      toggle_tree_node()
+      return
+    end
     cwd = entry.path
     selection = {}
     render()
@@ -597,6 +801,23 @@ local function open_selected()
 end
 
 local function go_parent()
+  if view_mode == 'tree' then
+    local entry = entry_at_cursor()
+    if entry then
+      if entry.expandable and tree_expanded[entry.path] then
+        tree_expanded[entry.path] = nil
+        tree_cursor_mem[cwd] = entry.path
+        render()
+        return
+      end
+      local parent = vim.fn.fnamemodify(entry.path, ':h')
+      if parent ~= cwd and is_under_cwd(parent) then
+        tree_cursor_mem[cwd] = parent
+        render()
+        return
+      end
+    end
+  end
   local parent = vim.fn.fnamemodify(cwd, ':h')
   if parent == cwd then return end
   cursor_mem[parent] = vim.fn.fnamemodify(cwd, ':t')
@@ -615,7 +836,7 @@ end
 refresh = function(is_auto)
   if is_auto then
     local e = entry_at_cursor()
-    if e then cursor_mem[cwd] = e.name end
+    remember_entry(e)
   end
   git_status_dirty = true
   render()
@@ -750,7 +971,7 @@ local function toggle_select_at_cursor(step)
   else
     selection[entry.path] = true
   end
-  cursor_mem[cwd] = entry.name
+  remember_entry(entry)
   render()
   if win and vim.api.nvim_win_is_valid(win) then
     local row = vim.api.nvim_win_get_cursor(win)[1]
@@ -821,6 +1042,7 @@ local function create()
       end
     end
     cursor_mem[cwd] = name:match('^([^/]+)') or name
+    tree_cursor_mem[cwd] = join_path(cwd, name)
     git_status_dirty = true
     render()
     refocus_panel()
@@ -837,7 +1059,8 @@ local function rename()
   local entry = list[1]
   input_modal('リネーム', entry.name, function(input)
     if not input or input == '' or input == entry.name then return end
-    local new_path = join_path(cwd, input)
+    local parent_dir = vim.fn.fnamemodify(entry.path, ':h')
+    local new_path = join_path(parent_dir, input)
     if vim.fn.filereadable(new_path) == 1 or vim.fn.isdirectory(new_path) == 1 then
       vim.notify('既に存在します: ' .. input, vim.log.levels.ERROR)
       return
@@ -853,7 +1076,12 @@ local function rename()
       vim.api.nvim_buf_set_name(bufnr, new_path)
       vim.api.nvim_buf_call(bufnr, function() vim.cmd('silent! write!') end)
     end
-    cursor_mem[cwd] = input
+    cursor_mem[cwd] = parent_dir == cwd and input or (top_child_name(new_path) or input)
+    tree_cursor_mem[cwd] = new_path
+    if entry.isdir and tree_expanded[entry.path] then
+      tree_expanded[entry.path] = nil
+      tree_expanded[new_path] = true
+    end
     git_status_dirty = true
     render()
     refocus_panel()
@@ -1299,8 +1527,18 @@ local function open(fullscreen)
         pcall(vim.api.nvim_win_set_cursor, win, { min_row, pos[2] })
       end
       local entry = entry_at_cursor()
-      if entry then cursor_mem[cwd] = entry.name end
+      remember_entry(entry)
       render_preview()
+    end,
+  })
+
+  vim.api.nvim_create_autocmd('WinEnter', {
+    group = augrp,
+    callback = function()
+      local current = vim.api.nvim_get_current_win()
+      if require('config.util.win_util').is_editor(current) then
+        origin_win = current
+      end
     end,
   })
 
@@ -1314,6 +1552,10 @@ local function open(fullscreen)
   map('h',       go_parent)
   map('<Left>',  go_parent)
   map('.',       toggle_hidden)
+  map('t',       toggle_view_mode)
+  map('F',       reveal_current_file)
+  map('E',       expand_all_tree_nodes)
+  map('W',       collapse_all_tree_nodes)
   map('R',       function() refresh() end)
   map('<Tab>',   function() toggle_select_at_cursor(1) end)
   map('<S-Tab>', function() toggle_select_at_cursor(-1) end)
@@ -1387,6 +1629,7 @@ local function setup_hl()
   vim.api.nvim_set_hl(0, 'ExplorerHeader',     { fg = '#7aa2f7', bold = true })
   vim.api.nvim_set_hl(0, 'ExplorerDir',        { fg = '#7aa2f7' })
   vim.api.nvim_set_hl(0, 'ExplorerFile',       { fg = '#c0caf5' })
+  vim.api.nvim_set_hl(0, 'ExplorerTreeArrow',  { fg = '#626262' })
   vim.api.nvim_set_hl(0, 'ExplorerSelected',   { fg = '#e0af68', bg = '#e0af68' })
   vim.api.nvim_set_hl(0, 'ExplorerCut',        { fg = '#565f89', italic = true })
   vim.api.nvim_set_hl(0, 'ExplorerConfirmBg',     { bg = 'NONE', fg = '#f7768e', bold = true })
