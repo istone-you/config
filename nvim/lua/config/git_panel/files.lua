@@ -157,6 +157,10 @@ end
 -- アイコン定義は config.util.file_icons に集約（explorer/git_panel/tabline で共有）
 local file_icons = require('config.util.file_icons')
 local function get_icon(name, is_dir, path) return file_icons.get(name, is_dir, path) end
+local function icon_char(code) return file_icons.char(code) end
+local FOLDER_OPEN_ICON = 0xe5fe -- explorer.lua / nvim-tree.lua default folder.open: ""
+local TREE_ARROW_CLOSED = ''
+local TREE_ARROW_OPEN = ''
 
 -- ══════════════════════════════════════════════
 -- 描画
@@ -275,11 +279,12 @@ local function render()
     local indent = string.rep('  ', depth)
     local status_str
     if node.is_dir then
-      status_str = collapsed[node.path] and '▶' or '▼'
+      status_str = collapsed[node.path] and TREE_ARROW_CLOSED or TREE_ARROW_OPEN
     else
       status_str = node.file.x .. node.file.y
     end
-    local icon = get_icon(display_name, node.is_dir, node.path)
+    local icon = node.is_dir and not collapsed[node.path]
+      and icon_char(FOLDER_OPEN_ICON) or get_icon(display_name, node.is_dir, node.path)
     -- yazi の marker_symbol("│") 相当: 選択行は左端に色付きバー、文字色は変えない
     local marker = selection[node.path] and '│' or ' '
     local status_prefix = marker .. ' ' .. indent
@@ -291,9 +296,7 @@ local function render()
 
     local status_base = #status_prefix
     if node.is_dir then
-      if name_color then
-        table.insert(hl_queue, { #lines - 1, name_color, status_base, status_base + #status_str })
-      end
+      table.insert(hl_queue, { #lines - 1, 'GitPanelTreeArrow', status_base, status_base + #status_str })
     elseif conflicted then
       table.insert(hl_queue, { #lines - 1, 'GitPanelConflict', status_base, status_base + #status_str })
     else

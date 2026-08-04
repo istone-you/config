@@ -1368,6 +1368,7 @@ local function setup_hl()
   vim.api.nvim_set_hl(0, 'GitPanelDeleted',      { fg = '#f7768e' })
   vim.api.nvim_set_hl(0, 'GitPanelStatusStaged',   { fg = '#9ece6a' })
   vim.api.nvim_set_hl(0, 'GitPanelStatusUnstaged', { fg = '#f7768e' })
+  vim.api.nvim_set_hl(0, 'GitPanelTreeArrow',       { fg = '#626262' })
   vim.api.nvim_set_hl(0, 'GitPanelRenamed',      { fg = '#2ac3de' })
   -- 衝突（VSCode の Source Control と同じく赤・太字で最優先に見せる）
   vim.api.nvim_set_hl(0, 'GitPanelConflict',     { fg = '#f7768e', bold = true })
