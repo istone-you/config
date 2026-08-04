@@ -512,6 +512,72 @@ T.describe('explorer', function()
     T.rmrf(xdg)
   end)
 
+  T.it('X deletes all empty directories under the current folder, including nested ones, after confirmation', function()
+    local res = run_child([[
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir .. '/empty_parent/empty_child', 'p')
+      vim.fn.mkdir(dir .. '/nonempty/empty_grandchild', 'p')
+      vim.fn.writefile({ 'x' }, dir .. '/nonempty/file.txt')
+      vim.fn.mkdir(dir .. '/link_target', 'p')
+      vim.uv.fs_symlink('link_target', dir .. '/dir_link')
+      for i = 1, 14 do
+        vim.fn.mkdir(string.format('%s/many/e%02d', dir, i), 'p')
+      end
+
+      vim.fn.chdir(dir)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+
+      feed('X')
+      local confirm_title = ''
+      local confirm_footer = ''
+      local function confirm_lines()
+        for _, w in ipairs(vim.api.nvim_list_wins()) do
+          local cfg = vim.api.nvim_win_get_config(w)
+          if cfg.relative ~= '' then
+            local title = ''
+            if cfg.title then
+              for _, chunk in ipairs(cfg.title) do title = title .. chunk[1] end
+            end
+            if title:find('確認', 1, true) then
+              confirm_title = title
+              if cfg.footer then
+                for _, chunk in ipairs(cfg.footer) do confirm_footer = confirm_footer .. chunk[1] end
+              end
+              return vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(w), 0, -1, false)
+            end
+          end
+        end
+      end
+      assert_eq(vim.wait(3000, function() return confirm_lines() ~= nil end, 20), true, 'confirmation appears after async scan')
+      local confirm_text = table.concat(confirm_lines(), '\n')
+      assert_eq(confirm_text:find('空ディレクトリ', 1, true) ~= nil, true, 'confirmation shows target count')
+      assert_eq(confirm_text:find('empty_parent/empty_child', 1, true) ~= nil, true, 'confirmation lists nested target')
+      assert_eq(confirm_text:find('nonempty/empty_grandchild', 1, true) ~= nil, true, 'confirmation lists grandchild target')
+      assert_eq(confirm_text:find('many/e14', 1, true) ~= nil, true, 'confirmation lists every target without truncating')
+      assert_eq(confirm_text:find('他', 1, true), nil, 'confirmation should not hide targets behind "other N"')
+      assert_eq(confirm_text:find('スクロール', 1, true), nil, 'confirmation body should not add an instruction line')
+      assert_eq(confirm_footer:find('↓', 1, true) ~= nil, true, 'confirmation footer shows that more lines continue')
+      assert_eq(confirm_footer:find('/', 1, true) ~= nil, true, 'confirmation footer shows the visible range')
+      assert_eq(confirm_title:find('確認', 1, true) ~= nil, true, 'confirmation title stays compact')
+      assert_eq(vim.b[vim.api.nvim_get_current_buf()].hide_cursor, true, 'confirmation popup hides the cursor')
+      feed('y')
+      vim.wait(160)
+
+      assert_eq(vim.fn.isdirectory(dir .. '/empty_parent/empty_child'), 0, 'nested empty child is deleted')
+      assert_eq(vim.fn.isdirectory(dir .. '/empty_parent'), 0, 'parent that became empty is deleted too')
+      assert_eq(vim.fn.isdirectory(dir .. '/nonempty/empty_grandchild'), 0, 'empty grandchild under nonempty dir is deleted')
+      assert_eq(vim.fn.isdirectory(dir .. '/many/e14'), 0, 'all listed empty dirs are deleted')
+      assert_eq(vim.fn.isdirectory(dir .. '/nonempty'), 1, 'nonempty dir remains')
+      assert_eq(vim.fn.filereadable(dir .. '/nonempty/file.txt'), 1, 'files are not removed')
+      assert_eq(vim.uv.fs_lstat(dir .. '/dir_link').type, 'link', 'directory symlinks are not traversed or removed')
+    ]])
+    T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
+  end)
+
   T.it('Tab/Ctrl-y/x/p: copy-paste and cut-paste move files between directories', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir .. '/dest', 'p')

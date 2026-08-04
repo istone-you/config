@@ -1088,14 +1088,15 @@ local function rename()
   end)
 end
 
-local function confirm(message, on_result)
+local function confirm(message, on_result, opts)
+  opts = opts or {}
   local lines = vim.split(message, '\n', { plain = true })
   local width = 10
   for _, l in ipairs(lines) do
     width = math.max(width, vim.fn.strdisplaywidth(l))
   end
   width = math.min(width + 4, math.floor(vim.o.columns * 0.8))
-  local height = #lines
+  local height = math.min(#lines, opts.max_height or #lines)
   local col = math.floor((vim.o.columns - width) / 2)
   local row = math.floor((vim.o.lines - height) / 2) - 1
 
@@ -1104,6 +1105,7 @@ local function confirm(message, on_result)
   vim.bo[cbuf].bufhidden = 'wipe'
   vim.api.nvim_buf_set_lines(cbuf, 0, -1, false, lines)
   vim.bo[cbuf].modifiable = false
+  require('config.hidden_cursor').mark_buffer(cbuf)
 
   local cwin = vim.api.nvim_open_win(cbuf, true, {
     relative = 'editor',
@@ -1117,6 +1119,35 @@ local function confirm(message, on_result)
     title_pos = 'center',
   })
   vim.wo[cwin].winhighlight = 'Normal:ExplorerConfirmBg,FloatBorder:ExplorerConfirmBorder'
+  vim.wo[cwin].wrap = false
+  local scrollable = #lines > height
+  local function update_confirm_title()
+    if not vim.api.nvim_win_is_valid(cwin) then return end
+    if not scrollable then
+      vim.api.nvim_win_set_config(cwin, { title = ' 確認 (y/N) ', title_pos = 'center' })
+      return
+    end
+    local top = vim.fn.line('w0', cwin)
+    local bottom = math.min(top + height - 1, #lines)
+    local marker
+    if top > 1 and bottom < #lines then
+      marker = string.format(' ↑↓ %d-%d/%d ', top, bottom, #lines)
+    elseif bottom < #lines then
+      marker = string.format(' ↓ %d-%d/%d ', top, bottom, #lines)
+    else
+      marker = string.format(' ↑ %d-%d/%d ', top, bottom, #lines)
+    end
+    vim.api.nvim_win_set_config(cwin, {
+      title = ' 確認 (y/N) ',
+      title_pos = 'center',
+      footer = marker,
+      footer_pos = 'right',
+    })
+  end
+  if scrollable then
+    vim.wo[cwin].cursorline = true
+  end
+  update_confirm_title()
 
   local done = false
   local function finish(result)
@@ -1130,6 +1161,12 @@ local function confirm(message, on_result)
   local function map(key, result)
     vim.keymap.set('n', key, function() finish(result) end, { buffer = cbuf, nowait = true, silent = true })
   end
+  local function scroll(key, normal)
+    vim.keymap.set('n', key, function()
+      vim.cmd('normal! ' .. normal)
+      update_confirm_title()
+    end, { buffer = cbuf, nowait = true, silent = true })
+  end
   map('y', true)
   map('Y', true)
   map('<CR>', true)
@@ -1137,6 +1174,14 @@ local function confirm(message, on_result)
   map('N', false)
   map('q', false)
   map('<Esc>', false)
+  if scrollable then
+    scroll('j', 'j')
+    scroll('k', 'k')
+    scroll('<C-d>', '\004')
+    scroll('<C-u>', '\021')
+    scroll('G', 'G')
+    scroll('gg', 'gg')
+  end
 end
 
 --- FreeDesktop Trash仕様（XDG）に従ってゴミ箱へ移す。外部CLI不要。
@@ -1229,6 +1274,131 @@ end
 
 local function delete_permanent()
   delete_targets(true)
+end
+
+local empty_dir_scan_running = false
+
+local function start_empty_dir_scan(root, on_done)
+  vim.system({
+    'fd', '--hidden', '--exclude', '.git', '--absolute-path', '--print0',
+    '--type', 'directory', '--type', 'empty', '.', root,
+  }, { text = false }, function(res)
+    vim.schedule(function()
+      empty_dir_scan_running = false
+      if res.code ~= 0 then
+        vim.notify('fdによる空ディレクトリ検索に失敗しました', vim.log.levels.ERROR)
+        return
+      end
+
+      local delete_set = {}
+      local dirs = {}
+      for raw in (res.stdout or ''):gmatch('[^%z]+') do
+        local path = vim.fn.fnamemodify(raw, ':p'):gsub('/$', '')
+        if path ~= root and is_under_dir(path, root) and not delete_set[path] then
+          delete_set[path] = true
+          table.insert(dirs, path)
+        end
+      end
+
+      local function effectively_empty(dir)
+        local ok, names = pcall(vim.fn.readdir, dir)
+        if not ok then return false end
+        for _, name in ipairs(names) do
+          local child = join_path(dir, name)
+          local st = vim.uv.fs_lstat(child)
+          if not (st and st.type == 'directory' and delete_set[child]) then
+            return false
+          end
+        end
+        return true
+      end
+
+      table.sort(dirs, function(a, b) return #a > #b end)
+      local i = 1
+      while i <= #dirs do
+        local parent = vim.fn.fnamemodify(dirs[i], ':h')
+        while parent ~= root and is_under_dir(parent, root) and not delete_set[parent] and effectively_empty(parent) do
+          delete_set[parent] = true
+          table.insert(dirs, parent)
+          parent = vim.fn.fnamemodify(parent, ':h')
+        end
+        i = i + 1
+      end
+
+      table.sort(dirs, function(a, b)
+        if #a ~= #b then return #a > #b end
+        return a < b
+      end)
+      on_done(dirs)
+    end)
+  end)
+end
+
+local function relative_to_dir(path, dir)
+  if dir == '/' then return path:sub(2) end
+  if path:sub(1, #dir + 1) == dir .. '/' then return path:sub(#dir + 2) end
+  return path
+end
+
+local function confirm_delete_empty_dirs(root, dirs)
+  table.sort(dirs, function(a, b)
+    if #a ~= #b then return #a > #b end
+    return a < b
+  end)
+
+  local labels = {}
+  for _, path in ipairs(dirs) do
+    table.insert(labels, relative_to_dir(path, root))
+  end
+  local message = string.format('空ディレクトリ%d件を完全削除しますか？\n%s', #dirs, table.concat(labels, '\n'))
+
+  confirm(message, function(ok)
+    if not ok then return end
+    local failed = 0
+    for _, path in ipairs(dirs) do
+      if vim.fn.isdirectory(path) == 1 then
+        local removed = vim.uv.fs_rmdir(path)
+        if not removed and vim.fn.isdirectory(path) == 1 then
+          failed = failed + 1
+        end
+      end
+      selection[path] = nil
+      tree_expanded[path] = nil
+    end
+    git_status_dirty = true
+    render()
+    refocus_panel()
+    if failed > 0 then
+      vim.notify(string.format('%d件の空ディレクトリ削除に失敗しました', failed), vim.log.levels.WARN)
+    end
+  end, { max_height = math.max(8, vim.o.lines - 8) })
+end
+
+local function delete_empty_dirs()
+  if vim.fn.executable('fd') == 0 then
+    vim.notify('fd が見つかりません', vim.log.levels.ERROR)
+    return
+  end
+  if empty_dir_scan_running then
+    vim.notify('空ディレクトリを検索中です', vim.log.levels.INFO)
+    return
+  end
+  empty_dir_scan_running = true
+  local scan_root = cwd
+
+  start_empty_dir_scan(scan_root, function(dirs)
+    if not (win and vim.api.nvim_win_is_valid(win)) then return end
+    if cwd ~= scan_root then
+      vim.notify('検索中にフォルダが変わったため中止しました', vim.log.levels.WARN)
+      return
+    end
+    if #dirs == 0 then
+      vim.notify('空ディレクトリはありません', vim.log.levels.INFO)
+      return
+    end
+
+    confirm_delete_empty_dirs(scan_root, dirs)
+  end)
 end
 
 local function copy_selection()
@@ -1567,6 +1737,7 @@ local function open(fullscreen)
   map('r',       rename)
   map('d',       trash)
   map('D',       delete_permanent)
+  map('X',       delete_empty_dirs)
   map('<C-y>',   copy_selection)
   map('<C-x>',   cut_selection)
   map('<C-p>',   function() paste(false) end)

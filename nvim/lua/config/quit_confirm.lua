@@ -8,6 +8,7 @@
 local M = {}
 
 local win_util = require('config.util.win_util')
+local hidden_cursor = require('config.hidden_cursor')
 
 -- 現在のウィンドウを閉じたら Neovim 自体が終了するか。
 -- = 現在の窓以外に実編集ウィンドウが1つも無い（かつタブが1つ）。
@@ -45,6 +46,7 @@ local function popup(lines, mappings)
   vim.bo[buf].bufhidden = 'wipe'
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
+  hidden_cursor.mark_buffer(buf)
 
   local win = vim.api.nvim_open_win(buf, true, {
     relative = 'editor',
