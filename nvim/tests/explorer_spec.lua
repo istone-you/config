@@ -118,7 +118,7 @@ T.describe('explorer', function()
     T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
   end)
 
-  T.it('shows a symlink as "name -> target" (yazi風) with its own highlight', function()
+  T.it('shows a symlink as "name -> target" with its own highlight', function()
     local res = run_child([[
       local dir = vim.fn.tempname()
       vim.fn.mkdir(dir .. '/real', 'p')
@@ -295,7 +295,7 @@ T.describe('explorer', function()
     T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
   end)
 
-  T.it('t toggles between yazi list and collapsible tree view', function()
+  T.it('t toggles between list and collapsible tree view', function()
     local res = run_child([[
       local dir = vim.fn.tempname()
       vim.fn.mkdir(dir .. '/alpha/deep', 'p')
@@ -310,7 +310,7 @@ T.describe('explorer', function()
       vim.api.nvim_set_current_win(win)
 
       local function text() return table.concat(lines(win), '\n') end
-      assert_eq(lines(win)[1]:find('[yazi]', 1, true) ~= nil, true, 'starts in yazi/list mode')
+      assert_eq(lines(win)[1]:find('[list]', 1, true) ~= nil, true, 'starts in list mode')
       assert_eq(text():find('inner.txt', 1, true), nil, 'list mode only shows the current dir')
 
       feed('t')
@@ -363,12 +363,12 @@ T.describe('explorer', function()
 
       feed('t')
       vim.wait(80)
-      assert_eq(lines(win)[1]:find('[yazi]', 1, true) ~= nil, true, 'switches back to yazi/list mode')
+      assert_eq(lines(win)[1]:find('[list]', 1, true) ~= nil, true, 'switches back to list mode')
     ]])
     T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
   end)
 
-  T.it('F reveals the current editor file in both yazi list and tree views', function()
+  T.it('F reveals the current editor file in both list and tree views', function()
     local res = run_child([[
       local dir = vim.fn.tempname()
       vim.fn.mkdir(dir .. '/alpha/deep', 'p')
@@ -384,10 +384,10 @@ T.describe('explorer', function()
 
       feed('F')
       vim.wait(80)
-      assert_eq(lines(win)[1]:find('alpha/deep', 1, true) ~= nil, true, 'yazi reveal moves cwd to file parent')
+      assert_eq(lines(win)[1]:find('alpha/deep', 1, true) ~= nil, true, 'list reveal moves cwd to file parent')
       local cursor_row = vim.api.nvim_win_get_cursor(win)[1]
       local cursor_line = lines(win)[cursor_row] or ''
-      assert_eq(cursor_line:find('nested.txt', 1, true) ~= nil, true, 'yazi reveal places cursor on current file')
+      assert_eq(cursor_line:find('nested.txt', 1, true) ~= nil, true, 'list reveal places cursor on current file')
 
       feed('h')
       vim.wait(60)

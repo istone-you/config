@@ -115,14 +115,14 @@ T.describe('browser_markdown_preview.lua: markdown/html rendering', function()
     local body = P.markdown_to_body({
       '| ツール | 設定ファイル |',
       '|--------|------------|',
-      '| lazygit | `.devcontainer/.config/lazygit/config.yaml` |',
-      '| yazi | `.devcontainer/.config/yazi/yazi.toml` |',
+      '| delta | `.devcontainer/.config/delta/config.yaml` |',
+      '| ripgrep | `.devcontainer/.config/ripgrep/config.toml` |',
     })
     T.contains(body, '<table>')
     T.contains(body, '<th>ツール</th>')
     T.contains(body, '<th>設定ファイル</th>')
-    T.contains(body, '<td>lazygit</td>')
-    T.contains(body, '<td><code>.devcontainer/.config/lazygit/config.yaml</code></td>')
+    T.contains(body, '<td>delta</td>')
+    T.contains(body, '<td><code>.devcontainer/.config/delta/config.yaml</code></td>')
   end)
 
 end)

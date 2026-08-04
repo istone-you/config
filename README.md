@@ -27,14 +27,14 @@ Neovim 等の設定ファイル群。
 
 | 機能 | 説明 | 主なキー |
 |---|---|---|
-| `explorer` | yazi 風のファイルエクスプローラ（右パネル・単一カラム）。作成 / リネーム / 削除 / コピー / 再帰検索など | `Space e` |
+| `explorer` | ファイルエクスプローラ（右パネル・単一カラム）。作成 / リネーム / 削除 / コピー / 再帰検索など | `Space e` |
 | `rg_fzf` | rg + fzf による全ファイル文字列検索 / ファイル名検索 / 置換 | `Space /`、`Space *` |
 
 ### Git
 
 | 機能 | 説明 | 主なキー |
 |---|---|---|
-| `git_panel` | lazygit 風の git 管理パネル（中央ポップアップ）。Files / Commits / Branches / Stash / Worktree / PR を切替 | `Space g` |
+| `git_panel` | git 管理パネル（中央ポップアップ）。Files / Commits / Branches / Stash / Worktree / PR を切替 | `Space g` |
 | `git_blame` | GitLens 風のインライン git blame 表示 | — |
 | `git_gutter` | VSCode 風にエディタ余白（ガター）へ git 差分を表示 | — |
 | `git_conflict` | VSCode 風のコンフリクト解消。衝突ブロックを色分けし、現在 / 入力側 / 両方を採用（ファイル全体も可）・衝突間の移動・左右 diff 比較。pull で衝突したら git パネルが Files へ切り替わり `m` で解消メニュー | `Space x c` / `]x` |

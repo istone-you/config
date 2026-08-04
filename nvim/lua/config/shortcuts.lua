@@ -176,8 +176,8 @@ local SECTIONS = {
     { 'h / ←',           '親ディレクトリへ（元の位置にカーソル復帰）' },
     { 'Enter',           'ディレクトリへ入る / ファイルを開く' },
     { '.',               '隠しファイルの表示トグル' },
-    { 't',               'yazi風リスト / 折りたたみツリー表示を切替' },
-    { 'F',               '現在エディタで開いているファイルへ移動（yazi/tree両対応）' },
+    { 't',               'リスト表示 / 折りたたみツリー表示を切替' },
+    { 'F',               '現在エディタで開いているファイルへ移動（リスト / ツリー両対応）' },
     { 'E / W',           'ツリー表示: すべて展開 / すべて閉じる' },
     { 'R',               '一覧を再読み込み' },
     { 'Tab / S-Tab',     '選択トグル（複数選択可）＋1つ下/上へ' },
@@ -432,7 +432,6 @@ local function setup_hl()
   vim.api.nvim_set_hl(0, 'ShortcutsText',         { bg = '#3b2d36', fg = '#f7768e', bold = true })
   vim.api.nvim_set_hl(0, 'ShortcutsMacro',        { bg = '#2d2d3b', fg = '#9d7cd8', bold = true })
   vim.api.nvim_set_hl(0, 'ShortcutsMisc',         { bg = '#2d2d2d', fg = '#a9b1d6', bold = true })
-  vim.api.nvim_set_hl(0, 'ShortcutsYazi',         { bg = '#2d3b30', fg = '#73daca', bold = true })
   vim.api.nvim_set_hl(0, 'ShortcutsGit',          { bg = '#3b2d28', fg = '#ff9e64', bold = true })
   vim.api.nvim_set_hl(0, 'ShortcutsHerdr',        { bg = '#2d2d3b', fg = '#cba6f7', bold = true })
 end

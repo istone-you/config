@@ -59,7 +59,7 @@ end)
 --- git_cmd_obj_runner.go)と同じ対応=①全コマンドにGIT_OPTIONAL_LOCKS=0を付けて
 --- 読み取り専用コマンドがそもそもロックを取らないようにする、②それでも競合する
 --- 書き込みコマンドはindex.lockエラーを指数バックオフで再試行、の2本立てで直した
-T.describe('git_panel.git M.run lock handling (lazygit git_cmd_obj_runner.go相当)', function()
+T.describe('git_panel.git M.run lock handling', function()
   T.it('a read-only command succeeds immediately even while .git/index.lock exists (GIT_OPTIONAL_LOCKS=0)', function()
     local dir = T.tmp_git_repo()
     T.write_file(dir .. '/.git/index.lock', {}) -- 他プロセスが握っている体を模倣

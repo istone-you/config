@@ -28,7 +28,8 @@ T.describe('git_panel Files panel', function()
     T.rmrf(dir)
   end)
 
-  T.it('a directory node shows a combined git diff of everything under it (lazygit files_controller.go GetOnRenderToMain), not a "N files" placeholder', function()
+  -- 実装は lazygit(files_controller.go GetOnRenderToMain -> renderWorkingTreeDiff)を参考にしている
+  T.it('a directory node shows a combined git diff of everything under it, not a "N files" placeholder', function()
     local dir = T.tmp_git_repo(function(d)
       T.write_file(d .. '/sub/a.txt', { 'a' })
       T.write_file(d .. '/sub/b.txt', { 'b' })
@@ -83,7 +84,8 @@ T.describe('git_panel Files panel', function()
     T.rmrf(dir)
   end)
 
-  T.it('compresses a chain of single-directory-child dirs into one "a/b/c" line (lazygit filetree/node.go compressAux)', function()
+  -- 実装は lazygit(pkg/gui/filetree/node.go compressAux)を参考にしている
+  T.it('compresses a chain of single-directory-child dirs into one "a/b/c" line', function()
     local dir = T.tmp_git_repo(function(d)
       T.write_file(d .. '/a/b/c/deep.txt', { 'x' })
       T.write_file(d .. '/onlyfile/single.txt', { 'y' })
@@ -405,7 +407,9 @@ T.describe('git_panel Files panel', function()
     T.rmrf(dir)
   end)
 
-  T.it('Space on / stages the other files even when a staged deletion is present (lazygit toggleStaged: stage only unstaged nodes; `git add` on a deleted path would otherwise abort the whole batch)', function()
+  -- 未ステージのノードだけをstageする（lazygit toggleStagedを参考）。削除済みパスへの
+  -- `git add` はバッチ全体を中断させてしまうため、この分け方が必要
+  T.it('Space on / stages the other files even when a staged deletion is present', function()
     -- 回帰テスト: 以前は配下の全パスをまとめて`git add -- <all>`していたため、
     -- ステージ済み削除(working treeに存在しない)が1つでも混ざると
     -- `fatal: pathspec did not match any files`でコマンド全体が失敗し、
@@ -430,7 +434,9 @@ T.describe('git_panel Files panel', function()
     T.rmrf(dir)
   end)
 
-  T.it('Space on a directory unstages everything under it INCLUDING a staged deletion (lazygit pressWithLock: unstage a dir via `git reset HEAD -- <dir>`, not by enumerating displayed rows)', function()
+  -- ディレクトリのアンステージは表示行を列挙せず `git reset HEAD -- <dir>` を1回投げる
+  -- （lazygit pressWithLock を参考）
+  T.it('Space on a directory unstages everything under it INCLUDING a staged deletion', function()
     -- 回帰テスト: 以前は表示ツリーのファイル行を列挙して個別にreset/rmしていたため、
     -- 何らかの理由でツリーに出ていないステージ済み削除が取りこぼされ
     -- 「親ディレクトリをSpaceしてもDだけアンステージされない」状態になっていた。

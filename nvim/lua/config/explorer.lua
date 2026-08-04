@@ -1,4 +1,4 @@
--- yazi風explorer（右パネル・単一カラム・プラグイン不使用・自作）
+-- explorer（右パネル・単一カラムのファイラ・プラグイン不使用・自作）
 
 local M = {}
 
@@ -13,7 +13,7 @@ local selection = {}
 local clipboard = nil
 local show_hidden = true
 local filter = ''
-local view_mode = 'list' -- 'list': yazi風 / 'tree': gitパネル風の折りたたみツリー
+local view_mode = 'list' -- 'list': 単一カラムのリスト / 'tree': 折りたたみツリー
 local tree_expanded = {} -- [path] = true
 
 -- 全画面表示(:Explorer!)の時だけ有効になるプレビューパネル。通常のサイドパネル表示は
@@ -278,7 +278,7 @@ function render()
     table.insert(hl_queue, { lnum, group, cs or 0, ce or -1 })
   end
 
-  local mode_label = view_mode == 'tree' and 'tree' or 'yazi'
+  local mode_label = view_mode == 'tree' and 'tree' or 'list'
   table.insert(lines, ' ' .. icon_char(FOLDER_ICON) .. ' ' .. build_display_path(cwd) .. '  [' .. mode_label .. ']' .. status_text())
   hl(0, 'ExplorerHeader')
   table.insert(lines, '')
