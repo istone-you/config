@@ -22,6 +22,20 @@ function M.enable_if_available(names)
   end
 end
 
+--- lua_ls の workspace.library に渡す Neovim ランタイムのパス。
+--- 全 runtimepath を舐めると重いので、`vim` API の定義がある VIMRUNTIME と
+--- 自作モジュール（config.*）が入っている設定側の lua ディレクトリだけに絞る。
+---@return string[]
+function M.nvim_runtime_library()
+  local paths = {}
+  local runtime = vim.env.VIMRUNTIME
+  if type(runtime) == 'string' and runtime ~= '' then
+    table.insert(paths, runtime .. '/lua')
+  end
+  table.insert(paths, vim.fn.stdpath('config') .. '/lua')
+  return paths
+end
+
 --- JSONC（VS Code settings.json）からコメントを除去する
 ---@param text string
 ---@return string

@@ -96,10 +96,33 @@ vim.lsp.config('bashls', {
   root_markers = { '.git' },
 })
 
+-- Lua:
+-- この設定リポジトリ自体が主な対象なので、Neovim ランタイムをライブラリに入れて
+-- `vim` グローバルと vim.* API を解決できるようにする。
+-- フォーマッタは無効。ここの Lua は `=` を手で桁揃えしているスタイルで、
+-- lua-language-server の整形はそれを崩すため（有効にしたいときは format.enable = true）。
+vim.lsp.config('lua_ls', {
+  cmd          = { 'lua-language-server' },
+  filetypes    = { 'lua' },
+  root_markers = { '.luarc.json', '.luarc.jsonc', 'stylua.toml', '.stylua.toml', '.git' },
+  settings     = {
+    Lua = {
+      runtime     = { version = 'LuaJIT' },
+      diagnostics = { globals = { 'vim' } },
+      workspace   = {
+        library         = util.nvim_runtime_library(),
+        checkThirdParty = false,
+      },
+      format      = { enable = false },
+      telemetry   = { enable = false },
+    },
+  },
+})
+
 local tf_server = util.has_cmd('tofu-ls') and 'tofu_ls'
   or (util.has_cmd('terraform-ls') and 'terraformls' or nil)
 
-local to_enable = { 'gopls', 'ts_ls', 'taplo', 'yamlls', 'biome', 'bashls' }
+local to_enable = { 'gopls', 'ts_ls', 'taplo', 'yamlls', 'biome', 'bashls', 'lua_ls' }
 if tf_server then
   table.insert(to_enable, tf_server)
 end

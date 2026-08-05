@@ -6,7 +6,7 @@ local T = dofile(TESTS_DIR .. '/helpers.lua')
 require('config.lsp')
 
 T.describe('lsp.lua: server config registration', function()
-  T.it('registers gopls/ts_ls/tofu_ls/terraformls/taplo/yamlls/biome/bashls with the right cmd/filetypes/root_markers', function()
+  T.it('registers gopls/ts_ls/tofu_ls/terraformls/taplo/yamlls/biome/bashls/lua_ls with the right cmd/filetypes/root_markers', function()
     local gopls = vim.lsp.config.gopls
     T.eq(gopls.cmd, { 'gopls' })
     T.contains(table.concat(gopls.filetypes, ','), 'go')
@@ -43,6 +43,21 @@ T.describe('lsp.lua: server config registration', function()
     T.contains(table.concat(bashls.filetypes, ','), 'sh')
     T.contains(table.concat(bashls.filetypes, ','), 'bash')
     T.contains(table.concat(bashls.root_markers, ','), '.git')
+
+    local lua_ls = vim.lsp.config.lua_ls
+    T.eq(lua_ls.cmd, { 'lua-language-server' })
+    T.eq(lua_ls.filetypes, { 'lua' })
+    T.contains(table.concat(lua_ls.root_markers, ','), '.luarc.json')
+    T.eq(lua_ls.settings.Lua.runtime.version, 'LuaJIT')
+    T.eq(lua_ls.settings.Lua.diagnostics.globals, { 'vim' })
+    T.eq(lua_ls.settings.Lua.format.enable, false, 'lua_ls の整形は桁揃えを崩すので無効')
+  end)
+
+  T.it('points lua_ls workspace.library at VIMRUNTIME and the config lua dir', function()
+    local library = vim.lsp.config.lua_ls.settings.Lua.workspace.library
+    local joined = table.concat(library, ',')
+    T.contains(joined, vim.env.VIMRUNTIME .. '/lua')
+    T.contains(joined, vim.fn.stdpath('config') .. '/lua')
   end)
 end)
 
@@ -85,6 +100,7 @@ T.describe('lsp.lua: format-on-save filter', function()
     T.eq(captured_filter({ name = 'biome' }), true)
     T.eq(captured_filter({ name = 'bashls' }), true)
     T.eq(captured_filter({ name = 'ts_ls' }), false, 'ts_ls should not be auto-formatted on save')
+    T.eq(captured_filter({ name = 'lua_ls' }), false, 'lua_ls should not be auto-formatted on save')
   end)
 end)
 
@@ -102,7 +118,7 @@ T.describe('lsp.lua: enable only when binary exists', function()
     end
   end)
 
-  T.it('enables gopls/ts_ls/taplo/yamlls/biome/bashls only when their binaries exist', function()
+  T.it('enables gopls/ts_ls/taplo/yamlls/biome/bashls/lua_ls only when their binaries exist', function()
     local pairs_ = {
       { 'gopls', 'gopls' },
       { 'ts_ls', 'typescript-language-server' },
@@ -110,6 +126,7 @@ T.describe('lsp.lua: enable only when binary exists', function()
       { 'yamlls', 'yaml-language-server' },
       { 'biome', 'biome' },
       { 'bashls', 'bash-language-server' },
+      { 'lua_ls', 'lua-language-server' },
     }
     for _, p in ipairs(pairs_) do
       local name, bin = p[1], p[2]
