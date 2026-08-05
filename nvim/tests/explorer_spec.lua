@@ -118,6 +118,43 @@ T.describe('explorer', function()
     T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
   end)
 
+  T.it('o launches the browser preview for HTML/Markdown and warns otherwise', function()
+    local res = run_child([[
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir, 'p')
+      vim.fn.writefile({ '# Title' }, dir .. '/doc.md')
+      vim.fn.writefile({ 'plain' }, dir .. '/note.txt')
+      vim.fn.chdir(dir)
+
+      -- 実サーバ起動/ポート入力/xdg-open を避けるため config.browser をスタブ
+      _G.__preview = 0
+      package.loaded['config.browser'] = { open = function() _G.__preview = _G.__preview + 1 end }
+      local notified = {}
+      vim.notify = function(msg) notified[#notified + 1] = msg end
+
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      local win = list_win()
+
+      -- 非 HTML/Markdown 上の o は起動せず警告のみ（explorer はそのまま）
+      vim.api.nvim_set_current_win(win)
+      vim.api.nvim_win_set_cursor(win, { find_row(win, 'note.txt'), 0 })
+      feed('o')
+      assert_eq(_G.__preview, 0, 'o on .txt must NOT launch preview')
+      local warned = false
+      for _, m in ipairs(notified) do if tostring(m):find('HTML / Markdown', 1, true) then warned = true end end
+      assert_eq(warned, true, 'o on .txt should warn')
+
+      -- Markdown 上の o は preview を起動し、ファイルを origin window に開く
+      vim.api.nvim_set_current_win(win)
+      vim.api.nvim_win_set_cursor(win, { find_row(win, 'doc.md'), 0 })
+      feed('o')
+      assert_eq(_G.__preview, 1, 'o on .md should launch preview')
+      assert_eq(vim.api.nvim_buf_get_name(0):match('doc%.md$') ~= nil, true, 'the .md file should be opened')
+    ]])
+    T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
+  end)
+
   T.it('shows a symlink as "name -> target" with its own highlight', function()
     local res = run_child([[
       local dir = vim.fn.tempname()

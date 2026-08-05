@@ -772,6 +772,23 @@ local function enter_dir()
   render()
 end
 
+-- 一覧UIを畳んでorigin_winへ実バッファとしてファイルを開く。
+-- 全画面時はlist/previewの2枚のfloatが画面全体を覆っているため、それらを
+-- 閉じずにorigin_winへeditしても裏に隠れて何も変わって見えない
+-- (teardown_uiはqallを伴わないので、この場合はnvim自体は終了しない)
+local function open_file_in_origin(path)
+  if is_fullscreen then
+    teardown_ui()
+  else
+    -- サイドバー時: 開いたファイルがプレビュー窓に隠れないよう閉じる
+    close_sidebar_preview()
+  end
+  if origin_win and vim.api.nvim_win_is_valid(origin_win) then
+    vim.api.nvim_set_current_win(origin_win)
+  end
+  vim.cmd('edit ' .. vim.fn.fnameescape(path))
+end
+
 local function open_selected()
   local entry = entry_at_cursor()
   if not entry then return end
@@ -784,20 +801,22 @@ local function open_selected()
     selection = {}
     render()
   else
-    -- 全画面時はlist/previewの2枚のfloatが画面全体を覆っているため、それらを
-    -- 閉じずにorigin_winへeditしても裏に隠れて何も変わって見えない
-    -- (teardown_uiはqallを伴わないので、この場合はnvim自体は終了しない)
-    if is_fullscreen then
-      teardown_ui()
-    else
-      -- サイドバー時: 開いたファイルがプレビュー窓に隠れないよう閉じる
-      close_sidebar_preview()
-    end
-    if origin_win and vim.api.nvim_win_is_valid(origin_win) then
-      vim.api.nvim_set_current_win(origin_win)
-    end
-    vim.cmd('edit ' .. vim.fn.fnameescape(entry.path))
+    open_file_in_origin(entry.path)
   end
+end
+
+-- カーソル上の HTML/Markdown をブラウザプレビューで開く(<leader>o と同じ挙動)。
+-- 一旦 origin_win へ実バッファとして開き、そのバッファを対象に preview を起動する。
+local function preview_selected()
+  local entry = entry_at_cursor()
+  if not entry or entry.isdir then return end
+  local ext = vim.fn.fnamemodify(entry.path, ':e'):lower()
+  if not (ext == 'html' or ext == 'htm' or ext == 'md' or ext == 'markdown') then
+    vim.notify('HTML / Markdown ファイルではありません', vim.log.levels.WARN, { title = 'Browser Preview' })
+    return
+  end
+  open_file_in_origin(entry.path)
+  require('config.browser').open()
 end
 
 local function go_parent()
@@ -1719,6 +1738,7 @@ local function open(fullscreen)
   map('l',       enter_dir)
   map('<Right>', enter_dir)
   map('<CR>',    open_selected)
+  map('o',       preview_selected)
   map('h',       go_parent)
   map('<Left>',  go_parent)
   map('.',       toggle_hidden)
