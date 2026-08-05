@@ -9,6 +9,7 @@
 "aqua:sharkdp/bat"        = "0.26.1"
 "aqua:BurntSushi/ripgrep" = "15.2.0"
 "aqua:dandavison/delta"   = "0.19.2"
+"aqua:docker/cli"         = "29.7.1"
 "aqua:ajeetdsouza/zoxide" = "0.10.0"
 "aqua:neovim/neovim"      = "0.12.4"
 "aqua:ogulcancelik/herdr" = "0.7.4"

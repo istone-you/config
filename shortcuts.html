@@ -390,6 +390,7 @@
       <tr><td><kbd>Ctrl-h</kbd> / <kbd>Ctrl-j</kbd> / <kbd>Ctrl-k</kbd> / <kbd>Ctrl-l</kbd></td><td class="desc">通常: 左 / 下 / 上 / 右のウィンドウへ移動（ターミナルモードは <kbd>Ctrl-h</kbd> / <kbd>Ctrl-j</kbd> のみ）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>e</kbd></td><td class="desc">explorerを開閉（右パネル、詳細は下のセクション）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>g</kbd></td><td class="desc">gitパネルを開閉（自作、詳細は下のセクション）</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>d</kbd></td><td class="desc">dockerパネルを開閉（自作、詳細は下のセクション）</td></tr>
       <tr><td><kbd>Tab</kbd></td><td class="desc">次のバッファへ</td></tr>
       <tr><td><kbd>Shift-Tab</kbd></td><td class="desc">前のバッファへ</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>q</kbd></td><td class="desc">現在のバッファを閉じる（未保存は残す）</td></tr>
@@ -405,7 +406,7 @@
       <tr><td><kbd>Space</kbd> <kbd>f</kbd></td><td class="desc">LSP: フォーマット</td></tr>
       <tr><td><kbd>[d</kbd> / <kbd>]d</kbd></td><td class="desc">LSP: 前/次の診断へ</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>E</kbd></td><td class="desc">LSP: 診断の詳細を表示</td></tr>
-      <tr><td><kbd>Space</kbd> <kbd>d</kbd></td><td class="desc">問題パネルを開閉（全ファイルの診断一覧、詳細は下のセクション）</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>p</kbd></td><td class="desc">問題パネルを開閉（全ファイルの診断一覧、詳細は下のセクション）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>k</kbd></td><td class="desc">LSP: シグネチャヘルプ（引数ヒント）を表示</td></tr>
       <tr><td><kbd>Ctrl-s</kbd></td><td class="desc">LSP: シグネチャヘルプ（インサートモード。<kbd>(</kbd> や <kbd>,</kbd> で自動表示）</td></tr>
       <tr><td class="section-divider" colspan="2">補完メニュー表示中</td></tr>
@@ -436,7 +437,7 @@
   </div>
 
   <div class="section" data-section>
-    <div class="section-header mode-buffer">🩺 問題パネル（<kbd>Space</kbd> <kbd>d</kbd> で開閉）</div>
+    <div class="section-header mode-buffer">🩺 問題パネル（<kbd>Space</kbd> <kbd>p</kbd> で開閉）</div>
     <table>
       <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td class="desc">カーソルを下 / 上へ（ヘッダやファイル見出しは飛ばして診断行だけを移動）</td></tr>
       <tr><td><kbd>Enter</kbd> / <kbd>o</kbd></td><td class="desc">その診断の位置へジャンプ（パネルは開いたまま）</td></tr>
@@ -572,6 +573,35 @@
       <tr><td><kbd>d</kbd></td><td class="desc">詳細 ⇄ diff を切替（diff中は v で side-by-side）</td></tr>
       <tr><td><kbd>c</kbd></td><td class="desc">PRのブランチをcheckout</td></tr>
       <tr><td><kbd>f</kbd></td><td class="desc">フィルタ（既定=作成/レビュー依頼 / 全て / 作者 / 検索）</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-buffer">🐳 dockerパネル（Space d で開閉、1-5/←→/タブクリックでパネル切替）</div>
+    <table>
+      <tr><td><kbd>1</kbd>-<kbd>5</kbd></td><td class="desc">Project / Containers / Images / Volumes / Networks へ切替</td></tr>
+      <tr><td>&larr; / &rarr;</td><td class="desc">前後のパネルへ切替（タブバーはクリックでも切替可）</td></tr>
+      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td class="desc">右ペインのタブを前 / 次へ切替（Logs / Stats / Config / Top など。タブはクリックでも切替可）</td></tr>
+      <tr><td><kbd>R</kbd></td><td class="desc">現在のパネルを再取得（2秒ごとの自動更新もあり）</td></tr>
+      <tr><td><kbd>@</kbd></td><td class="desc">コマンドログを画面いっぱいに拡大 / 再度で元に戻す</td></tr>
+      <tr><td><kbd>+</kbd></td><td class="desc">右ペインを拡大 / 再度で元に戻す（@と排他）</td></tr>
+      <tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td class="desc">閉じる</td></tr>
+      <tr><td class="section-divider" colspan="2">Project</td></tr>
+      <tr><td><kbd>b</kbd></td><td class="desc">一括削除メニュー（container/image/volume/network/builder/system prune）</td></tr>
+      <tr><td class="section-divider" colspan="2">Containers</td></tr>
+      <tr><td><kbd>Space</kbd></td><td class="desc">起動 / 停止をトグル</td></tr>
+      <tr><td><kbd>s</kbd> / <kbd>r</kbd></td><td class="desc">停止（確認あり） / 再起動</td></tr>
+      <tr><td><kbd>p</kbd></td><td class="desc">一時停止 / 再開をトグル</td></tr>
+      <tr><td><kbd>K</kbd></td><td class="desc">強制終了（kill、確認あり）</td></tr>
+      <tr><td><kbd>d</kbd></td><td class="desc">削除メニュー（d:通常 / f:強制 / v:ボリュームごと）</td></tr>
+      <tr><td><kbd>b</kbd></td><td class="desc">停止中のコンテナを一括削除（container prune）</td></tr>
+      <tr><td><kbd>E</kbd></td><td class="desc">コンテナ内でシェルを起動（パネルを閉じて右に開く。bashが無ければsh）</td></tr>
+      <tr><td class="section-divider" colspan="2">Images</td></tr>
+      <tr><td><kbd>d</kbd></td><td class="desc">削除メニュー（d:通常 / f:強制）</td></tr>
+      <tr><td><kbd>b</kbd></td><td class="desc">一括削除（image prune --all / builder prune）</td></tr>
+      <tr><td class="section-divider" colspan="2">Volumes / Networks</td></tr>
+      <tr><td><kbd>d</kbd></td><td class="desc">削除（ボリュームは使用中なら強制削除を提案 / 組み込みネットワークbridge・host・noneは対象外）</td></tr>
+      <tr><td><kbd>b</kbd></td><td class="desc">未使用を一括削除（volume prune / network prune）</td></tr>
     </table>
   </div>
 

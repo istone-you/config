@@ -41,6 +41,14 @@ Neovim 等の設定ファイル群。
 | `git_conflict` | VSCode 風のコンフリクト解消。衝突ブロックを色分けし、現在 / 入力側 / 両方を採用（ファイル全体も可）・衝突間の移動・左右 diff 比較。pull で衝突したら git パネルが Files へ切り替わり `m` で解消メニュー | `Space x c` / `]x` |
 | `github_permalink` | 現在行 / 選択行の GitHub パーマリンクを生成してコピー | `Space G` |
 
+### Docker
+
+| 機能 | 説明 | 主なキー |
+|---|---|---|
+| `docker_panel` | docker 管理パネル（中央ポップアップ）。Project / Containers / Images / Volumes / Networks を切替。右ペインは `[` / `]` またはクリックで Logs / Stats / Config / Top を切替。コンテナは compose プロジェクト単位、イメージ / ボリュームは使用中・未使用でグルーピング表示。起動・停止・削除・prune・コンテナ内シェル起動まで行える | `Space d` |
+
+git パネルと docker パネルは UI の骨格（レイアウト・タブバー・コマンドログ・右ペイン・拡大トグル・自動更新）を `config/panel/shell.lua` で共有していて、見た目と操作感は完全に同じになっている。
+
 ### LSP
 
 | 機能 | 説明 | 主なキー |
@@ -48,7 +56,7 @@ Neovim 等の設定ファイル群。
 | `lsp` | LSP の設定。ホバー / リネーム / コードアクション / フォーマット / 診断ジャンプ | `K`、`Space r n`、`Space c a`、`Space f`、`[d` / `]d`、`Space E` |
 | `completion` | VSCode 風の LSP 補完。トリガー文字に加えて単語入力中も自動でメニューを出す（`vim.lsp.completion` + 自前のデバウンス層） | `Tab` / `S-Tab` で候補移動、`Enter` 確定、`Ctrl-Space` 手動 |
 | `signature` | シグネチャヘルプ（引数ヒント）。`(` や `,` を打つと自動表示 | `Space k`、インサート中 `Ctrl-s` |
-| `problems` | 問題パネル。開いているバッファ全体の診断をファイルごとにまとめた一覧（下部パネル）。重要度フィルタ付き | `Space d` |
+| `problems` | 問題パネル。開いているバッファ全体の診断をファイルごとにまとめた一覧（下部パネル）。重要度フィルタ付き | `Space p` |
 | `glance` | 定義元 / 参照元 / 型定義 / 実装をプレビューパネルで表示 | `g d` / `g r` / `g y` / `g i` |
 | `namu` | LSP シンボル検索 | `Space s s` |
 
@@ -76,6 +84,7 @@ Neovim 等の設定ファイル群。
 | ツール | 用途 |
 |---|---|
 | `git` | git_panel, github_permalink, terminal など git 操作全般 |
+| `docker` | `docker_panel` のコンテナ / イメージ / ボリューム / ネットワーク操作全般（無い場合はパネルを開いた時にエラー通知して閉じる） |
 | `gh` | `git_panel` の GitHub PR 取得・認証（branches.lua の PR 表示、pr.lua の PRパネル: 一覧/詳細/diff/checkout/ブラウザ表示） |
 | `curl` | `git_panel/git.lua` の GitHub GraphQL API 呼び出し（PR情報取得）、`http_client` のリクエスト実行 |
 | `xdg-open` | `browser` のプレビューURLを既定ブラウザで開く（無くてもURLは通知される） |

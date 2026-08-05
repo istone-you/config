@@ -319,6 +319,6 @@ end
 setup_hl()
 vim.api.nvim_create_autocmd('ColorScheme', { callback = setup_hl })
 
-vim.keymap.set('n', '<leader>d', M.toggle, { desc = '問題パネルを開閉' })
+vim.keymap.set('n', '<leader>p', M.toggle, { desc = '問題パネルを開閉' })
 
 return M
