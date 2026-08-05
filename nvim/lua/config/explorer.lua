@@ -36,12 +36,30 @@ local teardown_ui -- 前方宣言（open_selectedから参照するため）
 local refresh -- 前方宣言（fs watcher から参照するため）
 local start_watch -- 前方宣言（render 末尾から参照するため）
 local stop_watch -- 前方宣言
+local start_git_watch -- 前方宣言（git status 取得後に .git を監視するため）
+local stop_git_watch -- 前方宣言
 
 -- yazi の yazi-watcher 相当: 表示中ディレクトリを fs_event で監視し、外部変更を一覧へ反映する
 local fs_event = nil
 local watched_path = nil
 local watch_debounce = nil
 local WATCH_DEBOUNCE_MS = 150
+
+-- nvim-tree 方式: リポジトリの .git ディレクトリも監視する。表示中ディレクトリの監視だけだと、
+-- 別ペインや git パネルでの add / commit / checkout など「作業ツリーは変わらず .git だけ変わる操作」を
+-- 取りこぼし、ディレクトリ移動するまで git 表示が古いままになるため。
+local git_fs_event = nil
+local git_watched_dir = nil
+local git_watch_debounce = nil
+-- .git 配下でこれらが変わったときだけ再取得する(nvim-tree の WATCHED_FILES 相当)。
+-- watchman 等が頻繁に書く他ファイルでの無駄な再取得を避ける。
+local GIT_WATCHED_FILES = {
+  ['HEAD'] = true,       -- チェックアウト等
+  ['HEAD.lock'] = true,  -- revert 等で HEAD が更新されないケースの検知
+  ['index'] = true,      -- ステージ(add/reset)・commit
+  ['config'] = true,     -- 設定変更
+  ['FETCH_HEAD'] = true, -- fetch
+}
 local hl_ns = vim.api.nvim_create_namespace('explorer_hl')
 local augrp = vim.api.nvim_create_augroup('explorer', { clear = true })
 
@@ -132,14 +150,23 @@ local function entry_git_code(entry)
 end
 
 local function refresh_git_status(target_cwd)
-  vim.system({ 'git', 'rev-parse', '--show-toplevel' }, { cwd = target_cwd, text = true, env = GIT_ENV }, function(root_res)
+  vim.system(
+    { 'git', 'rev-parse', '--show-toplevel', '--absolute-git-dir' },
+    { cwd = target_cwd, text = true, env = GIT_ENV },
+    function(root_res)
     vim.schedule(function()
       if root_res.code ~= 0 then
         git_status, git_status_cwd, git_repo_root = {}, target_cwd, nil
-        if cwd == target_cwd then render() end
+        if cwd == target_cwd then
+          stop_git_watch()
+          render()
+        end
         return
       end
-      local repo_root = vim.trim(root_res.stdout or '')
+      -- 1行目: リポジトリルート、2行目: 実 .git ディレクトリ(worktree/submodule では .git 実体は別)
+      local parts = vim.split(vim.trim(root_res.stdout or ''), '\n', { plain = true })
+      local repo_root = parts[1]
+      local git_dir = parts[2]
       vim.system({
         'git', '--no-optional-locks', '-c', 'core.quotePath=', 'status',
         '--porcelain', '-unormal', '--no-renames', '--ignored=matching', '.',
@@ -151,7 +178,10 @@ local function refresh_git_status(target_cwd)
             if code and path then map[path] = code end
           end
           git_status, git_status_cwd, git_repo_root = map, target_cwd, repo_root
-          if cwd == target_cwd then render() end
+          if cwd == target_cwd then
+            start_git_watch(git_dir)
+            render()
+          end
         end)
       end)
     end)
@@ -913,6 +943,65 @@ start_watch = function(path)
   watched_path = path
 end
 
+stop_git_watch = function()
+  if git_watch_debounce then
+    git_watch_debounce:stop()
+    git_watch_debounce:close()
+    git_watch_debounce = nil
+  end
+  if git_fs_event then
+    pcall(function() git_fs_event:stop() end)
+    pcall(function() git_fs_event:close() end)
+    git_fs_event = nil
+  end
+  git_watched_dir = nil
+end
+
+-- リポジトリの .git ディレクトリを監視する(非再帰。libuv の再帰監視は nvim では機能しないため、
+-- HEAD/index/config 等は .git 直下にあるのでこれで拾える)。start_watch と同様に atomic rename
+-- 対策でファイルではなくディレクトリを監視し、debounce してから git status を取り直す。
+start_git_watch = function(git_dir)
+  if not git_dir or git_dir == '' then
+    stop_git_watch()
+    return
+  end
+  if git_watched_dir == git_dir and git_fs_event then return end
+  stop_git_watch()
+  local handle = vim.uv.new_fs_event()
+  if not handle then return end
+  local ok = handle:start(git_dir, {}, function(err, filename)
+    if err then return end
+    -- filename が取れるプラットフォームでは、対象ファイル以外の .git 変更は無視する
+    if filename and not GIT_WATCHED_FILES[filename] then return end
+    vim.schedule(function()
+      if not (win and vim.api.nvim_win_is_valid(win)) then return end
+      if git_watch_debounce then
+        git_watch_debounce:stop()
+        git_watch_debounce:close()
+      end
+      git_watch_debounce = vim.uv.new_timer()
+      git_watch_debounce:start(WATCH_DEBOUNCE_MS, 0, function()
+        if git_watch_debounce then
+          git_watch_debounce:stop()
+          git_watch_debounce:close()
+          git_watch_debounce = nil
+        end
+        vim.schedule(function()
+          if not (win and vim.api.nvim_win_is_valid(win)) then return end
+          git_status_dirty = true
+          render()
+        end)
+      end)
+    end)
+  end)
+  if not ok then
+    pcall(function() handle:close() end)
+    return
+  end
+  git_fs_event = handle
+  git_watched_dir = git_dir
+end
+
 local function refocus_panel()
   if win and vim.api.nvim_win_is_valid(win) then
     vim.api.nvim_set_current_win(win)
@@ -1595,6 +1684,7 @@ end
 --- 全画面中にファイルを開く場合(open_selected、qallされては困る)の両方から使う
 teardown_ui = function()
   stop_watch()
+  stop_git_watch()
   vim.api.nvim_clear_autocmds({ group = augrp })
   if win and vim.api.nvim_win_is_valid(win) then
     vim.api.nvim_win_close(win, true)

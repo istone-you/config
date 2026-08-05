@@ -155,6 +155,51 @@ T.describe('explorer', function()
     T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
   end)
 
+  -- nvim-tree 方式の .git 監視: 別ペイン相当(nvim 側では一切ナビゲートしない)で git add した時、
+  -- ディレクトリ移動せずに git 表示が更新されること
+  T.it('refreshes git status when .git changes without navigating (git add)', function()
+    local res = run_child([[
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir, 'p')
+      local function git(args)
+        local c = { 'git', '-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t' }
+        vim.list_extend(c, args)
+        vim.system(c):wait()
+      end
+      git({ 'init', '-q' })
+      vim.fn.writefile({ 'x' }, dir .. '/keep.txt')
+      git({ 'add', 'keep.txt' })
+      git({ 'commit', '-qm', 'seed' })         -- これで .git/index が存在する
+      vim.fn.writefile({ 'y' }, dir .. '/fresh.txt')   -- 未追跡
+
+      vim.fn.chdir(dir)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      local win = list_win()
+
+      -- 初期 git status が載り、fresh.txt が未追跡( ? )として出るまで待つ(= .git 監視も開始済み)
+      local function fresh_line()
+        for _, l in ipairs(lines(win)) do if l:find('fresh.txt', 1, true) then return l end end
+      end
+      local ready = vim.wait(3000, function()
+        local l = fresh_line()
+        return l ~= nil and l:find('?', 1, true) ~= nil
+      end, 50)
+      assert_eq(ready, true, 'untracked fresh.txt should initially show ?')
+
+      -- nvim 側では何もせず、外から git add（.git/index だけ変わる）
+      git({ 'add', 'fresh.txt' })
+
+      -- ディレクトリ移動せずに、? が消える(ステージ済みへ変わる)まで待つ
+      local updated = vim.wait(3000, function()
+        local l = fresh_line()
+        return l ~= nil and l:find('?', 1, true) == nil
+      end, 50)
+      assert_eq(updated, true, 'git add should refresh the status without navigating (.git watch)')
+    ]])
+    T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
+  end)
+
   T.it('shows a symlink as "name -> target" with its own highlight', function()
     local res = run_child([[
       local dir = vim.fn.tempname()
