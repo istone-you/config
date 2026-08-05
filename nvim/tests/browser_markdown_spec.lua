@@ -127,6 +127,157 @@ T.describe('browser/markdown.lua: markdown/html rendering', function()
 
 end)
 
+T.describe('browser/markdown.lua: GitHub alerts ( > [!NOTE] )', function()
+  T.it('renders [!NOTE] as a titled alert with an inline octicon', function()
+    local body = P.markdown_to_body({
+      '> [!NOTE]',
+      '> Useful **info** to know.',
+    })
+    T.contains(body, '<div class="markdown-alert markdown-alert-note">')
+    T.contains(body, '<p class="markdown-alert-title">')
+    T.contains(body, 'Note</p>')
+    T.contains(body, '<svg class="octicon"')
+    -- 本文は markdown として描画される(bold が効く)
+    T.contains(body, 'Useful <strong>info</strong> to know.')
+  end)
+
+  T.it('supports all five types and renders their body markdown', function()
+    for _, t in ipairs({ 'TIP', 'IMPORTANT', 'WARNING', 'CAUTION' }) do
+      local body = P.markdown_to_body({ '> [!' .. t .. ']', '> body' })
+      T.contains(body, 'markdown-alert-' .. t:lower())
+    end
+    -- 本文にリストを入れると、再帰描画で <ul> になる
+    local list = P.markdown_to_body({ '> [!TIP]', '> - one', '> - two' })
+    T.contains(list, '<ul><li>one</li><li>two</li></ul>')
+  end)
+
+  T.it('falls back to a normal blockquote for unknown or lowercase types (GitHub-faithful)', function()
+    local unknown = P.markdown_to_body({ '> [!FOO]', '> x' })
+    T.contains(unknown, '<blockquote>')
+    T.ok(not unknown:find('markdown-alert', 1, true), 'unknown type must not be an alert')
+
+    local lower = P.markdown_to_body({ '> [!note]', '> x' })
+    T.contains(lower, '<blockquote>')
+    T.ok(not lower:find('markdown-alert', 1, true), 'lowercase must not be an alert')
+  end)
+end)
+
+T.describe('browser/markdown.lua: GFM task lists and strikethrough', function()
+  T.it('renders - [ ] / - [x] as disabled checkboxes', function()
+    local body = P.markdown_to_body({
+      '- [ ] todo',
+      '- [x] done',
+      '- plain',
+    })
+    T.contains(body, '<li class="task-list-item"><input type="checkbox" disabled> todo')
+    T.contains(body, '<li class="task-list-item"><input type="checkbox" disabled checked> done')
+    -- タスクでない項目は通常の <li> のまま
+    T.contains(body, '<li>plain</li>')
+  end)
+
+  T.it('renders ~~text~~ as <del> and strips it from heading slugs', function()
+    T.eq(P.inline_markdown('a ~~b~~ c'), 'a <del>b</del> c')
+    local body = P.markdown_to_body({ '## ~~gone~~ Heading' })
+    T.contains(body, 'id="gone-heading"')
+  end)
+
+  T.it('keeps <kbd> inline HTML and styles it as a keycap', function()
+    T.eq(P.inline_markdown('press <kbd>Ctrl</kbd>'), 'press <kbd>Ctrl</kbd>')
+    local html = P.document_html({ 'press <kbd>Ctrl</kbd>+<kbd>C</kbd>' }, 'd.md', '/tmp', 1)
+    T.contains(html, 'kbd{')
+    T.contains(html, '<kbd>Ctrl</kbd>')
+  end)
+end)
+
+T.describe('browser/markdown.lua: syntax highlighting (highlight.js)', function()
+  T.it('injects highlight.js + theme only when the document has a code block', function()
+    local with = P.document_html({ '```go', 'func main() {}', '```' }, 'd.md', '/tmp', 1)
+    T.contains(with, '/__vendor/highlight.min.js')
+    T.contains(with, '/__vendor/highlight-theme.css')
+    T.contains(with, 'hljs.highlightElement')
+
+    local without = P.document_html({ '# heading', '', 'plain text' }, 'd.md', '/tmp', 1)
+    T.ok(not without:find('/__vendor/highlight.min.js', 1, true), 'no code block => no highlight.js')
+
+    -- mermaid だけのページは <pre><code> が無いのでハイライトは載らない
+    local mermaid_only = P.document_html({ '```mermaid', 'graph TD', 'A-->B', '```' }, 'd.md', '/tmp', 1)
+    T.ok(not mermaid_only:find('/__vendor/highlight.min.js', 1, true), 'mermaid-only page must not load highlight.js')
+  end)
+
+  T.it('serves highlight.js and its theme as vendored assets, and blocks unknown vendor files', function()
+    local js = P.response_for_path('/__vendor/highlight.min.js')
+    T.contains(js, 'HTTP/1.1 200 OK')
+    T.contains(js, 'Content-Type: application/javascript')
+    T.contains(js, 'Cache-Control: public, max-age=31536000, immutable')
+
+    local css = P.response_for_path('/__vendor/highlight-theme.css')
+    T.contains(css, 'HTTP/1.1 200 OK')
+    T.contains(css, 'Content-Type: text/css')
+
+    -- ホワイトリスト外は 404(パストラバーサル防止)
+    T.contains(P.response_for_path('/__vendor/../markdown.lua'), 'HTTP/1.1 404 Not Found')
+    T.contains(P.response_for_path('/__vendor/secret.js'), 'HTTP/1.1 404 Not Found')
+  end)
+end)
+
+T.describe('browser/markdown.lua: mermaid (markdown-preview.nvim 互換)', function()
+  T.it('renders a ```mermaid fence as a .mermaid container, not a code block', function()
+    local body = P.markdown_to_body({
+      '```mermaid',
+      'graph LR',
+      '  A[Start] --> B{Ok?}',
+      '```',
+    })
+    T.contains(body, '<div class="mermaid">')
+    -- 図のソースはエスケープして入れる(mermaid は textContent を読むので --> は復元される)
+    T.contains(body, 'A[Start] --&gt; B{Ok?}')
+    T.ok(not body:find('language-mermaid', 1, true), 'mermaid must not fall through to a code block')
+  end)
+
+  T.it('treats a bare (no-lang) fence starting with a diagram keyword as mermaid', function()
+    local seq = P.markdown_to_body({
+      '```',
+      'sequenceDiagram',
+      '  A->>B: hi',
+      '```',
+    })
+    T.contains(seq, '<div class="mermaid">')
+
+    -- 図キーワードでない普通のフェンスは従来どおりコードブロックのまま
+    local code = P.markdown_to_body({
+      '```',
+      'just some text',
+      '```',
+    })
+    T.contains(code, '<pre><code>')
+    T.ok(not code:find('class="mermaid"', 1, true), 'plain fenced code must stay a code block')
+  end)
+
+  T.it('injects the vendored mermaid script only when the document uses mermaid', function()
+    local with = P.document_html({ '```mermaid', 'graph TD', 'A-->B', '```' }, 'd.md', '/tmp', 1)
+    T.contains(with, '/__vendor/mermaid.min.js')
+    T.contains(with, 'mermaid.initialize(')
+
+    local without = P.document_html({ '# just a heading', '', 'plain text' }, 'd.md', '/tmp', 1)
+    T.ok(not without:find('/__vendor/mermaid.min.js', 1, true), 'non-mermaid pages must not load mermaid.js')
+    T.ok(not without:find('mermaid.initialize', 1, true), 'non-mermaid pages must not init mermaid')
+  end)
+
+  T.it('serves the vendored mermaid.min.js over HTTP with an immutable cache header', function()
+    local res = P.response_for_path('/__vendor/mermaid.min.js')
+    T.contains(res, 'HTTP/1.1 200 OK')
+    T.contains(res, 'Content-Type: application/javascript')
+    T.contains(res, 'Cache-Control: public, max-age=31536000, immutable')
+    -- 実ファイル(グローバル mermaid を公開する UMD ビルド)が配信されていること
+    T.contains(res, '.mermaid=')
+  end)
+
+  T.it('resolves the vendored file to an existing path', function()
+    local path = P.vendor_file('mermaid.min.js')
+    T.ok(path ~= nil and vim.fn.filereadable(path) == 1, 'vendor/mermaid.min.js must be readable')
+  end)
+end)
+
 T.describe('browser/markdown.lua: opener command', function()
   T.it('opens the preview server URL through xdg-open only', function()
     local cmd = P.build_opener_cmd('xdg-open', 'http://localhost:6275/')

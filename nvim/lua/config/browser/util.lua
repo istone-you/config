@@ -66,13 +66,13 @@ function M.url_encode_path(s)
   end))
 end
 
-function M.http_response(status, content_type, body)
+function M.http_response(status, content_type, body, cache_control)
   body = body or ''
   return table.concat({
     'HTTP/1.1 ' .. status,
     'Content-Type: ' .. content_type .. '; charset=utf-8',
     'Content-Length: ' .. tostring(#body),
-    'Cache-Control: no-store',
+    'Cache-Control: ' .. (cache_control or 'no-store'),
     'Connection: close',
     '',
     body,

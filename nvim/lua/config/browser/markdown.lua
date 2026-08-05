@@ -173,6 +173,7 @@ local function inline_markdown(s)
     return string.format('<a href="%s">%s</a>', attr_escape(preview_asset_url(url)), label)
   end)
   s = s:gsub('`([^`]+)`', '<code>%1</code>')
+  s = s:gsub('~~([^~]+)~~', '<del>%1</del>')
   s = s:gsub('%*%*([^%*]+)%*%*', '<strong>%1</strong>')
   s = s:gsub('__([^_]+)__', '<strong>%1</strong>')
   s = s:gsub('%*([^%*]+)%*', '<em>%1</em>')
@@ -184,6 +185,7 @@ local function strip_inline_markup(s)
   return (s:gsub('!%[([^%]]*)%]%([^%)]+%)', '%1')
     :gsub('%[([^%]]+)%]%([^%)]+%)', '%1')
     :gsub('`([^`]+)`', '%1')
+    :gsub('~~([^~]+)~~', '%1')
     :gsub('%*%*([^%*]+)%*%*', '%1')
     :gsub('__([^_]+)__', '%1')
     :gsub('%*([^%*]+)%*', '%1')
@@ -280,6 +282,16 @@ local function parse_list_marker(line)
   if indent then return #indent, 'ol', text end
 end
 
+-- GFM のタスクリスト( - [ ] / - [x] )。マーカーを剥がして disabled な checkbox にする。
+local function render_list_item(text)
+  local mark, rest = text:match('^%[([ xX])%]%s+(.*)$')
+  if mark then
+    local checked = (mark == 'x' or mark == 'X') and ' checked' or ''
+    return '<input type="checkbox" disabled' .. checked .. '> ' .. inline_markdown(rest), true
+  end
+  return inline_markdown(text), false
+end
+
 local function render_list(lines, start_i)
   local root_indent, root_tag = parse_list_marker(lines[start_i] or '')
   if not root_indent then return nil end
@@ -324,7 +336,8 @@ local function render_list(lines, start_i)
       open_li[depth] = false
     end
 
-    out[#out + 1] = '<li>' .. inline_markdown(text)
+    local li_inner, is_task = render_list_item(text)
+    out[#out + 1] = (is_task and '<li class="task-list-item">' or '<li>') .. li_inner
     open_li[depth] = true
     i = i + 1
   end
@@ -351,6 +364,45 @@ local function is_block_start(s)
     or s:match('^%s*[-*_][%s%-*_]*$') ~= nil
 end
 
+-- markdown-preview.nvim (app/pages/mermaid.js) と同じ判定。
+-- ```mermaid フェンスに加え、言語指定なしフェンスでも先頭行が
+-- gantt / sequenceDiagram / erDiagram / graph (TB|BT|RL|LR|TD) のときは mermaid 図として扱う。
+local function is_mermaid_fence(lang, raw_lines)
+  if lang == 'mermaid' then return true end
+  if lang ~= '' then return false end
+  local first
+  for _, l in ipairs(raw_lines) do
+    if not is_blank(l) then
+      first = vim.trim(l)
+      break
+    end
+  end
+  if not first then return false end
+  if first == 'gantt' or first == 'sequenceDiagram' or first == 'erDiagram' then return true end
+  local dir = first:match('^graph%s+(%u%u)%s*;?$')
+  return dir == 'TB' or dir == 'BT' or dir == 'RL' or dir == 'LR' or dir == 'TD'
+end
+
+-- GitHub Alerts ( > [!NOTE] 等 )。アイコンは octicon(@primer/octicons)の SVG をインライン化し、
+-- fill:currentColor でタイトル色に追従させる。Nerd Font 等ホスト環境のフォントに依存しないよう SVG を採用。
+local function octicon(d)
+  return '<svg class="octicon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="'
+    .. d .. '"/></svg>'
+end
+
+local ALERTS = {
+  NOTE = { key = 'note', label = 'Note', icon = octicon(
+    'M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z') },
+  TIP = { key = 'tip', label = 'Tip', icon = octicon(
+    'M8 1.5c-2.363 0-4 1.69-4 3.75 0 .984.424 1.625.984 2.304l.214.253c.223.264.47.556.673.848.284.411.537.896.621 1.49a.75.75 0 0 1-1.484.211c-.04-.282-.163-.547-.37-.847a8.456 8.456 0 0 0-.542-.68c-.084-.1-.173-.205-.268-.32C3.201 7.75 2.5 6.766 2.5 5.25 2.5 2.31 4.863 0 8 0s5.5 2.31 5.5 5.25c0 1.516-.701 2.5-1.328 3.259-.095.115-.184.22-.268.319-.207.245-.383.453-.541.681-.208.3-.33.565-.37.847a.751.751 0 0 1-1.485-.212c.084-.593.337-1.078.621-1.489.203-.292.45-.584.673-.848.075-.088.147-.173.213-.253.561-.679.985-1.32.985-2.304 0-2.06-1.637-3.75-4-3.75ZM5.75 12h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5ZM6 15.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z') },
+  IMPORTANT = { key = 'important', label = 'Important', icon = octicon(
+    'M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v9.5A1.75 1.75 0 0 1 14.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H1.75A1.75 1.75 0 0 1 0 11.25Zm1.75-.25a.25.25 0 0 0-.25.25v9.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h6.5a.25.25 0 0 0 .25-.25v-9.5a.25.25 0 0 0-.25-.25Zm7 2.25v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 9a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z') },
+  WARNING = { key = 'warning', label = 'Warning', icon = octicon(
+    'M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z') },
+  CAUTION = { key = 'caution', label = 'Caution', icon = octicon(
+    'M4.47.22A.749.749 0 0 1 5 0h6c.199 0 .389.079.53.22l4.25 4.25c.141.14.22.331.22.53v6a.749.749 0 0 1-.22.53l-4.25 4.25A.749.749 0 0 1 11 16H5a.749.749 0 0 1-.53-.22L.22 11.53A.749.749 0 0 1 0 11V5c0-.199.079-.389.22-.53Zm.84 1.28L1.5 5.31v5.38l3.81 3.81h5.38l3.81-3.81V5.31L10.69 1.5ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z') },
+}
+
 local function markdown_to_body(lines)
   local out = {}
   local slugs = {}
@@ -363,15 +415,25 @@ local function markdown_to_body(lines)
       i = i + 1
     elseif line:match('^%s*```') then
       local lang = line:match('^%s*```%s*([^%s`]*)') or ''
-      local code = {}
+      local raw = {}
       i = i + 1
       while i <= #lines and not (lines[i] or ''):match('^%s*```') do
-        code[#code + 1] = html_escape(lines[i] or '')
+        raw[#raw + 1] = lines[i] or ''
         i = i + 1
       end
       if i <= #lines then i = i + 1 end
-      local class = lang ~= '' and string.format(' class="language-%s"', attr_escape(lang)) or ''
-      out[#out + 1] = string.format('<pre><code%s>%s</code></pre>', class, table.concat(code, '\n'))
+      local code = {}
+      for k, l in ipairs(raw) do
+        code[k] = html_escape(l)
+      end
+      if is_mermaid_fence(lang, raw) then
+        -- 図の描画はブラウザ側の mermaid.js が担う。Lua はエスケープした
+        -- ソースを .mermaid コンテナに入れるだけ(mermaid は textContent を読む)。
+        out[#out + 1] = '<div class="mermaid">' .. table.concat(code, '\n') .. '</div>'
+      else
+        local class = lang ~= '' and string.format(' class="language-%s"', attr_escape(lang)) or ''
+        out[#out + 1] = string.format('<pre><code%s>%s</code></pre>', class, table.concat(code, '\n'))
+      end
     elseif is_html_block_line(line) then
       out[#out + 1] = escape_markdown_text_keep_safe_html(line)
       i = i + 1
@@ -389,12 +451,32 @@ local function markdown_to_body(lines)
         out[#out + 1] = '<hr>'
         i = i + 1
       elseif line:match('^%s*>') then
-        local parts = {}
+        local inner = {}
         while i <= #lines and (lines[i] or ''):match('^%s*>') do
-          parts[#parts + 1] = inline_markdown((lines[i] or ''):gsub('^%s*>%s?', ''))
+          inner[#inner + 1] = (lines[i] or ''):gsub('^%s*>%s?', '')
           i = i + 1
         end
-        out[#out + 1] = '<blockquote><p>' .. table.concat(parts, '<br>') .. '</p></blockquote>'
+        -- 先頭行が [!TYPE] だけなら GitHub Alert(大文字のみ・GitHub と同じ判定)。
+        -- 未知タイプや小文字は通常の引用にフォールバック。
+        local atype = inner[1] and inner[1]:match('^%s*%[!(%u+)%]%s*$')
+        local alert = atype and ALERTS[atype]
+        if alert then
+          local body_lines = {}
+          for k = 2, #inner do
+            body_lines[#body_lines + 1] = inner[k]
+          end
+          -- 本文はネストした段落/リスト/コードも活かすため markdown_to_body に再帰させる
+          out[#out + 1] = string.format(
+            '<div class="markdown-alert markdown-alert-%s">\n'
+            .. '<p class="markdown-alert-title">%s%s</p>\n%s\n</div>',
+            alert.key, alert.icon, alert.label, markdown_to_body(body_lines))
+        else
+          local parts = {}
+          for _, l in ipairs(inner) do
+            parts[#parts + 1] = inline_markdown(l)
+          end
+          out[#out + 1] = '<blockquote><p>' .. table.concat(parts, '<br>') .. '</p></blockquote>'
+        end
       elseif line:find('|', 1, true) and parse_table_separator(lines[i + 1]) then
         local html, next_i = render_table(lines, i)
         out[#out + 1] = html
@@ -420,7 +502,11 @@ end
 
 local function document_html(lines, title, base_dir, version)
   local _ = base_dir
-  return table.concat({
+  local body = markdown_to_body(lines)
+  local has_mermaid = body:find('class="mermaid"', 1, true) ~= nil
+  local has_code = body:find('<pre><code', 1, true) ~= nil
+
+  local parts = {
     '<!doctype html>',
     '<html>',
     '<head>',
@@ -431,6 +517,8 @@ local function document_html(lines, title, base_dir, version)
     '<style>',
     'body{margin:0;background:#111827;color:#e5e7eb;font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}',
     'main{box-sizing:border-box;max-width:920px;margin:0 auto;padding:40px 48px 80px;}',
+    -- 先頭/末尾要素の外側マージンを消して、padding との二重の余白をなくす(GitHub と同じ)
+    'main>*:first-child{margin-top:0;} main>*:last-child{margin-bottom:0;}',
     'h1,h2,h3,h4,h5,h6{color:#f9fafb;line-height:1.25;margin:1.6em 0 .55em;font-weight:700;}',
     'h1{font-size:2.1rem;border-bottom:1px solid #374151;padding-bottom:.35em;} h2{font-size:1.55rem;border-bottom:1px solid #253044;padding-bottom:.25em;}',
     'p,ul,ol,blockquote,pre,table{margin:1em 0;} a{color:#93c5fd;}',
@@ -440,17 +528,70 @@ local function document_html(lines, title, base_dir, version)
     'pre{background:#0b1220;border:1px solid #253044;border-radius:8px;padding:16px;overflow:auto;} pre code{background:transparent;padding:0;}',
     'table{border-collapse:collapse;width:100%;display:block;overflow:auto;} th,td{border:1px solid #374151;padding:6px 13px;} th{background:#1f2937;font-weight:600;} tr:nth-child(2n) td{background:#172033;}',
     'img{max-width:100%;height:auto;border-radius:6px;} hr{border:0;border-top:1px solid #374151;margin:2rem 0;}',
+    '.mermaid{margin:1em 0;overflow:auto;} .mermaid svg{max-width:100%;height:auto;}',
+    -- highlight.js のトークン色は使いつつ、pre のコンテナ見た目(背景/余白)は既存スタイルを維持する
+    'pre code.hljs{background:transparent;padding:0;}',
+    '.task-list-item{list-style:none;} .task-list-item>input{margin:0 .5em 0 -1.3em;vertical-align:middle;} del{color:#9aa4b2;}',
+    -- <kbd> のキーキャップ表示(markdown-preview.nvim の kbd を暗色パレットに合わせたもの)
+    'kbd{display:inline-block;padding:3px 6px;font:.85em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;line-height:1;color:#e5e7eb;background:#1f2937;border:1px solid #374151;border-radius:4px;box-shadow:inset 0 -1px 0 #374151;vertical-align:middle;}',
+    -- GitHub Alerts ( > [!NOTE] 等 )。色調は暗色テーマに合わせた octicon カラー。
+    '.markdown-alert{margin:1em 0;padding:.4rem 1rem;border-left:.25em solid;}',
+    '.markdown-alert>:first-child{margin-top:0;} .markdown-alert>:last-child{margin-bottom:0;}',
+    '.markdown-alert-title{display:flex;align-items:center;gap:.4em;margin:0 0 .4rem;font-weight:600;line-height:1;}',
+    '.markdown-alert-title svg{fill:currentColor;flex:none;}',
+    '.markdown-alert-note{border-color:#4493f8;} .markdown-alert-note .markdown-alert-title{color:#4493f8;}',
+    '.markdown-alert-tip{border-color:#3fb950;} .markdown-alert-tip .markdown-alert-title{color:#3fb950;}',
+    '.markdown-alert-important{border-color:#ab7df8;} .markdown-alert-important .markdown-alert-title{color:#ab7df8;}',
+    '.markdown-alert-warning{border-color:#d29922;} .markdown-alert-warning .markdown-alert-title{color:#d29922;}',
+    '.markdown-alert-caution{border-color:#f85149;} .markdown-alert-caution .markdown-alert-title{color:#f85149;}',
     '</style>',
     '<script>',
     'const v=document.querySelector("meta[name=markdown-preview-version]").content;',
     'setInterval(()=>fetch("/__version").then(r=>r.text()).then(n=>{if(n.trim()!==v)location.reload();}).catch(()=>{}),1000);',
     '</script>',
-    '</head>',
-    '<body><main>',
-    markdown_to_body(lines),
-    '</main></body>',
-    '</html>',
-  }, '\n')
+  }
+
+  -- mermaid を含むページのときだけ、同梱した mermaid.js を読み込んで初期化する。
+  -- 普通の Markdown プレビューには 3MB 超の JS を一切載せない。
+  -- 読み込み方は markdown-preview.nvim と同じ: グローバル mermaid を <script src> で取り、
+  -- initialize → 描画。バージョン固定なので /__vendor だけ immutable キャッシュ可(util 側で付与)。
+  if has_mermaid then
+    parts[#parts + 1] = '<script src="/__vendor/mermaid.min.js"></script>'
+    parts[#parts + 1] = table.concat({
+      '<script>',
+      'document.addEventListener("DOMContentLoaded",function(){',
+      '  if(!window.mermaid){return;}',
+      '  try{',
+      '    mermaid.initialize({startOnLoad:false,theme:"dark",securityLevel:"strict"});',
+      '    if(typeof mermaid.run==="function"){mermaid.run({querySelector:".mermaid"});}',
+      '    else{mermaid.init(undefined,document.querySelectorAll(".mermaid"));}',
+      '  }catch(e){}',
+      '});',
+      '</script>',
+    }, '\n')
+  end
+
+  -- コードブロックを含むときだけ、同梱した highlight.js とテーマを読み込んでハイライトする。
+  -- mermaid ブロックは <div class="mermaid"> なので対象外(<pre><code> のみ)。
+  if has_code then
+    parts[#parts + 1] = '<link rel="stylesheet" href="/__vendor/highlight-theme.css">'
+    parts[#parts + 1] = '<script src="/__vendor/highlight.min.js"></script>'
+    parts[#parts + 1] = table.concat({
+      '<script>',
+      'document.addEventListener("DOMContentLoaded",function(){',
+      '  if(!window.hljs){return;}',
+      '  document.querySelectorAll("pre code").forEach(function(el){try{hljs.highlightElement(el);}catch(e){}});',
+      '});',
+      '</script>',
+    }, '\n')
+  end
+
+  parts[#parts + 1] = '</head>'
+  parts[#parts + 1] = '<body><main>'
+  parts[#parts + 1] = body
+  parts[#parts + 1] = '</main></body>'
+  parts[#parts + 1] = '</html>'
+  return table.concat(parts, '\n')
 end
 
 local function set_preview_html(lines, name)
@@ -495,8 +636,8 @@ local function parse_port(input)
   return port
 end
 
-local function http_response(status, content_type, body)
-  return browser.http_response(status, content_type, body)
+local function http_response(status, content_type, body, cache_control)
+  return browser.http_response(status, content_type, body, cache_control)
 end
 
 local function asset_response(asset_path)
@@ -522,12 +663,48 @@ local function asset_response(asset_path)
   return http_response('200 OK', browser.content_type_for(full), body)
 end
 
+-- /__vendor で配信を許可する同梱アセットのホワイトリスト(パストラバーサル防止)。
+local VENDOR_FILES = {
+  ['mermaid.min.js'] = true,
+  ['highlight.min.js'] = true,
+  ['highlight-theme.css'] = true,
+}
+
+-- 同梱アセット(nvim/vendor/*)の絶対パスを、このソースファイルからの相対で解決する。
+-- runtimepath に依存しないので、テストハーネス(require 経由)でも同じように解決できる。
+local function vendor_file(name)
+  local src = (debug.getinfo(1, 'S').source or ''):gsub('^@', '')
+  if src == '' then return nil end
+  -- .../nvim/lua/config/browser/markdown.lua -> .../nvim/vendor/<name>
+  local dir = vim.fn.fnamemodify(src, ':p:h')
+  return vim.fn.fnamemodify(dir .. '/../../../vendor/' .. name, ':p')
+end
+
+-- 同梱 JS はバージョン固定なので immutable キャッシュを付けて返す。
+-- こうしないと自動リロードのたびに 3MB を再取得してブラウザがもたつく。
+-- ファイルは要求時にだけディスクから読む(nvim のメモリには常駐させない)。
+local function vendor_response(name)
+  local path = vendor_file(name)
+  if not path or vim.fn.filereadable(path) ~= 1 then
+    return http_response('404 Not Found', 'text/plain', 'not found')
+  end
+  local f = io.open(path, 'rb')
+  if not f then return http_response('404 Not Found', 'text/plain', 'not found') end
+  local content = f:read('*a')
+  f:close()
+  return http_response('200 OK', browser.content_type_for(path), content, 'public, max-age=31536000, immutable')
+end
+
 local function response_for_path(path)
   if path == '/__version' then
     return http_response('200 OK', 'text/plain', tostring(state.version))
   end
   if path == '/' or path == '/index.html' then
     return http_response('200 OK', 'text/html', state.html or '<!doctype html><title>Markdown Preview</title>')
+  end
+  local vf = path:match('^/__vendor/([%w._-]+)$')
+  if vf and VENDOR_FILES[vf] then
+    return vendor_response(vf)
   end
   local asset_path = path:match('^/__asset/(.*)$')
   if asset_path then
@@ -749,6 +926,8 @@ M._private = {
   asset_response = asset_response,
   preview_asset_url = preview_asset_url,
   response_for_path = response_for_path,
+  vendor_file = vendor_file,
+  vendor_response = vendor_response,
   server_url = server_url,
   state = state,
   parse_port = parse_port,
