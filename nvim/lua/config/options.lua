@@ -42,18 +42,47 @@ end, { desc = 'Next buffer' })
 vim.keymap.set('n', '<S-Tab>', function()
   require('config.util.buf_cycle').prev()
 end, { desc = 'Prev buffer' })
+
+local function close_buffer(buf)
+  return pcall(vim.api.nvim_buf_delete, buf, {})
+end
+
+local function notify_unsaved_buffers(count)
+  vim.notify(string.format('%d件の未保存バッファは閉じませんでした', count), vim.log.levels.WARN)
+end
+
 vim.keymap.set('n', '<leader>q', function()
   local cur = vim.api.nvim_get_current_buf()
   if not vim.bo[cur].buflisted then return end -- スタート画面等の非listedバッファは対象外
+  if vim.bo[cur].modified then
+    notify_unsaved_buffers(1)
+    return
+  end
   local bufs = require('config.util.buf_cycle').list()
   if #bufs > 1 then
     require('config.util.buf_cycle').prev()
-    vim.cmd('bd ' .. cur)
+    close_buffer(cur)
   else
     -- 最後の1つ: 閉じるとBufDeleteでスタート画面に戻る
-    vim.cmd('bdelete ' .. cur)
+    close_buffer(cur)
   end
 end, { desc = 'Close buffer' })
+vim.keymap.set('n', '<leader>Q', function()
+  local bufs = require('config.util.buf_cycle').list()
+  local failed = 0
+  for _, b in ipairs(bufs) do
+    if vim.api.nvim_buf_is_valid(b) and vim.bo[b].buflisted then
+      if vim.bo[b].modified then
+        failed = failed + 1
+      elseif not close_buffer(b) then
+        failed = failed + 1
+      end
+    end
+  end
+  if failed > 0 then
+    notify_unsaved_buffers(failed)
+  end
+end, { desc = 'Close all buffer tabs' })
 
 -- 空文字だとマウス無効。以前は options が init から読まれておらず実質オフだった
 vim.opt.mouse = "nv"

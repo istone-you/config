@@ -74,6 +74,66 @@ T.describe('options.lua behavior', function()
     T.rmrf(dir)
   end)
 
+  T.it('<leader>q keeps a modified buffer and notifies instead of showing E89', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/dirty.txt', { 'dirty' })
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/dirty.txt'))
+    local dirty_buf = vim.api.nvim_get_current_buf()
+    vim.bo[dirty_buf].modified = true
+
+    local notifications = {}
+    local orig_notify = vim.notify
+    vim.notify = function(msg) table.insert(notifications, tostring(msg)) end
+    feed('<leader>q')
+    vim.wait(80)
+    vim.notify = orig_notify
+
+    T.eq(vim.fn.buflisted(dirty_buf), 1, 'modified buffer should remain listed')
+    T.eq(vim.bo[dirty_buf].modified, true, 'modified buffer should remain modified')
+    T.ok(vim.iter(notifications):any(function(msg)
+      return msg:find('未保存', 1, true) ~= nil
+    end), 'should notify about the unsaved buffer')
+
+    vim.bo[dirty_buf].modified = false
+    vim.cmd('bwipeout! ' .. dirty_buf)
+    T.rmrf(dir)
+  end)
+
+  T.it('<leader>Q closes all tabline buffers, but keeps modified buffers', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/a.txt', { 'a' })
+    T.write_file(dir .. '/b.txt', { 'b' })
+    T.write_file(dir .. '/dirty.txt', { 'dirty' })
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/a.txt'))
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/b.txt'))
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/dirty.txt'))
+
+    local a_buf = vim.fn.bufnr(dir .. '/a.txt')
+    local b_buf = vim.fn.bufnr(dir .. '/b.txt')
+    local dirty_buf = vim.fn.bufnr(dir .. '/dirty.txt')
+    vim.bo[dirty_buf].modified = true
+
+    local notifications = {}
+    local orig_notify = vim.notify
+    vim.notify = function(msg) table.insert(notifications, tostring(msg)) end
+    feed('<leader>Q')
+    vim.wait(80)
+    vim.notify = orig_notify
+
+    T.eq(vim.fn.buflisted(a_buf), 0, 'clean buffer a should be closed')
+    T.eq(vim.fn.buflisted(b_buf), 0, 'clean buffer b should be closed')
+    T.eq(vim.fn.buflisted(dirty_buf), 1, 'modified buffer should remain listed')
+    T.ok(vim.iter(notifications):any(function(msg)
+      return msg:find('未保存', 1, true) ~= nil
+    end), 'should notify about kept modified buffers')
+
+    vim.bo[dirty_buf].modified = false
+    vim.cmd('bwipeout! ' .. dirty_buf)
+    T.rmrf(dir)
+  end)
+
   T.it('ColorScheme re-applies transparent backgrounds for Normal/NormalFloat/NormalNC', function()
     vim.api.nvim_set_hl(0, 'Normal', { bg = '#123456' }) -- 一旦不透明にしてから発火させる
     vim.cmd('doautocmd ColorScheme')
