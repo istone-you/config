@@ -5,10 +5,13 @@ vim.api.nvim_create_autocmd('TermOpen', {
   end,
 })
 
--- ターミナルモードから Ctrl+h でエディタ（左ウィンドウ）へ戻る
+-- ターミナルモードではシェル/TUIでよく使う Ctrl-k/l を奪わず、実用上移動先がある h/j だけ張る
 vim.keymap.set('t', '<C-h>', '<C-\\><C-n><C-w>h', { desc = 'Move to left window from terminal' })
--- ノーマルモードから Ctrl+h / Ctrl+l で左右のウィンドウへ移動（ターミナル・explorerなどマウス無しで切替）
+vim.keymap.set('t', '<C-j>', '<C-\\><C-n><C-w>j', { desc = 'Move to lower window from terminal' })
+-- ノーマルモードから Ctrl+h/j/k/l で上下左右のウィンドウへ移動（ターミナル・explorerなどマウス無しで切替）
 vim.keymap.set('n', '<C-h>', '<C-w>h', { desc = 'Move to left window' })
+vim.keymap.set('n', '<C-j>', '<C-w>j', { desc = 'Move to lower window' })
+vim.keymap.set('n', '<C-k>', '<C-w>k', { desc = 'Move to upper window' })
 vim.keymap.set('n', '<C-l>', '<C-w>l', { desc = 'Move to right window' })
 
 -- ターミナルウィンドウに入ったとき自動でターミナルモードへ（ジョブ実行中のみ）

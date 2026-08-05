@@ -387,8 +387,7 @@
     <div class="section-header mode-buffer">🔧 カスタムキーマップ</div>
     <table>
       <tr><td><kbd>Space</kbd> <kbd>t</kbd></td><td class="desc">ターミナルを右に開く</td></tr>
-      <tr><td><kbd>Ctrl-h</kbd></td><td class="desc">左のウィンドウへ移動（エディタ↔ターミナル・explorer）</td></tr>
-      <tr><td><kbd>Ctrl-l</kbd></td><td class="desc">右のウィンドウへ移動（エディタ↔ターミナル・explorer）</td></tr>
+      <tr><td><kbd>Ctrl-h</kbd> / <kbd>Ctrl-j</kbd> / <kbd>Ctrl-k</kbd> / <kbd>Ctrl-l</kbd></td><td class="desc">通常: 左 / 下 / 上 / 右のウィンドウへ移動（ターミナルモードは <kbd>Ctrl-h</kbd> / <kbd>Ctrl-j</kbd> のみ）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>e</kbd></td><td class="desc">explorerを開閉（右パネル、詳細は下のセクション）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>g</kbd></td><td class="desc">gitパネルを開閉（自作、詳細は下のセクション）</td></tr>
       <tr><td><kbd>Tab</kbd></td><td class="desc">次のバッファへ</td></tr>
@@ -406,6 +405,15 @@
       <tr><td><kbd>Space</kbd> <kbd>f</kbd></td><td class="desc">LSP: フォーマット</td></tr>
       <tr><td><kbd>[d</kbd> / <kbd>]d</kbd></td><td class="desc">LSP: 前/次の診断へ</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>E</kbd></td><td class="desc">LSP: 診断の詳細を表示</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>d</kbd></td><td class="desc">問題パネルを開閉（全ファイルの診断一覧、詳細は下のセクション）</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>k</kbd></td><td class="desc">LSP: シグネチャヘルプ（引数ヒント）を表示</td></tr>
+      <tr><td><kbd>Ctrl-s</kbd></td><td class="desc">LSP: シグネチャヘルプ（インサートモード。<kbd>(</kbd> や <kbd>,</kbd> で自動表示）</td></tr>
+      <tr><td class="section-divider" colspan="2">補完メニュー表示中</td></tr>
+      <tr><td><kbd>Tab</kbd> / <kbd>Shift-Tab</kbd></td><td class="desc">補完: 次 / 前の候補へ</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td class="desc">補完: 選択中の候補を確定</td></tr>
+      <tr><td><kbd>Ctrl-Space</kbd></td><td class="desc">補完: メニューを手動で出す（インサートモード）</td></tr>
+      <tr><td><kbd>Ctrl-e</kbd></td><td class="desc">補完: メニューを閉じる</td></tr>
+      <tr><td class="section-divider" colspan="2">&nbsp;</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>s s</kbd></td><td class="desc">Namu: シンボル検索を開く</td></tr>
       <tr><td class="section-divider" colspan="2">Namu ポップアップ内</td></tr>
       <tr><td><kbd>Ctrl-j</kbd> / <kbd>↓</kbd></td><td class="desc">Namu: 次の候補へ</td></tr>
@@ -424,6 +432,17 @@
       <tr><td><kbd>(</kbd> <kbd>[</kbd> <kbd>{</kbd> <kbd>"</kbd> <kbd>'</kbd> <kbd>`</kbd></td><td class="desc">autopairs: 閉じを自動補完 / 閉じの上でスキップ / 空ペアで <kbd>BS</kbd> 両削除 / 括弧内 <kbd>&lt;CR&gt;</kbd> でインデント展開</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>s</kbd> <kbd>( ) [ ] { } " ' `</kbd></td><td class="desc">surround: 単語（<kbd>iw</kbd>）/選択を囲む・再度で外す（トグル。開き括弧キー <kbd>( [ {</kbd> はスペース付き）</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>?</kbd></td><td class="desc">このショートカット一覧を開閉</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-buffer">🩺 問題パネル（<kbd>Space</kbd> <kbd>d</kbd> で開閉）</div>
+    <table>
+      <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td class="desc">カーソルを下 / 上へ（ヘッダやファイル見出しは飛ばして診断行だけを移動）</td></tr>
+      <tr><td><kbd>Enter</kbd> / <kbd>o</kbd></td><td class="desc">その診断の位置へジャンプ（パネルは開いたまま）</td></tr>
+      <tr><td><kbd>f</kbd></td><td class="desc">フィルタ切替（すべて → エラー+警告 → エラーのみ）</td></tr>
+      <tr><td><kbd>R</kbd></td><td class="desc">一覧を再取得</td></tr>
+      <tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td class="desc">閉じる</td></tr>
     </table>
   </div>
 

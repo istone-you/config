@@ -82,10 +82,22 @@ local function on_bs()
   return '<BS>'
 end
 
--- <CR>: 括弧の内側ならインデント展開。補完メニュー表示中は素の <CR>
+-- <CR>: 括弧の内側ならインデント展開。
+-- 補完メニュー表示中は補完側を優先する（VSCode と同じく Enter で確定）。候補を選んで
+-- いなければメニューだけ閉じて、通常の <CR> 処理（括弧展開を含む）へ進む。
 local function on_cr()
   if disabled() then return '<CR>' end
-  if vim.fn.pumvisible() == 1 then return '<CR>' end
+  if vim.fn.pumvisible() == 1 then
+    if vim.fn.complete_info({ 'selected' }).selected ~= -1 then
+      return '<C-y>' -- 選択中の候補を確定
+    end
+    return '<C-e>' .. M._cr_keys()
+  end
+  return M._cr_keys()
+end
+
+-- <CR> 本体の判定（括弧の内側なら展開、それ以外は素の <CR>）
+function M._cr_keys()
   local prev, next = around()
   if BRACKETS[prev] and next == BRACKETS[prev] then
     return '<Cmd>lua require("config.autopairs")._expand_cr()<CR>'

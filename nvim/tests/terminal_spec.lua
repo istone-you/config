@@ -7,6 +7,27 @@ local function feed(keys)
 end
 
 T.describe('terminal (<leader>t)', function()
+  T.it('binds Ctrl-h/j/k/l in normal mode and only Ctrl-h/j in terminal mode', function()
+    local normal_expected = {
+      ['<C-H>'] = '<C-W>h',
+      ['<C-J>'] = '<C-W>j',
+      ['<C-K>'] = '<C-W>k',
+      ['<C-L>'] = '<C-W>l',
+    }
+    local terminal_expected = {
+      ['<C-H>'] = '<C-\\><C-N><C-W>h',
+      ['<C-J>'] = '<C-\\><C-N><C-W>j',
+    }
+    for key, rhs in pairs(normal_expected) do
+      T.eq(vim.fn.maparg(key, 'n'), rhs)
+    end
+    for key, rhs in pairs(terminal_expected) do
+      T.eq(vim.fn.maparg(key, 't'), rhs)
+    end
+    T.eq(vim.fn.maparg('<C-K>', 't'), '')
+    T.eq(vim.fn.maparg('<C-L>', 't'), '')
+  end)
+
   T.it('opens a terminal cwd\'d at the git root when inside a repo', function()
     local dir = T.tmp_git_repo(function(d)
       vim.fn.mkdir(d .. '/sub', 'p')

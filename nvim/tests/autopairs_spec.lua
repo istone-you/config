@@ -82,4 +82,39 @@ T.describe('autopairs', function()
   end)
 end)
 
+-- 補完メニュー（config.completion）が出ている間は <CR> を補完側へ譲る
+T.describe('autopairs: 補完メニューとの併存', function()
+  local function cr_callback()
+    for _, m in ipairs(vim.api.nvim_get_keymap('i')) do
+      if m.lhs == '<CR>' then return m.callback end
+    end
+  end
+
+  local function with_pum(selected, fn)
+    local orig_pum  = vim.fn.pumvisible
+    local orig_info = vim.fn.complete_info
+    vim.fn.pumvisible    = function() return 1 end
+    vim.fn.complete_info = function() return { selected = selected } end
+    local result = fn()
+    vim.fn.pumvisible    = orig_pum
+    vim.fn.complete_info = orig_info
+    return result
+  end
+
+  T.it('候補を選んでいれば <CR> は確定（<C-y>）になる', function()
+    fresh({ '' }, { 1, 0 })
+    T.eq(with_pum(0, cr_callback()), '<C-y>')
+  end)
+
+  T.it('候補未選択ならメニューを閉じて通常の <CR> へ進む', function()
+    fresh({ '' }, { 1, 0 })
+    T.eq(with_pum(-1, cr_callback()), '<C-e><CR>')
+  end)
+
+  T.it('候補未選択かつ括弧の内側なら、メニューを閉じてから展開する', function()
+    fresh({ '{}' }, { 1, 1 })
+    T.contains(with_pum(-1, cr_callback()), '_expand_cr')
+  end)
+end)
+
 T.summary()

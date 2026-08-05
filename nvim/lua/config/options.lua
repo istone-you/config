@@ -36,6 +36,15 @@ vim.opt.showtabline = 2
 vim.opt.number = true
 vim.opt.relativenumber = true
 
+-- インデントの既定値。素の Neovim は ts=8 / sw=8 / noexpandtab で、lua や typescript には
+-- 幅を設定する ftplugin が無いため、2 スペースのファイルにハードタブが混入していた。
+-- ファイルごとの実際の幅は config.indent が中身から検出して上書きする
+-- （優先順位: .editorconfig > 自動検出 > ここの既定値）。
+vim.opt.expandtab = true
+vim.opt.shiftwidth = 2
+vim.opt.tabstop = 2
+vim.opt.softtabstop = 2
+
 vim.keymap.set('n', '<Tab>', function()
   require('config.util.buf_cycle').next()
 end, { desc = 'Next buffer' })

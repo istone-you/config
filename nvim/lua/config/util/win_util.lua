@@ -8,7 +8,7 @@ local M = {}
 -- 新しいサイドバーをスプリットで追加したら、ここに filetype を足すか、
 -- 窓を開いた直後に M.mark_sidebar(win, buf) を呼ぶ（推奨は両方）。
 -- ※ git パネル等のフロートは is_float で既に非エディタ扱いなので登録不要。
-M.SIDEBAR_FT = { explorer = true, shortcuts = true, httpresult = true }
+M.SIDEBAR_FT = { explorer = true, shortcuts = true, httpresult = true, problems = true }
 
 function M.is_float(win)
   return vim.api.nvim_win_get_config(win).relative ~= ''
