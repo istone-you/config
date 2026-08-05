@@ -11,6 +11,8 @@ local state = {
   root_dir = nil,
   watch_handle = nil,
   watch_debounce = nil,
+  watch_poll = nil,
+  watch_stamp = nil,
   watched_path = nil,
 }
 
@@ -616,6 +618,18 @@ local function refresh_preview_from_disk(path)
   return true
 end
 
+local function file_stamp(path)
+  local uv = vim.uv or vim.loop
+  local st = path and uv.fs_stat(path) or nil
+  if not st then return nil end
+  local mtime = st.mtime or {}
+  return table.concat({
+    tostring(st.size or 0),
+    tostring(mtime.sec or 0),
+    tostring(mtime.nsec or 0),
+  }, ':')
+end
+
 local function server_url()
   if not state.port then return nil end
   return 'http://localhost:' .. tostring(state.port) .. '/'
@@ -719,6 +733,12 @@ local function stop_watch()
     pcall(function() state.watch_debounce:close() end)
     state.watch_debounce = nil
   end
+  if state.watch_poll then
+    pcall(function() state.watch_poll:stop() end)
+    pcall(function() state.watch_poll:close() end)
+    state.watch_poll = nil
+  end
+  state.watch_stamp = nil
   if state.watch_handle then
     pcall(function() state.watch_handle:stop() end)
     pcall(function() state.watch_handle:close() end)
@@ -768,6 +788,19 @@ local function start_watch(path)
   end
   state.watch_handle = handle
   state.watched_path = path
+  state.watch_stamp = file_stamp(path)
+  state.watch_poll = uv.new_timer()
+  if state.watch_poll then
+    state.watch_poll:start(WATCH_DEBOUNCE_MS, WATCH_DEBOUNCE_MS, function()
+      local stamp = file_stamp(path)
+      if stamp and stamp ~= state.watch_stamp then
+        state.watch_stamp = stamp
+        vim.schedule(function()
+          if state.watched_path == path then refresh_preview_from_disk(path) end
+        end)
+      end
+    end)
+  end
 end
 
 local function stop_server(opts)

@@ -167,6 +167,10 @@ local function open_float_term(title, shell, on_done)
   vim.fn.termopen({ 'sh', '-c', shell }, {
     on_exit = function()
       vim.schedule(function()
+        if #vim.api.nvim_list_uis() == 0 then
+          on_done()
+          return
+        end
         if vim.api.nvim_win_is_valid(win) then
           vim.api.nvim_win_close(win, true)
         end

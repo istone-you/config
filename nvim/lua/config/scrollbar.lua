@@ -1,119 +1,257 @@
+local M = {}
+
+local ns = vim.api.nvim_create_namespace('scrollbar')
 local scrollbar_bufs = {}
 local scrollbar_wins = {}
 local scrollbar_win_ids = {}
-local ns = vim.api.nvim_create_namespace('scrollbar')
 local updating = false
 
-local function is_scrollbar_win(win_id)
-  return scrollbar_win_ids[win_id] == true
+local MARKS = {
+  Search = { text = { '-', '=' }, hl = 'ScrollbarSearch', priority = 1 },
+  Error = { text = { '-', '=' }, hl = 'ScrollbarError', priority = 2 },
+  Warn = { text = { '-', '=' }, hl = 'ScrollbarWarn', priority = 3 },
+  Info = { text = { '-', '=' }, hl = 'ScrollbarInfo', priority = 4 },
+  Hint = { text = { '-', '=' }, hl = 'ScrollbarHint', priority = 5 },
+  GitAdd = { text = '┆', hl = 'ScrollbarGitAdd', priority = 7 },
+  GitChange = { text = '┆', hl = 'ScrollbarGitChange', priority = 7 },
+  GitDelete = { text = '▁', hl = 'ScrollbarGitDelete', priority = 7 },
+}
+
+local function mark_text(mark)
+  local text = MARKS[mark.type] and MARKS[mark.type].text or '-'
+  if type(text) == 'table' then
+    return text[mark.level or 1] or text[#text] or '-'
+  end
+  return text
 end
 
-local function close_scrollbar(win_id)
-  local sb_win = scrollbar_wins[win_id]
+local function mark_hl(mark, handle)
+  local hl = MARKS[mark.type] and MARKS[mark.type].hl or 'ScrollbarMisc'
+  return handle and (hl .. 'Handle') or hl
+end
+
+local function is_scrollbar_win(win)
+  return scrollbar_win_ids[win] == true
+end
+
+local function close_scrollbar(win)
+  local sb_win = scrollbar_wins[win]
   if sb_win then
     scrollbar_win_ids[sb_win] = nil
     if vim.api.nvim_win_is_valid(sb_win) then
       pcall(vim.api.nvim_win_close, sb_win, true)
     end
-    scrollbar_wins[win_id] = nil
+    scrollbar_wins[win] = nil
   end
-  local sb_buf = scrollbar_bufs[win_id]
+
+  local sb_buf = scrollbar_bufs[win]
   if sb_buf and vim.api.nvim_buf_is_valid(sb_buf) then
     pcall(vim.api.nvim_buf_delete, sb_buf, { force = true })
-    scrollbar_bufs[win_id] = nil
+  end
+  scrollbar_bufs[win] = nil
+end
+
+local function add_mark(out, line, typ)
+  if not MARKS[typ] then return end
+  table.insert(out, {
+    line = math.max(0, line),
+    type = typ,
+    level = 1,
+    priority = MARKS[typ].priority,
+  })
+end
+
+local function severity_type(severity)
+  if not vim.diagnostic then return nil end
+  return ({
+    [vim.diagnostic.severity.ERROR] = 'Error',
+    [vim.diagnostic.severity.WARN] = 'Warn',
+    [vim.diagnostic.severity.INFO] = 'Info',
+    [vim.diagnostic.severity.HINT] = 'Hint',
+  })[severity]
+end
+
+local function diagnostic_marks(buf)
+  local out = {}
+  if not vim.diagnostic then return out end
+  for _, diagnostic in ipairs(vim.diagnostic.get(buf)) do
+    add_mark(out, diagnostic.lnum or 0, severity_type(diagnostic.severity))
+  end
+  return out
+end
+
+local function git_marks(buf)
+  local out = {}
+  local git_ns = vim.api.nvim_create_namespace('git_gutter')
+  local map = {
+    GitGutterAdd = 'GitAdd',
+    GitGutterChange = 'GitChange',
+    GitGutterDelete = 'GitDelete',
+    GitGutterChangeDelete = 'GitDelete',
+  }
+  for _, extmark in ipairs(vim.api.nvim_buf_get_extmarks(buf, git_ns, 0, -1, { details = true })) do
+    local details = extmark[4] or {}
+    add_mark(out, extmark[2], map[details.sign_hl_group])
+  end
+  return out
+end
+
+local function search_marks(buf)
+  local out = {}
+  if vim.v.hlsearch == 0 then return out end
+  local pattern = vim.fn.getreg('/')
+  if pattern == '' then return out end
+  local ok, regex = pcall(vim.regex, pattern)
+  if not ok then return out end
+  for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+    if regex:match_str(line) then
+      add_mark(out, i - 1, 'Search')
+    end
+  end
+  return out
+end
+
+local function bump_level(mark)
+  local text = MARKS[mark.type] and MARKS[mark.type].text
+  if type(text) ~= 'table' then return end
+  mark.level = math.min((mark.level or 1) + 1, #text)
+end
+
+local function collect_marks(buf)
+  local out = {}
+  vim.list_extend(out, search_marks(buf))
+  vim.list_extend(out, diagnostic_marks(buf))
+  vim.list_extend(out, git_marks(buf))
+  return out
+end
+
+local function sorted_rows(buf, total_lines, height)
+  local rows = {}
+  local marks = collect_marks(buf)
+  table.sort(marks, function(a, b)
+    local ar = math.floor(a.line * height / math.max(total_lines, 1))
+    local br = math.floor(b.line * height / math.max(total_lines, 1))
+    if ar == br then
+      return a.priority < b.priority
+    end
+    return ar < br
+  end)
+
+  for _, mark in ipairs(marks) do
+    if mark.line < total_lines then
+      local row = math.max(0, math.min(math.floor(mark.line * height / math.max(total_lines, 1)), height - 1))
+      local prev = rows[row]
+      if prev then
+        bump_level(prev)
+      else
+        rows[row] = mark
+      end
+    end
+  end
+  return rows
+end
+
+local function ensure_buf(win)
+  local buf = scrollbar_bufs[win]
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[buf].bufhidden = 'wipe'
+    vim.bo[buf].buftype = 'nofile'
+    vim.bo[buf].buflisted = false
+    vim.bo[buf].swapfile = false
+    scrollbar_bufs[win] = buf
+  end
+  return buf
+end
+
+local function render_buf(buf, lines, hls)
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+
+  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  for row, hl in pairs(hls) do
+    vim.api.nvim_buf_add_highlight(buf, ns, hl, row, 0, -1)
   end
 end
 
-local function update_scrollbar(win_id)
-  if not vim.api.nvim_win_is_valid(win_id) then return end
+function M.render(win)
+  win = win or vim.api.nvim_get_current_win()
+  if not vim.api.nvim_win_is_valid(win) or is_scrollbar_win(win) then return end
 
-  local ok, win_config = pcall(vim.api.nvim_win_get_config, win_id)
-  if not ok or win_config.relative ~= '' or is_scrollbar_win(win_id) then
+  local ok, cfg = pcall(vim.api.nvim_win_get_config, win)
+  if not ok or cfg.relative ~= '' then return end
+
+  local src_buf = vim.api.nvim_win_get_buf(win)
+  local buftype = vim.bo[src_buf].buftype
+  if buftype ~= '' and buftype ~= 'help' then
+    close_scrollbar(win)
     return
   end
 
-  local buf = vim.api.nvim_win_get_buf(win_id)
-  local buf_type = vim.bo[buf].buftype
-  if buf_type ~= '' and buf_type ~= 'help' then
-    close_scrollbar(win_id)
+  local total_lines = vim.api.nvim_buf_line_count(src_buf)
+  local height = vim.api.nvim_win_get_height(win)
+  if total_lines <= 0 or height <= 0 then
+    close_scrollbar(win)
     return
   end
 
-  local total_lines = vim.api.nvim_buf_line_count(buf)
-  local win_height = vim.api.nvim_win_get_height(win_id)
-
-  if win_height <= 0 or total_lines <= win_height then
-    close_scrollbar(win_id)
+  local mark_rows = sorted_rows(src_buf, total_lines, height)
+  local show_handle = total_lines > height
+  if not show_handle and vim.tbl_isempty(mark_rows) then
+    close_scrollbar(win)
     return
   end
 
-  local topline = vim.api.nvim_win_call(win_id, function()
+  local first_visible = vim.api.nvim_win_call(win, function()
     return vim.fn.line('w0')
   end)
+  local handle_size = show_handle and math.max(1, math.floor(height * height / total_lines)) or 0
+  local scrollable = math.max(total_lines - height, 1)
+  local handle_start = show_handle
+    and math.min(math.floor((first_visible - 1) * (height - handle_size) / scrollable), height - handle_size)
+    or -1
+  local handle_end = handle_start + handle_size - 1
 
-  local thumb_size = math.max(1, math.floor(win_height * win_height / total_lines))
-  local scrollable = total_lines - win_height
-  local thumb_start = scrollable > 0
-    and math.min(
-      math.floor((topline - 1) * (win_height - thumb_size) / scrollable),
-      win_height - thumb_size
-    )
-    or 0
-
-  local content = {}
-  for i = 1, win_height do
-    content[i] = (i > thumb_start and i <= thumb_start + thumb_size) and '█' or '│'
+  local lines, hls = {}, {}
+  for row = 0, height - 1 do
+    local mark = mark_rows[row]
+    local on_handle = show_handle and row >= handle_start and row <= handle_end
+    if mark then
+      lines[row + 1] = mark_text(mark)
+      hls[row] = mark_hl(mark, on_handle)
+    else
+      lines[row + 1] = ' '
+      hls[row] = on_handle and 'ScrollbarHandle' or 'ScrollbarTrack'
+    end
   end
 
-  local win_pos = vim.api.nvim_win_get_position(win_id)
-  local win_width = vim.api.nvim_win_get_width(win_id)
-  local row = win_pos[1]
-  local col = win_pos[2] + win_width - 1
+  local sb_buf = ensure_buf(win)
+  render_buf(sb_buf, lines, hls)
 
-  local sb_buf = scrollbar_bufs[win_id]
-  if not sb_buf or not vim.api.nvim_buf_is_valid(sb_buf) then
-    sb_buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[sb_buf].bufhidden = 'wipe'
-    scrollbar_bufs[win_id] = sb_buf
-  end
+  local pos = vim.api.nvim_win_get_position(win)
+  local width = vim.api.nvim_win_get_width(win)
+  local win_cfg = {
+    relative = 'editor',
+    row = pos[1],
+    col = pos[2] + width - 1,
+    width = 1,
+    height = height,
+    style = 'minimal',
+    focusable = false,
+    noautocmd = true,
+    zindex = 60,
+  }
 
-  vim.bo[sb_buf].modifiable = true
-  vim.api.nvim_buf_set_lines(sb_buf, 0, -1, false, content)
-  vim.bo[sb_buf].modifiable = false
-
-  vim.api.nvim_buf_clear_namespace(sb_buf, ns, 0, -1)
-  for i = 0, win_height - 1 do
-    local hl = (i >= thumb_start and i < thumb_start + thumb_size) and 'ScrollbarThumb' or 'ScrollbarTrack'
-    vim.api.nvim_buf_add_highlight(sb_buf, ns, hl, i, 0, -1)
-  end
-
-  local sb_win = scrollbar_wins[win_id]
+  local sb_win = scrollbar_wins[win]
   if sb_win and vim.api.nvim_win_is_valid(sb_win) then
-    pcall(vim.api.nvim_win_set_config, sb_win, {
-      relative = 'editor',
-      row = row,
-      col = col,
-      width = 1,
-      height = win_height,
-    })
+    pcall(vim.api.nvim_win_set_config, sb_win, win_cfg)
+    pcall(vim.api.nvim_win_set_buf, sb_win, sb_buf)
   else
-    local open_ok, result = pcall(vim.api.nvim_open_win, sb_buf, false, {
-      relative = 'editor',
-      row = row,
-      col = col,
-      width = 1,
-      height = win_height,
-      style = 'minimal',
-      focusable = false,
-      -- フロートは自身のzindexに関係なく通常ウィンドウのテキストより前面に描画される。
-      -- zindexはフロート同士の前後関係のみを決めるため、既定のフロートzindex(50)より
-      -- 小さくしておくと、通常ウィンドウ上では見えつつ、gitパネル等のフロートには
-      -- きちんと覆い隠される（以前は250でgitパネルの前面にはみ出していた）
-      zindex = 45,
-    })
+    local open_ok, opened = pcall(vim.api.nvim_open_win, sb_buf, false, win_cfg)
     if open_ok then
-      scrollbar_wins[win_id] = result
-      scrollbar_win_ids[result] = true
+      scrollbar_wins[win] = opened
+      scrollbar_win_ids[opened] = true
     end
   end
 end
@@ -123,41 +261,74 @@ local function update_all()
   updating = true
   vim.schedule(function()
     updating = false
-    for _, win_id in ipairs(vim.api.nvim_list_wins()) do
-      if not is_scrollbar_win(win_id) then
-        pcall(update_scrollbar, win_id)
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      if not is_scrollbar_win(win) then
+        pcall(M.render, win)
       end
     end
   end)
 end
 
 local function set_hl()
-  vim.api.nvim_set_hl(0, 'ScrollbarThumb', { fg = '#888888', bg = 'NONE' })
-  vim.api.nvim_set_hl(0, 'ScrollbarTrack', { fg = '#3a3a3a', bg = 'NONE' })
+  vim.api.nvim_set_hl(0, 'ScrollbarHandle', { fg = 'NONE', bg = '#3b4261', blend = 0 })
+  vim.api.nvim_set_hl(0, 'ScrollbarTrack', { fg = 'NONE', bg = '#24283b', blend = 0 })
+  vim.api.nvim_set_hl(0, 'ScrollbarSearch', { fg = '#ff9e64', bg = 'NONE', bold = true })
+  vim.api.nvim_set_hl(0, 'ScrollbarError', { fg = '#ff5f7a', bg = 'NONE', bold = true })
+  vim.api.nvim_set_hl(0, 'ScrollbarWarn', { fg = '#ffc777', bg = 'NONE', bold = true })
+  vim.api.nvim_set_hl(0, 'ScrollbarInfo', { fg = '#82aaff', bg = 'NONE', bold = true })
+  vim.api.nvim_set_hl(0, 'ScrollbarHint', { fg = '#c3e88d', bg = 'NONE', bold = true })
+  vim.api.nvim_set_hl(0, 'ScrollbarMisc', { fg = '#c0caf5', bg = 'NONE', bold = true })
+  vim.api.nvim_set_hl(0, 'ScrollbarGitAdd', { fg = '#9ece6a', bg = 'NONE', bold = true })
+  vim.api.nvim_set_hl(0, 'ScrollbarGitChange', { fg = '#82aaff', bg = 'NONE', bold = true })
+  vim.api.nvim_set_hl(0, 'ScrollbarGitDelete', { fg = '#ff5f7a', bg = 'NONE', bold = true })
+  for _, name in ipairs({ 'Search', 'Error', 'Warn', 'Info', 'Hint', 'Misc', 'GitAdd', 'GitChange', 'GitDelete' }) do
+    vim.api.nvim_set_hl(0, 'Scrollbar' .. name .. 'Handle', {
+      fg = vim.api.nvim_get_hl(0, { name = 'Scrollbar' .. name }).fg,
+      bg = '#3b4261',
+      bold = true,
+      blend = 0,
+    })
+  end
 end
 
 set_hl()
 vim.api.nvim_create_autocmd('ColorScheme', { callback = set_hl })
 
-vim.api.nvim_create_autocmd(
-  { 'WinScrolled', 'BufEnter', 'WinEnter', 'VimResized', 'TextChanged', 'TextChangedI', 'CursorMoved', 'CursorMovedI' },
-  { callback = update_all }
-)
+vim.api.nvim_create_autocmd({
+  'BufWinEnter',
+  'BufEnter',
+  'WinEnter',
+  'WinScrolled',
+  'TextChanged',
+  'TextChangedI',
+  'DiagnosticChanged',
+  'VimResized',
+  'CursorMoved',
+  'CursorMovedI',
+}, {
+  callback = update_all,
+})
 
 vim.api.nvim_create_autocmd('WinClosed', {
   callback = function(args)
-    local win_id = tonumber(args.match)
-    if not win_id then return end
-    if is_scrollbar_win(win_id) then
-      scrollbar_win_ids[win_id] = nil
-      for w, sw in pairs(scrollbar_wins) do
-        if sw == win_id then
-          scrollbar_wins[w] = nil
+    local win = tonumber(args.match)
+    if not win then return end
+    if is_scrollbar_win(win) then
+      scrollbar_win_ids[win] = nil
+      for src, sb in pairs(scrollbar_wins) do
+        if sb == win then
+          scrollbar_wins[src] = nil
           break
         end
       end
     else
-      close_scrollbar(win_id)
+      close_scrollbar(win)
     end
   end,
 })
+
+M._namespace = ns
+M._scrollbar_wins = scrollbar_wins
+M._collect_marks = collect_marks
+
+return M

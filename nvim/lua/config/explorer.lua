@@ -43,6 +43,8 @@ local stop_git_watch -- 前方宣言
 local fs_event = nil
 local watched_path = nil
 local watch_debounce = nil
+local watch_poll = nil
+local watch_stamp = nil
 local WATCH_DEBOUNCE_MS = 150
 
 -- nvim-tree 方式: リポジトリの .git ディレクトリも監視する。表示中ディレクトリの監視だけだと、
@@ -51,6 +53,8 @@ local WATCH_DEBOUNCE_MS = 150
 local git_fs_event = nil
 local git_watched_dir = nil
 local git_watch_debounce = nil
+local git_watch_poll = nil
+local git_watch_stamp = nil
 -- .git 配下でこれらが変わったときだけ再取得する(nvim-tree の WATCHED_FILES 相当)。
 -- watchman 等が頻繁に書く他ファイルでの無駄な再取得を避ける。
 local GIT_WATCHED_FILES = {
@@ -65,6 +69,22 @@ local augrp = vim.api.nvim_create_augroup('explorer', { clear = true })
 
 local ENTRY_OFFSET = 2
 local PANEL_WIDTH = 48
+
+local function fs_stamp(path)
+  local st = path and vim.uv.fs_stat(path) or nil
+  if not st then return nil end
+  local mtime = st.mtime or {}
+  return table.concat({
+    tostring(st.size or 0),
+    tostring(mtime.sec or 0),
+    tostring(mtime.nsec or 0),
+  }, ':')
+end
+
+local function user_facing_path(path)
+  local normalized = tostring(path or ''):gsub('^/private/var/', '/var/')
+  return normalized
+end
 
 -- ヘッダー行（パス表示・空行）には行番号を出さない
 _G.__explorer_statuscolumn = function()
@@ -897,6 +917,12 @@ stop_watch = function()
     watch_debounce:close()
     watch_debounce = nil
   end
+  if watch_poll then
+    pcall(function() watch_poll:stop() end)
+    pcall(function() watch_poll:close() end)
+    watch_poll = nil
+  end
+  watch_stamp = nil
   if fs_event then
     pcall(function() fs_event:stop() end)
     pcall(function() fs_event:close() end)
@@ -941,6 +967,21 @@ start_watch = function(path)
   end
   fs_event = handle
   watched_path = path
+  watch_stamp = fs_stamp(path)
+  watch_poll = vim.uv.new_timer()
+  if watch_poll then
+    watch_poll:start(WATCH_DEBOUNCE_MS, WATCH_DEBOUNCE_MS, function()
+      local stamp = fs_stamp(path)
+      if stamp and stamp ~= watch_stamp then
+        watch_stamp = stamp
+        vim.schedule(function()
+          if not (win and vim.api.nvim_win_is_valid(win)) then return end
+          if cwd ~= path then return end
+          refresh(true)
+        end)
+      end
+    end)
+  end
 end
 
 stop_git_watch = function()
@@ -949,6 +990,12 @@ stop_git_watch = function()
     git_watch_debounce:close()
     git_watch_debounce = nil
   end
+  if git_watch_poll then
+    pcall(function() git_watch_poll:stop() end)
+    pcall(function() git_watch_poll:close() end)
+    git_watch_poll = nil
+  end
+  git_watch_stamp = nil
   if git_fs_event then
     pcall(function() git_fs_event:stop() end)
     pcall(function() git_fs_event:close() end)
@@ -1000,6 +1047,22 @@ start_git_watch = function(git_dir)
   end
   git_fs_event = handle
   git_watched_dir = git_dir
+  local index_path = git_dir .. '/index'
+  git_watch_stamp = fs_stamp(index_path)
+  git_watch_poll = vim.uv.new_timer()
+  if git_watch_poll then
+    git_watch_poll:start(WATCH_DEBOUNCE_MS, WATCH_DEBOUNCE_MS, function()
+      local stamp = fs_stamp(index_path)
+      if stamp and stamp ~= git_watch_stamp then
+        git_watch_stamp = stamp
+        vim.schedule(function()
+          if not (win and vim.api.nvim_win_is_valid(win)) then return end
+          git_status_dirty = true
+          render()
+        end)
+      end
+    end)
+  end
 end
 
 local function refocus_panel()
@@ -1535,7 +1598,7 @@ local function copy_path_text(kind)
     if kind == 'name' then
       table.insert(parts, e.name)
     else
-      table.insert(parts, e.path)
+      table.insert(parts, user_facing_path(e.path))
     end
   end
   local text = table.concat(parts, '\n')

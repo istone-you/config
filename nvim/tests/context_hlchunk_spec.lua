@@ -35,6 +35,7 @@ T.describe('context.lua (sticky scrolled-out scope header)', function()
     T.ok(ctx_win ~= nil, 'a context overlay window should appear once the header scrolled out of view')
     local ctx_text = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(ctx_win), 0, -1, false), '\n')
     T.contains(ctx_text, 'function outer()')
+    T.eq(vim.api.nvim_win_get_config(ctx_win).width, vim.api.nvim_win_get_width(win) - 1)
 
     -- 先頭まで戻ればcontextは不要になり消える
     vim.api.nvim_win_set_cursor(win, { 1, 0 })

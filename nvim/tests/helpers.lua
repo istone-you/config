@@ -148,9 +148,19 @@ end
 --- 戻り値は server, port（テスト側で server:close() すること）
 function M.http_server(handler)
   local uv = vim.uv or vim.loop
-  local server = uv.new_tcp()
-  server:bind('127.0.0.1', 0)
-  local port = server:getsockname().port
+  local server, port
+  for p = 20000, 26000 do
+    local candidate = uv.new_tcp()
+    local ok = pcall(function() candidate:bind('127.0.0.1', p) end)
+    local name = ok and candidate:getsockname() or nil
+    if name and name.port == p then
+      server = candidate
+      port = p
+      break
+    end
+    pcall(function() candidate:close() end)
+  end
+  assert(server and port, 'failed to bind a test HTTP server port')
   server:listen(16, function(err)
     if err then return end
     local client = uv.new_tcp()

@@ -5,6 +5,30 @@ local ctx_ns         = vim.api.nvim_create_namespace('context_lnum')
 local SEP            = '─'
 local orig_scrolloff = nil
 
+local TS_NODE_TYPES = {
+  class = true,
+  class_declaration = true,
+  class_definition = true,
+  method = true,
+  method_definition = true,
+  function_definition = true,
+  function_declaration = true,
+  function_statement = true,
+  ['function'] = true,
+  if_statement = true,
+  for_statement = true,
+  for_in_statement = true,
+  for_numeric = true,
+  while_statement = true,
+  repeat_statement = true,
+  do_statement = true,
+  do_block = true,
+  block = true,
+  table_constructor = true,
+  object = true,
+  dictionary = true,
+}
+
 local function get_indent(line)
   if line:match('^%s*$') then return nil end
   return vim.fn.strdisplaywidth(line:match('^(%s*)'))
@@ -16,6 +40,50 @@ local function effective_indent(lines, lnum)
     if ind then return ind end
   end
   return 0
+end
+
+local function node_is_scope(node)
+  if not node then return false end
+  local typ = node:type()
+  if TS_NODE_TYPES[typ] then return true end
+  return typ:find('class') ~= nil
+    or typ:find('function') ~= nil
+    or typ:find('method') ~= nil
+    or typ:find('statement') ~= nil
+end
+
+local function node_at_line(buf, lines, row)
+  if not vim.treesitter or not vim.treesitter.get_node then return nil end
+  local line = lines[row + 1] or ''
+  local first_nonblank = line:find('%S')
+  local col = first_nonblank and (first_nonblank - 1) or 0
+  local ok, node = pcall(vim.treesitter.get_node, {
+    bufnr = buf,
+    pos = { row, col },
+    ignore_injections = false,
+  })
+  if ok then return node end
+  return nil
+end
+
+local function collect_contexts_ts(buf, lines, ref_lnum, topline)
+  local node = node_at_line(buf, lines, ref_lnum)
+  if not node then return nil end
+
+  local contexts = {}
+  local seen = {}
+  while node do
+    local sr, _, er, _ = node:range()
+    if sr < er and sr < topline - 1 and er >= ref_lnum and node_is_scope(node) and not seen[sr] then
+      table.insert(contexts, 1, { text = lines[sr + 1] or '', lnum = sr + 1 })
+      seen[sr] = true
+    end
+    local parent = node:parent()
+    if parent == node then break end
+    node = parent
+  end
+
+  return contexts
 end
 
 -- 画面上にスクロールアウトした親スコープ行のみ収集する（行番号付き）
@@ -75,14 +143,15 @@ local function update()
   local lines   = vim.api.nvim_buf_get_lines(buf, 0, total, false)
   -- カーソル位置ではなく画面最上部の行を基準にスコープを検出する
   local ref_lnum = topline - 1  -- 0-indexed
-  local contexts = collect_contexts(lines, ref_lnum, topline)
+  local contexts = collect_contexts_ts(buf, lines, ref_lnum, topline)
+    or collect_contexts(lines, ref_lnum, topline)
 
   if #contexts == 0 then close(); return end
 
   local cbuf    = ensure_buf()
   local info    = vim.fn.getwininfo(win)[1]
   local textoff = info and info.textoff or 0
-  local width   = vim.api.nvim_win_get_width(win)
+  local width   = math.max(1, vim.api.nvim_win_get_width(win) - 1)
   local height  = #contexts
 
   -- 行番号を textoff 幅に合わせてフォーマットしてコンテンツに含める
@@ -190,3 +259,8 @@ vim.api.nvim_create_autocmd('WinEnter', {
     end
   end,
 })
+
+return {
+  _collect_contexts = collect_contexts,
+  _collect_contexts_ts = collect_contexts_ts,
+}
