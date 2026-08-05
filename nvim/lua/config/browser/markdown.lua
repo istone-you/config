@@ -1,4 +1,5 @@
 local M = {}
+local browser = require('config.browser.util')
 
 local state = {
   source_buf = nil,
@@ -15,31 +16,15 @@ local state = {
 
 local WATCH_DEBOUNCE_MS = 150
 
-local augrp = vim.api.nvim_create_augroup('browser_markdown_preview', { clear = true })
+local augrp = vim.api.nvim_create_augroup('browser_markdown', { clear = true })
+local exiting = false
 
 local function notify(msg, level)
   vim.notify(msg, level or vim.log.levels.INFO, { title = 'Markdown Browser Preview' })
 end
 
-local function load_local_config()
-  local path = vim.fn.stdpath('config') .. '/local.lua'
-  if vim.fn.filereadable(path) ~= 1 then return {} end
-  local ok, result = pcall(dofile, path)
-  if not ok or type(result) ~= 'table' then return {} end
-  return result.browser_markdown_preview or {}
-end
-
-local function executable(name)
-  return vim.fn.executable(name) == 1
-end
-
 local function find_opener()
-  local local_cfg = load_local_config()
-  if type(local_cfg.opener) == 'string' and local_cfg.opener ~= '' then
-    if executable(local_cfg.opener) then return local_cfg.opener end
-    return nil
-  end
-  if executable('xdg-open') then return 'xdg-open' end
+  return browser.find_opener('markdown')
 end
 
 local function html_escape(s)
@@ -147,16 +132,11 @@ local function escape_markdown_text_keep_safe_html(s)
 end
 
 local function url_decode(s)
-  s = s:gsub('+', ' ')
-  return (s:gsub('%%(%x%x)', function(hex)
-    return string.char(tonumber(hex, 16))
-  end))
+  return browser.url_decode(s)
 end
 
 local function url_encode_path(s)
-  return (s:gsub('[^%w%-%._~/%#:%?&=]', function(c)
-    return string.format('%%%02X', c:byte())
-  end))
+  return browser.url_encode_path(s)
 end
 
 local function is_external_url(url)
@@ -501,7 +481,7 @@ local function server_url()
 end
 
 local function build_opener_cmd(opener, url)
-  return { opener, url }
+  return browser.build_opener_cmd(opener, url)
 end
 
 local function parse_port(input)
@@ -516,33 +496,7 @@ local function parse_port(input)
 end
 
 local function http_response(status, content_type, body)
-  body = body or ''
-  return table.concat({
-    'HTTP/1.1 ' .. status,
-    'Content-Type: ' .. content_type .. '; charset=utf-8',
-    'Content-Length: ' .. tostring(#body),
-    'Cache-Control: no-store',
-    'Connection: close',
-    '',
-    body,
-  }, '\r\n')
-end
-
-local CONTENT_TYPES = {
-  png = 'image/png',
-  jpg = 'image/jpeg',
-  jpeg = 'image/jpeg',
-  gif = 'image/gif',
-  webp = 'image/webp',
-  svg = 'image/svg+xml',
-  css = 'text/css',
-  js = 'application/javascript',
-  txt = 'text/plain',
-}
-
-local function content_type_for(path)
-  local ext = path:match('%.([%w]+)$')
-  return (ext and CONTENT_TYPES[ext:lower()]) or 'application/octet-stream'
+  return browser.http_response(status, content_type, body)
 end
 
 local function asset_response(asset_path)
@@ -565,7 +519,7 @@ local function asset_response(asset_path)
   if not f then return http_response('404 Not Found', 'text/plain', 'not found') end
   local body = f:read('*a')
   f:close()
-  return http_response('200 OK', content_type_for(full), body)
+  return http_response('200 OK', browser.content_type_for(full), body)
 end
 
 local function response_for_path(path)
@@ -639,21 +593,31 @@ local function start_watch(path)
   state.watched_path = path
 end
 
-local function stop_server()
+local function stop_server(opts)
+  opts = opts or {}
+  local port = state.port
+  local had_server = state.server ~= nil
   stop_watch()
   if state.server then
     pcall(function() state.server:close() end)
   end
+  state.source_buf = nil
   state.server = nil
   state.port = nil
   state.host = nil
+  if had_server and opts.notify ~= false and not exiting then
+    local suffix = port and (': http://localhost:' .. tostring(port) .. '/') or ''
+    vim.schedule(function()
+      if not exiting then notify('Markdown previewを停止しました' .. suffix) end
+    end)
+  end
 end
 
 local function start_server(port)
   if state.server and state.port == port then return true end
   if state.server and state.port ~= port then stop_server() end
 
-  local local_cfg = load_local_config()
+  local local_cfg = browser.config('markdown')
   local bind_host = local_cfg.host or '0.0.0.0'
   local uv = vim.uv or vim.loop
 
@@ -700,18 +664,11 @@ local function start_server(port)
 end
 
 local function open_with_default_browser(url)
-  local opener = find_opener()
-  if not opener then
-    notify('Markdown preview URL: ' .. url .. ' (xdg-open not found)', vim.log.levels.WARN)
-    return false
-  end
-
-  local job = vim.fn.jobstart(build_opener_cmd(opener, url), { detach = true })
-  if job <= 0 then
-    notify('Markdown preview URL: ' .. url .. ' (failed to start xdg-open)', vim.log.levels.WARN)
-    return false
-  end
-  return url
+  return browser.open_url(url, {
+    fallback_message = 'Markdown preview URL: ',
+    namespace = 'markdown',
+    title = 'Markdown Browser Preview',
+  })
 end
 
 function M.open_on_port(port)
@@ -760,26 +717,25 @@ function M.refresh(opts)
   end
 end
 
-function M.toggle()
-  M.open()
-end
-
-vim.api.nvim_create_user_command('BrowserMarkdownPreview', function() M.open() end, {
-  desc = 'Open markdown preview in default browser',
-})
-vim.api.nvim_create_user_command('BrowserMarkdownPreviewRefresh', function() M.refresh() end, {
-  desc = 'Refresh browser markdown preview HTML',
-})
-
-vim.keymap.set('n', '<leader>md', M.open, {
-  desc = 'Open markdown preview in default browser',
-})
-
 vim.api.nvim_create_autocmd('BufWritePost', {
   group = augrp,
   pattern = { '*.md', '*.markdown' },
   callback = function(ev)
     if state.source_buf == ev.buf and state.server then M.refresh({ silent = true }) end
+  end,
+})
+
+vim.api.nvim_create_autocmd({ 'BufDelete', 'BufWipeout' }, {
+  group = augrp,
+  callback = function(ev)
+    if state.source_buf == ev.buf and state.server then stop_server() end
+  end,
+})
+
+vim.api.nvim_create_autocmd('VimLeavePre', {
+  group = augrp,
+  callback = function()
+    exiting = true
   end,
 })
 

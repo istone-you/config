@@ -1,0 +1,240 @@
+local M = {}
+local browser = require('config.browser.util')
+
+local state = {
+  source_buf = nil,
+  html = nil,
+  version = 0,
+  server = nil,
+  port = nil,
+  host = nil,
+  root_dir = nil,
+  entry_name = nil,
+}
+
+local augrp = vim.api.nvim_create_augroup('browser_html', { clear = true })
+local exiting = false
+
+local function notify(msg, level)
+  vim.notify(msg, level or vim.log.levels.INFO, { title = 'HTML Browser Preview' })
+end
+
+local function parse_port(input)
+  input = vim.trim(tostring(input or ''))
+  if input == '' then return nil, nil end
+  if not input:match('^%d+$') then return nil, 'port must be a number' end
+  local port = tonumber(input)
+  if not port or port < 1 or port > 65535 then
+    return nil, 'port must be between 1 and 65535'
+  end
+  return port
+end
+
+local function is_html_path(path)
+  local ext = vim.fn.fnamemodify(path or '', ':e'):lower()
+  return ext == 'html' or ext == 'htm'
+end
+
+local function set_preview_html(buf)
+  local name = vim.api.nvim_buf_get_name(buf)
+  if name == '' then
+    notify('HTML preview requires a named .html file', vim.log.levels.WARN)
+    return false
+  end
+  if not is_html_path(name) and vim.bo[buf].filetype ~= 'html' then
+    notify('HTML preview is only for .html files', vim.log.levels.WARN)
+    return false
+  end
+
+  state.source_buf = buf
+  state.root_dir = vim.fn.fnamemodify(name, ':p:h')
+  state.entry_name = vim.fn.fnamemodify(name, ':t')
+  state.version = state.version + 1
+  state.html = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n')
+  return true
+end
+
+local function server_url()
+  if not state.port then return nil end
+  return 'http://localhost:' .. tostring(state.port) .. '/'
+end
+
+local function file_response(rel_path)
+  if not state.root_dir then return browser.http_response('404 Not Found', 'text/plain', 'not found') end
+  rel_path = browser.url_decode(rel_path or ''):gsub('%?.*$', ''):gsub('#.*$', '')
+  if rel_path == '' or rel_path:find('%z') or rel_path:match('^/') or rel_path:match('%.%.') then
+    return browser.http_response('403 Forbidden', 'text/plain', 'forbidden')
+  end
+
+  local full = vim.fn.fnamemodify(state.root_dir .. '/' .. rel_path, ':p')
+  local root = vim.fn.fnamemodify(state.root_dir, ':p')
+  if full:sub(1, #root) ~= root then
+    return browser.http_response('403 Forbidden', 'text/plain', 'forbidden')
+  end
+  if vim.fn.filereadable(full) ~= 1 then
+    return browser.http_response('404 Not Found', 'text/plain', 'not found')
+  end
+
+  local f = io.open(full, 'rb')
+  if not f then return browser.http_response('404 Not Found', 'text/plain', 'not found') end
+  local body = f:read('*a')
+  f:close()
+  return browser.http_response('200 OK', browser.content_type_for(full), body)
+end
+
+local function response_for_path(path)
+  path = (path or '/'):gsub('%?.*$', ''):gsub('#.*$', '')
+  if path == '/__version' then
+    return browser.http_response('200 OK', 'text/plain', tostring(state.version))
+  end
+  if path == '/' or path == '/index.html' or path == '/' .. tostring(state.entry_name or '') then
+    return browser.http_response('200 OK', 'text/html', state.html or '<!doctype html><title>HTML Preview</title>')
+  end
+  return file_response(path:gsub('^/', ''))
+end
+
+local function stop_server(opts)
+  opts = opts or {}
+  local port = state.port
+  local had_server = state.server ~= nil
+  if state.server then
+    pcall(function() state.server:close() end)
+  end
+  state.source_buf = nil
+  state.server = nil
+  state.port = nil
+  state.host = nil
+  if had_server and opts.notify ~= false and not exiting then
+    local suffix = port and (': http://localhost:' .. tostring(port) .. '/') or ''
+    vim.schedule(function()
+      if not exiting then notify('HTML previewを停止しました' .. suffix) end
+    end)
+  end
+end
+
+local function start_server(port)
+  if state.server and state.port == port then return true end
+  if state.server and state.port ~= port then stop_server() end
+
+  local local_cfg = browser.config('html')
+  local bind_host = local_cfg.host or '0.0.0.0'
+  local uv = vim.uv or vim.loop
+  local server = uv.new_tcp()
+  local ok = pcall(function()
+    assert(server:bind(bind_host, port))
+  end)
+  if not ok then
+    pcall(function() server:close() end)
+    return false, string.format('port %d is already in use', port)
+  end
+
+  local listen_ok = pcall(function()
+    assert(server:listen(128, function(err)
+      if err then return end
+      local client = uv.new_tcp()
+      server:accept(client)
+      local req = ''
+      client:read_start(function(read_err, chunk)
+        if read_err or not chunk then
+          pcall(function() client:close() end)
+          return
+        end
+        req = req .. chunk
+        if not req:find('\r\n\r\n', 1, true) then return end
+        local path = req:match('^GET%s+([^%s]+)') or '/'
+        client:write(response_for_path(path), function()
+          pcall(function() client:shutdown() end)
+          pcall(function() client:close() end)
+        end)
+      end)
+    end))
+  end)
+  if not listen_ok then
+    pcall(function() server:close() end)
+    return false, string.format('port %d is already in use', port)
+  end
+
+  state.server = server
+  state.port = port
+  state.host = bind_host
+  return true
+end
+
+function M.open_on_port(port)
+  local source_buf = vim.api.nvim_get_current_buf()
+  if not set_preview_html(source_buf) then return end
+  local ok, err = start_server(port)
+  if not ok then
+    notify(err or 'failed to start html preview server', vim.log.levels.ERROR)
+    return
+  end
+  local url = server_url()
+  browser.open_url(url, {
+    fallback_message = 'HTML preview URL: ',
+    namespace = 'html',
+    title = 'HTML Browser Preview',
+  })
+  notify('HTML preview URL: ' .. url)
+end
+
+function M.open()
+  vim.ui.input({
+    prompt = 'HTML preview port: ',
+  }, function(input)
+    if input == nil then return end
+    local port, err = parse_port(input)
+    if not port then
+      notify(err, vim.log.levels.ERROR)
+      return
+    end
+    M.open_on_port(port)
+  end)
+end
+
+function M.refresh(opts)
+  opts = opts or {}
+  local source_buf = state.source_buf
+  if not source_buf or not vim.api.nvim_buf_is_valid(source_buf) then
+    source_buf = vim.api.nvim_get_current_buf()
+  end
+  if not set_preview_html(source_buf) then return end
+  if not opts.silent then
+    local url = server_url()
+    notify(url and ('Updated HTML preview: ' .. url) or 'Updated HTML preview')
+  end
+end
+
+vim.api.nvim_create_autocmd('BufWritePost', {
+  group = augrp,
+  pattern = { '*.html', '*.htm' },
+  callback = function(ev)
+    if state.source_buf == ev.buf and state.server then M.refresh({ silent = true }) end
+  end,
+})
+
+vim.api.nvim_create_autocmd({ 'BufDelete', 'BufWipeout' }, {
+  group = augrp,
+  callback = function(ev)
+    if state.source_buf == ev.buf and state.server then stop_server() end
+  end,
+})
+
+vim.api.nvim_create_autocmd('VimLeavePre', {
+  group = augrp,
+  callback = function()
+    exiting = true
+  end,
+})
+
+M._private = {
+  file_response = file_response,
+  parse_port = parse_port,
+  response_for_path = response_for_path,
+  server_url = server_url,
+  set_preview_html = set_preview_html,
+  start_server = start_server,
+  state = state,
+  stop_server = stop_server,
+}
+
+return M

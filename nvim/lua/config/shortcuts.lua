@@ -139,7 +139,7 @@ local SECTIONS = {
     { 'Namu Enter/Esc',  'Namu(ポップアップ内): 選択位置へジャンプ / 閉じる（Ctrl-cでも閉じる）' },
     { 'Space /',         'rg+fzf: 検索。開いた後 Ctrl-f:ファイル名 / Ctrl-r:置換 / Ctrl-g:内容 に切替' },
     { 'Space *',         'rg+fzf: カーソル単語で検索（Ctrl-f/Ctrl-r/Ctrl-g で切替）' },
-    { 'Space m d',       'Markdownプレビューを既定ブラウザで開く' },
+    { 'Space o',         'HTML / MarkdownをローカルHTTPサーバで開く' },
     { 'Space h r',       '.httpファイル: カーソル位置のリクエストを実行（詳細は下のセクション）' },
     { 'Space G',         'GitHubパーマリンクをコピー' },
     { 'Space x c/i/b',   'コンフリクト: 現在/入力側/両方を採用（大文字でファイル全体、詳細は下のセクション）' },

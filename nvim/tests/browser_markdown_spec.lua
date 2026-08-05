@@ -1,8 +1,8 @@
 local T = dofile(TESTS_DIR .. '/helpers.lua')
-local preview = require('config.browser_markdown_preview')
+local preview = require('config.browser.markdown')
 local P = preview._private
 
-T.describe('browser_markdown_preview.lua: markdown/html rendering', function()
+T.describe('browser/markdown.lua: markdown/html rendering', function()
   T.it('renders common markdown blocks without external markdown tools', function()
     local html = P.document_html({
       '# Title',
@@ -127,7 +127,7 @@ T.describe('browser_markdown_preview.lua: markdown/html rendering', function()
 
 end)
 
-T.describe('browser_markdown_preview.lua: opener command', function()
+T.describe('browser/markdown.lua: opener command', function()
   T.it('opens the preview server URL through xdg-open only', function()
     local cmd = P.build_opener_cmd('xdg-open', 'http://localhost:6275/')
     local joined = table.concat(cmd, ' ')
@@ -160,7 +160,7 @@ T.describe('browser_markdown_preview.lua: opener command', function()
   end)
 end)
 
-T.describe('browser_markdown_preview.lua: port input', function()
+T.describe('browser/markdown.lua: port input', function()
   T.it('parses explicit ports, treats blank input as cancel, and rejects invalid ports', function()
     T.eq(P.parse_port('7000'), 7000)
     T.eq(P.parse_port(''), nil)
@@ -174,7 +174,7 @@ T.describe('browser_markdown_preview.lua: port input', function()
     T.contains(err, 'between 1 and 65535')
   end)
 
-  T.it('BrowserMarkdownPreview asks for a port every time before opening', function()
+  T.it('open asks for a port every time before opening', function()
     local orig_input = vim.ui.input
     local orig_open_on_port = preview.open_on_port
     local prompts = 0
@@ -189,8 +189,8 @@ T.describe('browser_markdown_preview.lua: port input', function()
       opened[#opened + 1] = port
     end
 
-    vim.cmd('BrowserMarkdownPreview')
-    vim.cmd('BrowserMarkdownPreview')
+    preview.open()
+    preview.open()
 
     vim.ui.input = orig_input
     preview.open_on_port = orig_open_on_port
@@ -227,7 +227,7 @@ T.describe('browser_markdown_preview.lua: port input', function()
   end)
 end)
 
-T.describe('browser_markdown_preview.lua: http response', function()
+T.describe('browser/markdown.lua: http response', function()
   T.it('serves HTML over HTTP, not file URLs', function()
     local res = P.http_response('200 OK', 'text/html', '<h1>x</h1>')
     T.contains(res, 'HTTP/1.1 200 OK')
@@ -262,19 +262,7 @@ T.describe('browser_markdown_preview.lua: http response', function()
   end)
 end)
 
-T.describe('browser_markdown_preview.lua: commands/keymap', function()
-  T.it('registers commands and <leader>md', function()
-    T.ok(vim.api.nvim_get_commands({}).BrowserMarkdownPreview ~= nil, 'open command should exist')
-    T.ok(vim.api.nvim_get_commands({}).BrowserMarkdownPreviewRefresh ~= nil, 'refresh command should exist')
-
-    local maps = vim.api.nvim_get_keymap('n')
-    local found = false
-    for _, map in ipairs(maps) do
-      if map.desc == 'Open markdown preview in default browser' then found = true end
-    end
-    T.ok(found, '<leader>md should be mapped')
-  end)
-
+T.describe('browser/markdown.lua: autocommands', function()
   T.it('BufWritePost refreshes silently to avoid hit-enter prompts on save', function()
     local orig_refresh = preview.refresh
     local got_opts
@@ -294,9 +282,47 @@ T.describe('browser_markdown_preview.lua: commands/keymap', function()
 
     T.eq(got_opts, { silent = true })
   end)
+
+  T.it('stops the preview server and watcher when the source buffer is deleted', function()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. '.md')
+    local server_closed = false
+    local watch_stopped = false
+    local watch_closed = false
+    P.state.source_buf = buf
+    P.state.server = { close = function() server_closed = true end }
+    P.state.port = 6312
+    P.state.host = '0.0.0.0'
+    P.state.watch_handle = {
+      stop = function() watch_stopped = true end,
+      close = function() watch_closed = true end,
+    }
+    P.state.watched_path = vim.api.nvim_buf_get_name(buf)
+    local notifications = {}
+    local orig_notify = vim.notify
+    vim.notify = function(msg) notifications[#notifications + 1] = tostring(msg) end
+
+    vim.api.nvim_buf_delete(buf, { force = true })
+    vim.wait(80)
+
+    vim.notify = orig_notify
+
+    T.eq(server_closed, true, 'server handle should be closed')
+    T.eq(watch_stopped, true, 'watcher should be stopped')
+    T.eq(watch_closed, true, 'watcher should be closed')
+    T.eq(P.state.source_buf, nil, 'source buffer should be cleared')
+    T.eq(P.state.server, nil, 'server should be cleared')
+    T.eq(P.state.port, nil, 'port should be cleared')
+    T.eq(P.state.watch_handle, nil, 'watch handle should be cleared')
+    T.eq(P.state.watched_path, nil, 'watched path should be cleared')
+    T.ok(vim.iter(notifications):any(function(msg)
+      return msg:find('Markdown previewを停止しました', 1, true) ~= nil
+        and msg:find('http://localhost:6312/', 1, true) ~= nil
+    end), 'should notify that the Markdown preview server stopped')
+  end)
 end)
 
-T.describe('browser_markdown_preview.lua: external edits (e.g. by an AI tool)', function()
+T.describe('browser/markdown.lua: external edits (e.g. by an AI tool)', function()
   -- nvim 側では一切操作しない(保存も checktime もしない)まま、
   -- ディスク上の変更だけでプレビューが更新されることを見る
   local function watch_and_expect(path, write_fn, needle)
