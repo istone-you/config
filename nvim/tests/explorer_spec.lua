@@ -779,7 +779,7 @@ T.describe('explorer', function()
     T.rmrf(dir)
   end)
 
-  T.it('/ filters entries, Esc clears the filter', function()
+  T.it('f filters entries incrementally, Esc clears the filter', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir, 'p')
     T.write_file(dir .. '/apple.txt', { 'x' })
@@ -793,16 +793,14 @@ T.describe('explorer', function()
       local win = list_win()
       vim.api.nvim_set_current_win(win)
 
-      feed('/')
-      vim.wait(50)
-      feed('iapple')
-      feed('<CR>')
+      -- f でフィルタ欄を開き、入力を確定すると現在フォルダが名前で絞り込まれる
+      feed('fapple<CR>')
       vim.wait(50)
       local text = table.concat(lines(win), '\n')
       assert_eq(text:find('apple.txt', 1, true) ~= nil, true)
       assert_eq(text:find('banana.txt', 1, true) == nil, true)
 
-      feed('<Esc>')
+      feed('<Esc>') -- explorer 側の Esc でフィルタ解除
       vim.wait(50)
       text = table.concat(lines(win), '\n')
       assert_eq(text:find('banana.txt', 1, true) ~= nil, true, 'Esc should clear the filter')
@@ -1091,7 +1089,7 @@ T.describe('explorer', function()
       local win = list_win()
       vim.api.nvim_set_current_win(win)
 
-      feed('/apple<CR>')
+      feed('fapple<CR>')
       vim.wait(50)
       vim.api.nvim_win_set_cursor(win, { find_row(win, 'apple.txt'), 0 })
       feed('<Tab>') -- フィルタされた状態で選択もする
@@ -1179,7 +1177,7 @@ T.describe('explorer', function()
     T.rmrf(dir)
   end)
 
-  T.it('s (fd search) warns when fd or fzf is missing, without opening a terminal', function()
+  T.it('/ (recursive search) warns when fd is missing, without opening an input', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir, 'p')
 
@@ -1200,13 +1198,85 @@ T.describe('explorer', function()
       local orig_notify = vim.notify
       vim.notify = function(msg) notified = msg end
       local wins_before = #vim.api.nvim_list_wins()
-      feed('s')
+      feed('/')
       vim.wait(80)
       vim.fn.executable = orig_executable
       vim.notify = orig_notify
-      assert_eq(notified ~= nil, true, 'should notify about the missing dependency')
-      assert_eq(#vim.api.nvim_list_wins(), wins_before, 'no terminal window should open')
+      assert_eq(notified ~= nil, true, 'should notify about the missing fd dependency')
+      assert_eq(#vim.api.nvim_list_wins(), wins_before, 'no input window should open')
     ]], vim.inspect(dir)))
+
+    T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
+    T.rmrf(dir)
+  end)
+
+  T.it('/ recursively finds a filename with fd (nested, respecting matches) and opens it on Enter', function()
+    if vim.fn.executable('fd') == 0 then return end -- fd 未導入環境ではスキップ
+
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir .. '/sub/deep', 'p')
+    T.write_file(dir .. '/sub/deep/target_file.txt', { 'x' })
+    T.write_file(dir .. '/other.txt', { 'x' })
+
+    local res = run_child(string.format([[
+      vim.fn.chdir(%s)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+
+      -- / で再帰検索欄を開き、ファイル名を打って確定する（入力欄はインサートで開く）。
+      -- 深くネストした一致ファイルだけが解決され、Enter で開かれる。
+      feed('/target_file<CR>')
+      vim.wait(200)
+
+      assert_eq(vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ':t'), 'target_file.txt', 'the nested match should be opened')
+      -- サイドバーの explorer は開いたまま
+      local still_open = false
+      for _, w in ipairs(vim.api.nvim_list_wins()) do
+        if vim.bo[vim.api.nvim_win_get_buf(w)].filetype == 'explorer' then still_open = true end
+      end
+      assert_eq(still_open, true, 'the sidebar explorer panel should remain open')
+    ]], vim.inspect(dir)))
+
+    T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
+    T.rmrf(dir)
+  end)
+
+  T.it('build_search rows: list shows cwd-relative paths; tree keeps only matching ancestors', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    -- 純粋関数のふるまいを直接確認する（fd 非依存）。M._debug から検索状態を注入する。
+    local res = run_child(string.format([[
+      vim.fn.chdir(%s)
+      local explorer = require('config.explorer')
+      local dbg = explorer._debug
+      dbg.set_cwd(%s)
+      dbg.set_search_paths({
+        %s .. '/sub/deep/target_file.txt',
+        %s .. '/sub/other.txt',
+      })
+
+      local list_rows = dbg.build_search_list_rows()
+      local names = {}
+      for _, r in ipairs(list_rows) do table.insert(names, r.display_name) end
+      table.sort(names)
+      assert_eq(names, { 'sub/deep/target_file.txt', 'sub/other.txt' }, 'list rows should be cwd-relative paths')
+
+      local tree_rows = dbg.build_search_tree_rows()
+      -- sub(depth0) / deep(depth1) / target_file.txt(depth2) / other.txt(depth1) の構造になる
+      local shape = {}
+      for _, r in ipairs(tree_rows) do
+        table.insert(shape, r.name .. '@' .. r.depth .. (r.isdir and '/' or ''))
+      end
+      assert_eq(shape, {
+        'sub@0/',
+        'deep@1/',
+        'target_file.txt@2',
+        'other.txt@1',
+      }, 'tree rows should keep only matching ancestors, dirs before files, fully expanded')
+    ]], vim.inspect(dir), vim.inspect(dir), vim.inspect(dir), vim.inspect(dir)))
 
     T.eq(res.code, 0, 'child failed: ' .. (res.stderr or ''))
     T.rmrf(dir)

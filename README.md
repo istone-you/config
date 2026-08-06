@@ -93,8 +93,8 @@ git パネルと docker パネルは UI の骨格（レイアウト・タブバ�
 | `xdg-open` | `browser` のプレビューURLを既定ブラウザで開く（無くてもURLは通知される） |
 | `delta` | `git_panel` の diff 色付き表示（任意、無くても素のテキストにフォールバック） |
 | `rg` (ripgrep) | `rg_fzf.lua` の全文検索・置換、`todo_tree.lua` の TODO タグ検索 |
-| `fzf` | `rg_fzf.lua`（検索UI）、`explorer.lua`（ファイル検索） |
-| `fd` | `rg_fzf.lua` / `explorer.lua` のファイル検索、explorer の空ディレクトリ検索 |
+| `fzf` | `rg_fzf.lua`（検索UI） |
+| `fd` | `rg_fzf.lua` のファイル検索、`explorer.lua` の再帰ファイル名検索（`/`）・空ディレクトリ検索 |
 | `herdr` | `git_panel` Worktree パネルの `w`（カーソル行の worktree を herdr ワークスペースとして開く）。`HERDR_ENV=1` の herdr セッション内でのみ有効、無ければ警告のみ |
 
 ## ローカル設定

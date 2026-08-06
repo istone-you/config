@@ -13,6 +13,15 @@ local selection = {}
 local clipboard = nil
 local show_hidden = true
 local filter = ''
+-- 再帰ファイル名検索(/)。fd でファイル名を絞り込み、結果を explorer バッファ内へ
+-- view_mode に従ってインクリメンタル表示する。検索中は専用の入力欄(live_prompt)へ
+-- フォーカスがあり、C-j/C-k で結果内を移動、<CR> で確定、<Esc> で解除する。
+local search_active = false
+local search_query = ''
+local search_paths = {} -- fd が返した絶対パス（ファイル）
+local search_sel = 1    -- 選択中の行（rows 内 1 始まり）
+local search_job = nil  -- 実行中の fd ジョブ id
+local search_gen = 0    -- 検索世代。速い連続入力で古いジョブの結果が後勝ちするのを防ぐ
 local view_mode = 'list' -- 'list': 単一カラムのリスト / 'tree': 折りたたみツリー
 local tree_expanded = {} -- [path] = true
 -- 圧縮表示（VSCode の Compact Folders 相当）。子がディレクトリ1つだけの連鎖を
@@ -291,6 +300,72 @@ local function build_tree_rows(path)
   return list
 end
 
+-- 再帰検索結果を list 表示用の行へ変換する（cwd 相対パスのフラット一覧）。
+local function build_search_list_rows()
+  local out = {}
+  local prefix = cwd == '/' and '/' or (cwd .. '/')
+  for _, abs in ipairs(search_paths) do
+    local rel = (abs:sub(1, #prefix) == prefix) and abs:sub(#prefix + 1) or abs
+    table.insert(out, {
+      name = vim.fn.fnamemodify(abs, ':t'),
+      path = abs,
+      isdir = false,
+      display_name = rel,
+    })
+  end
+  return out
+end
+
+-- 再帰検索結果を tree 表示用の行へ変換する。一致ファイルの祖先ディレクトリだけを残し、
+-- すべて展開済みの状態で列挙する（build_tree_rows と同じ「ディレクトリ先・名前順」）。
+local function build_search_tree_rows()
+  local prefix = cwd == '/' and '/' or (cwd .. '/')
+  local children = {} -- [dir abs] = { [child abs] = true }
+  local isdir = {}    -- [abs] = bool
+  local function ensure(d) children[d] = children[d] or {} end
+  ensure(cwd)
+  for _, abs in ipairs(search_paths) do
+    if abs:sub(1, #prefix) == prefix then
+      local parts = vim.split(abs:sub(#prefix + 1), '/', { plain = true })
+      local cur = cwd
+      for i = 1, #parts do
+        local child = (cur == '/') and ('/' .. parts[i]) or (cur .. '/' .. parts[i])
+        ensure(cur)
+        children[cur][child] = true
+        if i < #parts then
+          isdir[child] = true
+          ensure(child)
+        elseif isdir[child] == nil then
+          isdir[child] = false
+        end
+        cur = child
+      end
+    end
+  end
+  local out = {}
+  local function emit(dir, depth)
+    local keys = {}
+    for k in pairs(children[dir] or {}) do table.insert(keys, k) end
+    table.sort(keys, function(a, b)
+      if isdir[a] ~= isdir[b] then return isdir[a] end
+      return a:lower() < b:lower()
+    end)
+    for _, k in ipairs(keys) do
+      table.insert(out, {
+        name = vim.fn.fnamemodify(k, ':t'),
+        path = k,
+        isdir = isdir[k],
+        depth = depth,
+        expandable = isdir[k],
+        display_name = vim.fn.fnamemodify(k, ':t'),
+      })
+      if isdir[k] then emit(k, depth + 1) end
+    end
+  end
+  emit(cwd, 0)
+  return out
+end
+
 local function remember_entry(entry)
   if not entry then return end
   if view_mode == 'tree' then
@@ -329,6 +404,7 @@ local function status_text()
   end
   if not show_hidden then table.insert(parts, '隠しファイル非表示') end
   if filter ~= '' then table.insert(parts, 'filter:' .. filter) end
+  if search_active then table.insert(parts, 'search:' .. search_query) end
   if #parts == 0 then return '' end
   return '  [' .. table.concat(parts, ' | ') .. ']'
 end
@@ -336,7 +412,11 @@ end
 function render()
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
 
-  rows = view_mode == 'tree' and build_tree_rows(cwd) or list_dir(cwd)
+  if search_active then
+    rows = view_mode == 'tree' and build_search_tree_rows() or build_search_list_rows()
+  else
+    rows = view_mode == 'tree' and build_tree_rows(cwd) or list_dir(cwd)
+  end
 
   if git_status_cwd ~= cwd or git_status_dirty then
     git_status_dirty = false
@@ -356,7 +436,9 @@ function render()
   table.insert(lines, '')
 
   for _, entry in ipairs(rows) do
-    local icon = view_mode == 'tree' and entry.expandable and tree_expanded[entry.path]
+    -- 検索中はツリーを全展開状態で見せる（開いた矢印・開いたフォルダアイコン）
+    local node_open = tree_expanded[entry.path] or search_active
+    local icon = view_mode == 'tree' and entry.expandable and node_open
       and icon_char(FOLDER_OPEN_ICON) or get_icon(entry.name, entry.isdir, entry.path)
     -- yazi の marker_symbol("│") 相当: 選択行は左端に色付きバー、文字色は変えない
     local marker = selection[entry.path] and '│' or ' '
@@ -364,7 +446,7 @@ function render()
     local arrow_cs, arrow_ce
     if view_mode == 'tree' then
       local indent = string.rep('  ', entry.depth or 0)
-      local arrow = entry.expandable and (tree_expanded[entry.path] and TREE_ARROW_OPEN or TREE_ARROW_CLOSED) or ' '
+      local arrow = entry.expandable and (node_open and TREE_ARROW_OPEN or TREE_ARROW_CLOSED) or ' '
       local tree_marker = selection[entry.path] and marker or ''
       prefix = tree_marker .. indent .. arrow .. ' '
       if entry.expandable then
@@ -441,27 +523,34 @@ function render()
   end
 
   if win and vim.api.nvim_win_is_valid(win) and #rows > 0 then
-    local target_row = ENTRY_OFFSET + 1
-    if view_mode == 'tree' then
-      local remembered = tree_cursor_mem[cwd]
-      for i, entry in ipairs(rows) do
-        if entry.path == remembered then
-          target_row = ENTRY_OFFSET + i
-          break
-        end
-      end
+    local target_row
+    if search_active then
+      -- 検索中は入力欄側にフォーカスがあるため、選択行(search_sel)へカーソルだけ移す
+      search_sel = math.max(1, math.min(search_sel, #rows))
+      target_row = ENTRY_OFFSET + search_sel
     else
-      local remembered = cursor_mem[cwd]
-      if remembered then
+      target_row = ENTRY_OFFSET + 1
+      if view_mode == 'tree' then
+        local remembered = tree_cursor_mem[cwd]
         for i, entry in ipairs(rows) do
-          if entry.name == remembered then
+          if entry.path == remembered then
             target_row = ENTRY_OFFSET + i
             break
           end
         end
+      else
+        local remembered = cursor_mem[cwd]
+        if remembered then
+          for i, entry in ipairs(rows) do
+            if entry.name == remembered then
+              target_row = ENTRY_OFFSET + i
+              break
+            end
+          end
+        end
       end
+      target_row = math.min(target_row, ENTRY_OFFSET + #rows)
     end
-    target_row = math.min(target_row, ENTRY_OFFSET + #rows)
     pcall(vim.api.nvim_win_set_cursor, win, { target_row, 0 })
   end
 
@@ -1692,87 +1781,205 @@ local function paste(overwrite)
   render()
 end
 
-local function set_filter()
-  input_modal('フィルタ (Esc でクリア)', filter, function(input)
-    -- Esc(input=nil)もクリアとして扱う（yaziと同じ挙動）
-    filter = input or ''
-    render()
-    refocus_panel()
-  end)
-end
-
--- ══════════════════════════════════════════════
--- fd + fzf 再帰検索
--- ══════════════════════════════════════════════
-
-local function fd_search()
-  if vim.fn.executable('fd') == 0 or vim.fn.executable('fzf') == 0 then
-    vim.notify('fd または fzf が見つかりません', vim.log.levels.ERROR)
-    return
-  end
-
-  local out = vim.fn.tempname()
-  local shell = string.format(
-    "fd --hidden --exclude .git . %s | fzf --prompt 'fd> ' --header 'Enter: 移動/開く  Esc: 閉じる' > %s",
-    vim.fn.shellescape(cwd),
-    vim.fn.shellescape(out)
-  )
-
-  local width = math.floor(vim.o.columns * 0.8)
-  local height = math.floor(vim.o.lines * 0.8)
+-- explorer バッファへ重ねる1行のライブ入力欄。打鍵ごとに handlers.change(text) を呼び、
+-- <CR> で handlers.accept(text)、<Esc> で handlers.cancel() を呼ぶ（いずれもフォーカスを
+-- explorer へ戻してから）。handlers.move(delta) があれば C-j/C-k・↑↓ を割り当てる。
+-- 入力中も裏の explorer 一覧が見えているので、フィルタ/検索の結果をその場で確認できる。
+local function live_prompt(title, initial, handlers)
+  initial = initial or ''
+  local width = math.max(30, math.min(60, math.floor(vim.o.columns * 0.5)))
   local col = math.floor((vim.o.columns - width) / 2)
-  local row = math.floor((vim.o.lines - height) / 2)
+  local row = math.floor((vim.o.lines - 1) / 2) - 1
 
-  local term_buf = vim.api.nvim_create_buf(false, true)
-  local term_win = vim.api.nvim_open_win(term_buf, true, {
+  local pbuf = vim.api.nvim_create_buf(false, true)
+  vim.bo[pbuf].buftype = 'nofile'
+  vim.bo[pbuf].bufhidden = 'wipe'
+  vim.bo[pbuf].swapfile = false
+  vim.api.nvim_buf_set_lines(pbuf, 0, -1, false, { initial })
+
+  local pwin = vim.api.nvim_open_win(pbuf, true, {
     relative = 'editor',
     width = width,
-    height = height,
+    height = 1,
     col = col,
     row = row,
     style = 'minimal',
-    border = 'single',
-    title = ' fd + fzf ',
+    border = 'rounded',
+    title = ' ' .. title .. ' ',
     title_pos = 'center',
   })
-  vim.wo[term_win].number = false
-  vim.wo[term_win].relativenumber = false
-  vim.wo[term_win].signcolumn = 'no'
+  vim.wo[pwin].winhighlight = 'Normal:ExplorerInputBg,FloatBorder:ExplorerInputBorder'
 
-  vim.fn.termopen({ 'sh', '-c', shell }, {
+  local function current_text()
+    return vim.api.nvim_buf_get_lines(pbuf, 0, 1, false)[1] or ''
+  end
+
+  local done = false
+  local function finish(cb, arg)
+    if done then return end
+    done = true
+    -- インサートのまま閉じるとフォーカス移動後もインサートが引き継がれるため先に抜ける
+    vim.cmd('stopinsert')
+    if vim.api.nvim_win_is_valid(pwin) then vim.api.nvim_win_close(pwin, true) end
+    refocus_panel()
+    if cb then cb(arg) end
+  end
+
+  -- bufhidden=wipe なのでバッファ破棄時に buffer-local な autocmd/keymap も自動で消える
+  vim.api.nvim_create_autocmd({ 'TextChangedI', 'TextChanged' }, {
+    buffer = pbuf,
+    callback = function() handlers.change(current_text()) end,
+  })
+
+  local opts = { buffer = pbuf, nowait = true, silent = true }
+  vim.keymap.set({ 'i', 'n' }, '<CR>', function() finish(handlers.accept, current_text()) end, opts)
+  vim.keymap.set({ 'i', 'n' }, '<Esc>', function() finish(handlers.cancel) end, opts)
+  vim.keymap.set({ 'i', 'n' }, '<C-u>', function()
+    vim.api.nvim_buf_set_lines(pbuf, 0, 1, false, { '' })
+    if vim.api.nvim_win_is_valid(pwin) then vim.api.nvim_win_set_cursor(pwin, { 1, 0 }) end
+    handlers.change('')
+  end, opts)
+  if handlers.move then
+    vim.keymap.set({ 'i', 'n' }, '<C-j>', function() handlers.move(1) end, opts)
+    vim.keymap.set({ 'i', 'n' }, '<C-k>', function() handlers.move(-1) end, opts)
+    vim.keymap.set({ 'i', 'n' }, '<Down>', function() handlers.move(1) end, opts)
+    vim.keymap.set({ 'i', 'n' }, '<Up>', function() handlers.move(-1) end, opts)
+  end
+
+  vim.api.nvim_win_set_cursor(pwin, { 1, #initial })
+  vim.cmd('startinsert!')
+end
+
+-- 直下フィルタ（yazi 風インクリメンタル）。打鍵ごとに現在フォルダの一覧を名前で絞り込む。
+-- <CR> で確定（絞り込みを維持）、<Esc> でクリア。
+local function set_filter()
+  live_prompt('フィルタ (Esc でクリア)', filter, {
+    change = function(text) filter = text; render() end,
+    accept = function(text) filter = text or ''; render() end,
+    cancel = function() filter = ''; render() end,
+  })
+end
+
+-- ══════════════════════════════════════════════
+-- 再帰ファイル名検索（fd・fzf 不使用）
+-- ══════════════════════════════════════════════
+
+-- fd は既定で .gitignore を尊重するため node_modules などは自動的に除外され、大きな
+-- リポジトリでも速い。--fixed-strings でクエリはリテラル、既定でファイル名にマッチする。
+local function fd_command(query)
+  return {
+    'fd', '--type', 'f', '--hidden', '--color', 'never',
+    '--exclude', '.git', '--fixed-strings', query, cwd,
+  }
+end
+
+-- fd を非同期実行してファイル名で候補を集める（打鍵ごとのライブ更新用）。結果は
+-- search_paths に入れ、検索中なら再描画する。
+local function run_fd_search(query)
+  if search_job then
+    pcall(vim.fn.jobstop, search_job)
+    search_job = nil
+  end
+  query = query or ''
+  search_query = query
+  search_gen = search_gen + 1
+  local gen = search_gen
+  if query == '' then
+    search_paths = {}
+    search_sel = 1
+    if search_active then render() end
+    return
+  end
+  local out = {}
+  search_job = vim.fn.jobstart(fd_command(query), {
+    stdout_buffered = true,
+    on_stdout = function(_, data)
+      for _, line in ipairs(data or {}) do
+        if line ~= '' then table.insert(out, line) end
+      end
+    end,
     on_exit = function()
       vim.schedule(function()
-        if vim.api.nvim_win_is_valid(term_win) then
-          vim.api.nvim_win_close(term_win, true)
-        end
-        if vim.api.nvim_buf_is_valid(term_buf) then
-          vim.api.nvim_buf_delete(term_buf, { force = true })
-        end
-        refocus_panel()
-
-        if vim.fn.filereadable(out) == 0 then return end
-        local lines = vim.tbl_filter(function(l) return l ~= '' end, vim.fn.readfile(out))
-        vim.fn.delete(out)
-        if #lines == 0 then return end
-
-        local selected = lines[1]
-        if vim.fn.isdirectory(selected) == 1 then
-          cwd = selected
-          selection = {}
-        else
-          cwd = vim.fn.fnamemodify(selected, ':h')
-          cursor_mem[cwd] = vim.fn.fnamemodify(selected, ':t')
-        end
-        render()
+        if gen ~= search_gen then return end -- 後続の入力で世代が進んでいたら破棄
+        search_job = nil
+        search_paths = out
+        search_sel = 1
+        if search_active then render() end
       end)
     end,
   })
+end
 
-  vim.schedule(function()
-    if vim.api.nvim_win_is_valid(term_win) then
-      vim.cmd('startinsert')
-    end
-  end)
+-- 確定時の保険。ライブ更新(TextChangedI)がまだ届いておらず結果が空のときだけ、最新の
+-- クエリで同期的に fd を回して search_paths を埋める。既に結果があれば触らない（C-j/C-k で
+-- 動かした選択位置を保つため）。
+local function ensure_fd_results(query)
+  query = query or ''
+  if query == '' or #search_paths > 0 then return end
+  search_query = query
+  search_gen = search_gen + 1 -- 以降に届く非同期ジョブの結果で上書きされないように
+  local result = vim.fn.systemlist(fd_command(query))
+  if vim.v.shell_error ~= 0 then result = {} end
+  search_paths = vim.tbl_filter(function(l) return l ~= '' end, result)
+  search_sel = 1
+end
+
+-- 検索状態を解除する。restore=true なら通常表示へ戻すため再描画する。
+local function stop_search(restore)
+  search_active = false
+  search_query = ''
+  search_paths = {}
+  search_sel = 1
+  search_gen = search_gen + 1 -- 実行中ジョブの結果を無効化
+  if search_job then
+    pcall(vim.fn.jobstop, search_job)
+    search_job = nil
+  end
+  if restore then render() end
+end
+
+-- 選択中の検索結果（rows[search_sel]）を確定する。ファイルなら開き、ディレクトリなら cd する。
+local function resolve_search_selection(text)
+  ensure_fd_results(text) -- ライブ更新が届いていなければ確定テキストで検索し直す
+  render()                -- 最新の search_paths で rows を組み直す
+  local entry = rows[search_sel]
+  stop_search(false)
+  if not entry then
+    render()
+    return
+  end
+  if entry.isdir then
+    cwd = entry.path
+    selection = {}
+    render()
+  else
+    render() -- 検索表示を通常表示へ戻してからファイルを開く
+    open_file_in_origin(entry.path)
+  end
+end
+
+-- 再帰ファイル名検索を開始する。ライブ入力欄で打鍵ごとに fd を回し、結果を explorer
+-- バッファ内へ view_mode に従って表示する。C-j/C-k で移動、<CR> で確定、<Esc> で解除。
+local function start_search()
+  if vim.fn.executable('fd') == 0 then
+    vim.notify('fd が見つかりません', vim.log.levels.ERROR)
+    return
+  end
+  search_active = true
+  search_query = ''
+  search_paths = {}
+  search_sel = 1
+  render()
+  live_prompt('検索 (再帰・fd)', '', {
+    change = function(text) run_fd_search(text) end,
+    accept = function(text) resolve_search_selection(text) end,
+    cancel = function() stop_search(true) end,
+    move = function(delta)
+      if #rows == 0 then return end
+      search_sel = math.max(1, math.min(#rows, search_sel + delta))
+      render()
+    end,
+  })
 end
 
 -- ══════════════════════════════════════════════
@@ -1800,6 +2007,11 @@ teardown_ui = function()
   win, buf, preview_win, preview_buf = nil, nil, nil, nil
   last_preview_path = nil
   is_fullscreen = false
+  if search_job then pcall(vim.fn.jobstop, search_job); search_job = nil end
+  search_active = false
+  search_query = ''
+  search_paths = {}
+  search_sel = 1
   pcall(vim.cmd, 'redrawtabline')
 end
 
@@ -1954,8 +2166,8 @@ local function open(fullscreen)
   map('<C-S-p>', function() paste(true) end)
   map('y',       copy_name)
   map('Y',       copy_abs_path)
-  map('/',       set_filter)
-  map('s',       fd_search)
+  map('f',       set_filter)
+  map('/',       start_search)
   map('v',       toggle_sidebar_preview)
   map('<',       function() move_sidebar('left') end)
   map('>',       function() move_sidebar('right') end)
@@ -2055,5 +2267,15 @@ vim.api.nvim_create_autocmd('VimEnter', {
     M.open()
   end,
 })
+
+-- テスト用の内部フック（プロダクション動作には影響しない）。テストハーネスは insert-mode の
+-- ライブ入力(TextChangedI)を再現できず検索行ビルダを実キー経由で駆動できないため、直接
+-- 検証できるよう純粋関数と最小限のステート注入だけを公開する。
+M._debug = {
+  build_search_list_rows = build_search_list_rows,
+  build_search_tree_rows = build_search_tree_rows,
+  set_cwd = function(p) cwd = p end,
+  set_search_paths = function(p) search_paths = p end,
+}
 
 return M
