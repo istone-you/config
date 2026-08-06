@@ -23,13 +23,18 @@ function M.config(namespace)
   return vim.tbl_extend('force', base, scoped)
 end
 
+-- 既定 opener の探索順。Linux は xdg-open、macOS は open。
+local DEFAULT_OPENERS = { 'xdg-open', 'open' }
+
 function M.find_opener(namespace)
   local cfg = M.config(namespace)
   if type(cfg.opener) == 'string' and cfg.opener ~= '' then
     if vim.fn.executable(cfg.opener) == 1 then return cfg.opener end
     return nil
   end
-  if vim.fn.executable('xdg-open') == 1 then return 'xdg-open' end
+  for _, opener in ipairs(DEFAULT_OPENERS) do
+    if vim.fn.executable(opener) == 1 then return opener end
+  end
 end
 
 function M.build_opener_cmd(opener, url)
@@ -41,13 +46,13 @@ function M.open_url(url, opts)
   local opener = M.find_opener(opts.namespace)
   local title = opts.title or 'Browser'
   if not opener then
-    notify((opts.fallback_message or 'Browser URL: ') .. url .. ' (xdg-open not found)', vim.log.levels.WARN, title)
+    notify((opts.fallback_message or 'Browser URL: ') .. url .. ' (opener not found)', vim.log.levels.WARN, title)
     return false
   end
 
   local job = vim.fn.jobstart(M.build_opener_cmd(opener, url), { detach = true })
   if job <= 0 then
-    notify((opts.fallback_message or 'Browser URL: ') .. url .. ' (failed to start xdg-open)', vim.log.levels.WARN, title)
+    notify((opts.fallback_message or 'Browser URL: ') .. url .. ' (failed to start ' .. opener .. ')', vim.log.levels.WARN, title)
     return false
   end
   return url

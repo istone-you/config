@@ -90,7 +90,7 @@ git パネルと docker パネルは UI の骨格（レイアウト・タブバ�
 | `docker` | `docker_panel` のコンテナ / イメージ / ボリューム / ネットワーク操作全般（無い場合はパネルを開いた時にエラー通知して閉じる） |
 | `gh` | `git_panel` の GitHub PR 取得・認証（branches.lua の PR 表示、pr.lua の PRパネル: 一覧/詳細/diff/checkout/ブラウザ表示） |
 | `curl` | `git_panel/git.lua` の GitHub GraphQL API 呼び出し（PR情報取得）、`http_client` のリクエスト実行 |
-| `xdg-open` | `browser` のプレビューURLを既定ブラウザで開く（無くてもURLは通知される） |
+| `xdg-open` / `open` | `browser` のプレビューURLを既定ブラウザで開く。`xdg-open`（Linux）→ `open`（macOS）の順に探索し、どちらも無い場合はURLを通知するのみ |
 | `delta` | `git_panel` の diff 色付き表示（任意、無くても素のテキストにフォールバック） |
 | `rg` (ripgrep) | `search.lua` の全文検索・置換、`todo_tree.lua` の TODO タグ検索 |
 | `fzf` | `search.lua`（検索UI） |
@@ -106,7 +106,7 @@ git パネルと docker パネルは UI の骨格（レイアウト・タブバ�
 | キー | 説明 |
 |------|------|
 | `tsserver_path` | `typescript-language-server` が使う `tsserver.js` の絶対パス |
-| `browser.opener` | ブラウザ opener 実行ファイル名または絶対パス（未指定時は `xdg-open`） |
+| `browser.opener` | ブラウザ opener 実行ファイル名または絶対パス（未指定時は `xdg-open` → `open` の順に自動探索） |
 | `browser.host` | HTML / Markdown プレビューサーバの bind host（未指定時は Dev Container から見やすい `0.0.0.0`） |
 | `browser.html.opener` / `browser.markdown.opener` | 種別ごとに opener を上書き |
 | `browser.html.host` / `browser.markdown.host` | 種別ごとに bind host を上書き |

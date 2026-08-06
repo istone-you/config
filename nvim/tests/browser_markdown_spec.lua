@@ -290,7 +290,7 @@ T.describe('browser/markdown.lua: opener command', function()
     T.ok(not joined:find('chafa', 1, true), 'chafa must not be a runtime dependency')
   end)
 
-  T.it('find_opener returns nil when xdg-open is missing', function()
+  T.it('find_opener returns nil when no default opener is available', function()
     local orig = vim.fn.executable
     vim.fn.executable = function() return 0 end
     local found = P.find_opener()
@@ -298,7 +298,31 @@ T.describe('browser/markdown.lua: opener command', function()
     T.eq(found, nil)
   end)
 
-  T.it('find_opener ignores browser binaries and uses xdg-open only', function()
+  T.it('find_opener prefers xdg-open when both defaults exist', function()
+    local orig = vim.fn.executable
+    vim.fn.executable = function(name)
+      return (name == 'xdg-open' or name == 'open') and 1 or 0
+    end
+
+    local found = P.find_opener()
+
+    vim.fn.executable = orig
+    T.eq(found, 'xdg-open')
+  end)
+
+  T.it('find_opener falls back to macOS open when xdg-open is missing', function()
+    local orig = vim.fn.executable
+    vim.fn.executable = function(name)
+      return name == 'open' and 1 or 0
+    end
+
+    local found = P.find_opener()
+
+    vim.fn.executable = orig
+    T.eq(found, 'open')
+  end)
+
+  T.it('find_opener ignores browser binaries and uses the default openers only', function()
     local orig = vim.fn.executable
     vim.fn.executable = function(name)
       return (name == 'chromium' or name == 'google-chrome-stable') and 1 or 0
