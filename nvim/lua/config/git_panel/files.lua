@@ -1,4 +1,5 @@
 -- Filesパネル: ディレクトリツリー表示（lazygit実機のデフォルト gui.showFileTree=true に合わせる）
+-- t で VSCode の Source Control 風のフラット一覧（マージ/ステージ済み/変更のセクション別）へ切替
 -- ステージ/アンステージ・hunk単位ステージ・破棄・コミット・amend・stash(オプション含む)・ignore
 
 local git = require('config.git_panel.git')
@@ -8,12 +9,15 @@ local M = {}
 local ctx
 local branch = ''
 local files = {}       -- { path, x, y }  x=staged状態, y=未ステージ状態（porcelainの生文字）
-local tree_root = nil
-local collapsed = {}    -- [dir_path] = true
+local root_node = nil
+-- 表示モード: 'tree' = lazygit風のディレクトリツリー / 'list' = VSCode風のセクション別フラット一覧。
+-- t で切替。explorer と同じくセッション中は維持する
+local view_mode = 'tree'
+local collapsed = {}    -- [node_id] = true
 local line_entries = {}
 local total_rows = 0
 local cursor_mem = nil
-local selection = {} -- [node.path] = true（Explorer と同じ複数選択。ルートは ''）
+local selection = {} -- [node_id] = true（Explorer と同じ複数選択。ルートは ''）
 local hunk_state = nil
 local hunk_hl_ns = vim.api.nvim_create_namespace('git_panel_hunk')
 
@@ -33,6 +37,11 @@ local function is_tracked(f)
   local code = f.x .. f.y
   return code ~= '??' and code ~= 'A ' and code ~= 'AM'
 end
+
+--- 行の同一性キー。tree表示はパスがそのままキーになるが、list表示では同じファイルが
+--- 「ステージ済み」と「変更」の両セクションに並びうる（VSCode と同じ）ため、
+--- セクション込みの id を別に持たせてカーソル記憶・選択・右ペインのキャッシュを分ける
+local function nid(node) return node.id or node.path end
 
 --- git.status()の`-z`出力(lazygit file_loader.goのgitStatus()と同形式)をパースする。
 --- NUL区切りなのでスペース/特殊文字を含むパスもクォート無しの生バイトのまま渡ってくる。
@@ -118,9 +127,83 @@ local function build_tree(list)
   return root
 end
 
+--- VSCode の Source Control と同じセクション構成・同じ並び順。
+--- 衝突中のファイルは Merge Changes 相当の専用セクションへ集め、それ以外は
+--- ステージ済み側/未ステージ側の印がある方に入れる（両方あれば両方に出る）
+local LIST_SECTIONS = {
+  { section = 'merge',    label = 'Merge Changes' },
+  { section = 'staged',   label = 'Staged Changes' },
+  { section = 'unstaged', label = 'Changes' },
+}
+
+local function list_id(section, path) return section .. ':' .. path end
+
+--- そのファイルがlist表示でどのセクションに並ぶか（両方に出る場合は未ステージ側を優先）。
+--- 表示モードを切り替えた時にカーソルを同じファイルへ着地させるのに使う
+local function primary_section(f)
+  if is_conflicted(f) then return 'merge' end
+  if has_unstaged(f) then return 'unstaged' end
+  return 'staged'
+end
+
+local function in_section(f, section)
+  if is_conflicted(f) then return section == 'merge' end
+  if section == 'staged' then return has_staged(f) end
+  if section == 'unstaged' then return has_unstaged(f) end
+  return false
+end
+
+--- list表示のノード木。ルート(非表示)の下にセクション、その下にファイルを平らに並べる。
+--- 空のセクションは行ごと出さない（VSCode も変更が無いセクションは畳んで消える）
+local function build_list(list)
+  local sorted = vim.list_extend({}, list)
+  table.sort(sorted, function(a, b) return a.path:lower() < b.path:lower() end)
+
+  local root = { name = '', path = '', is_dir = true, children = {} }
+  for _, def in ipairs(LIST_SECTIONS) do
+    local children = {}
+    for _, f in ipairs(sorted) do
+      if in_section(f, def.section) then
+        table.insert(children, {
+          name = f.path:match('([^/]+)$'),
+          dir = f.path:match('^(.*)/[^/]+$'),
+          path = f.path,
+          id = list_id(def.section, f.path),
+          is_dir = false,
+          file = f,
+          section = def.section,
+        })
+      end
+    end
+    if #children > 0 then
+      table.insert(root.children, {
+        name = def.label,
+        label = def.label,
+        id = '§' .. def.section,
+        is_dir = true,
+        is_section = true,
+        section = def.section,
+        children = children,
+      })
+    end
+  end
+  return root
+end
+
+local function build_root()
+  if view_mode == 'list' then return build_list(files) end
+  return build_tree(files)
+end
+
+--- list表示のファイル行は「並んでいるセクション側」しか操作対象にしない。
+--- ステージ済みセクションの行は（未ステージの変更も残っていても）Space でアンステージ、
+--- 変更セクションの行はステージ。名前の色分けも同じ考え方で決まる
 local function node_flags(node)
   if not node.is_dir then
-    return has_staged(node.file), has_unstaged(node.file)
+    local s, u = has_staged(node.file), has_unstaged(node.file)
+    if node.section == 'staged' then return s, false end
+    if node.section then return false, u end -- unstaged / merge
+    return s, u
   end
   local any_s, any_u = false, false
   for _, c in ipairs(node.children) do
@@ -175,20 +258,24 @@ end
 --- を設定/nil化した直後にrefresh()する場合はこれを経由しないので上書きされない
 function M.remember_cursor()
   local node = current_entry()
-  if node then cursor_mem = node.path end
+  if node then cursor_mem = nid(node) end
 end
 
-local function current_path_is(path)
+local function current_id_is(id)
   local node = current_entry()
-  return node and node.path == path
+  return node and nid(node) == id
 end
 
-local function still_current(path)
-  return ctx.current_panel_name() == 'files' and current_path_is(path)
+local function still_current(id)
+  return ctx.current_panel_name() == 'files' and current_id_is(id)
 end
 
 local function show_diff_for(node, prefer_staged)
   if not node then ctx.set_right_lines({}); return end
+  local key = nid(node)
+  -- list表示はセクションが「どちら側の差分か」を決める（ステージ済みセクションの
+  -- 行にカーソルを置いたらステージ済み差分が出る）
+  if node.section then prefer_staged = node.section == 'staged' end
   if node.is_dir then
     -- lazygit(files_controller.go GetOnRenderToMain -> renderWorkingTreeDiff)と同じ:
     -- ディレクトリでもファイル単体と全く同じgit diff -- <path>を使い、配下の
@@ -197,11 +284,11 @@ local function show_diff_for(node, prefer_staged)
     -- 対象にする(node_flagsが再帰的に集計している)
     local any_staged, any_unstaged = node_flags(node)
     local section = (prefer_staged and any_staged) and 'staged' or (any_unstaged and 'unstaged' or 'staged')
-    -- ルートノードのpathは''なので、git diffの pathspecとして無効(要"."扱い)
-    local path = node.path ~= '' and node.path or '.'
+    -- ルートノードとセクション行のpathは無いので、git diffの pathspecは"."(=全体)にする
+    local path = (node.path and node.path ~= '') and node.path or '.'
     git.diff_file({ path = path, section = section }, function(diff_text)
-      if not still_current(node.path) then return end
-      ctx.set_right_diff(diff_text, node.path)
+      if not still_current(key) then return end
+      ctx.set_right_diff(diff_text, key)
     end)
     return
   end
@@ -209,22 +296,22 @@ local function show_diff_for(node, prefer_staged)
   if is_untracked(f) then
     local full = ctx.get_root() .. '/' .. f.path
     if vim.fn.isdirectory(full) == 1 then
-      ctx.set_right_lines({ '(ディレクトリ: ' .. f.path .. ')' }, nil, nil, node.path)
+      ctx.set_right_lines({ '(ディレクトリ: ' .. f.path .. ')' }, nil, nil, key)
       return
     end
     -- lazygitと同じくgit diff --no-index -- /dev/null <path>で本物のunified diffを
     -- 得る(diff --git等のヘッダーが揃うのでdeltaが正しく色付けできる。バイナリ判定も
     -- gitが"Binary files ... differ"を出すのでこちらで個別に読む必要がない)
     git.diff_untracked_file(f.path, function(diff_text)
-      if not still_current(node.path) then return end
-      ctx.set_right_diff(diff_text, node.path)
+      if not still_current(key) then return end
+      ctx.set_right_diff(diff_text, key)
     end)
     return
   end
   local section = (prefer_staged and has_staged(f)) and 'staged' or (has_unstaged(f) and 'unstaged' or 'staged')
   git.diff_file({ path = f.path, section = section }, function(diff_text)
-    if not still_current(node.path) then return end
-    ctx.set_right_diff(diff_text, node.path)
+    if not still_current(key) then return end
+    ctx.set_right_diff(diff_text, key)
   end)
 end
 
@@ -254,14 +341,23 @@ local function render()
   -- lazygitのShowRootItemInFileTree(デフォルトtrue)に合わせ、ルートを"/"として
   -- 選択可能な1行にする。ここでSpaceを押すと全ファイルがステージ/アンステージされる
   local remembered_row = nil
+  -- 記憶しているキーの行が消えていても（ステージしてセクションを移った、表示モードを
+  -- 切り替えた等）、同じファイルの行があればそこへ着地させるための保険
+  local fallback_row = nil
+  local mem_path = cursor_mem and (cursor_mem:match('^%a+:(.+)$') or cursor_mem)
   local function walk(node, depth, parent_path)
-    local is_root = node.path == ''
+    local id = nid(node)
+    local is_root = not node.is_section and node.path == ''
     -- 圧縮(compress)で"hoge"の子スロットに"fuga"が直接差し込まれている場合、
     -- node.pathは元々のフルパス("hoge/fuga")のまま変わっていないので、
     -- 呼び出し元(parent_path)からの相対部分を取り出せば"hoge/fuga"と表示できる
     local display_name
-    if is_root then
+    if node.is_section then
+      display_name = node.label .. '  (' .. #node.children .. ')'
+    elseif is_root then
       display_name = '/'
+    elseif view_mode == 'list' then
+      display_name = node.name -- list表示はファイル名だけ。ディレクトリは後ろへ薄く添える
     elseif parent_path == nil or parent_path == '' then
       display_name = node.path
     else
@@ -272,55 +368,87 @@ local function render()
     -- staged onlyなら緑、staged+unstagedなら黄、それ以外は無色
     local conflicted = node_conflicted(node)
     local name_color
-    if conflicted then name_color = 'GitPanelConflict' -- 衝突は VSCode と同じく赤で目立たせる
+    if node.is_section then name_color = 'GitPanelSection'
+    elseif conflicted then name_color = 'GitPanelConflict' -- 衝突は VSCode と同じく赤で目立たせる
     elseif s and not u then name_color = 'GitPanelAdded'
     elseif s then name_color = 'GitPanelModified'
     end
     local indent = string.rep('  ', depth)
+    -- ステータス欄: ディレクトリ/セクションは開閉の矢印、ファイルはporcelainの2文字。
+    -- list表示のファイルは並んでいるセクション側の1文字だけを出す（ステージ済み
+    -- セクションで"MM"と出ても片方は意味を持たないため）
     local status_str
     if node.is_dir then
-      status_str = collapsed[node.path] and TREE_ARROW_CLOSED or TREE_ARROW_OPEN
+      status_str = collapsed[id] and TREE_ARROW_CLOSED or TREE_ARROW_OPEN
+    elseif view_mode == 'list' and node.section == 'staged' then
+      status_str = node.file.x .. ' '
+    elseif view_mode == 'list' and node.section == 'unstaged' then
+      status_str = (is_untracked(node.file) and '?' or node.file.y) .. ' '
     else
       status_str = node.file.x .. node.file.y
     end
-    local icon = node.is_dir and not collapsed[node.path]
+    local icon = node.is_dir and not collapsed[id]
       and icon_char(FOLDER_OPEN_ICON) or get_icon(display_name, node.is_dir, node.path)
     -- yazi の marker_symbol("│") 相当: 選択行は左端に色付きバー、文字色は変えない
-    local marker = selection[node.path] and '│' or ' '
+    local marker = selection[id] and '│' or ' '
     local status_prefix = marker .. ' ' .. indent
     local before_name = status_prefix .. status_str .. ' '
-    local line = before_name .. icon .. ' ' .. display_name
+    -- セクション行はラベルだけ（ファイルアイコンは付けない）
+    local line = before_name .. (node.is_section and display_name or (icon .. ' ' .. display_name))
     -- name_colorはアイコン+ファイル名部分だけに適用する（ステータス文字は別配色）
-    push(line, node, name_color, #before_name, #line)
-    if cursor_mem == node.path then remembered_row = #lines end
+    local name_end = #line
+    local dir_start
+    if view_mode == 'list' and not node.is_dir and node.dir then
+      dir_start = #line
+      line = line .. '  ' .. node.dir
+    end
+    push(line, node, name_color, #before_name, name_end)
+    if dir_start then
+      table.insert(hl_queue, { #lines - 1, 'GitPanelDim', dir_start, -1 })
+    end
+    if cursor_mem == id then
+      remembered_row = #lines
+    elseif not fallback_row and mem_path and node.path == mem_path then
+      fallback_row = #lines
+    end
 
     local status_base = #status_prefix
     if node.is_dir then
       table.insert(hl_queue, { #lines - 1, 'GitPanelTreeArrow', status_base, status_base + #status_str })
     elseif conflicted then
       table.insert(hl_queue, { #lines - 1, 'GitPanelConflict', status_base, status_base + #status_str })
+    elseif view_mode == 'list' then
+      -- 1文字しか出していないので、そのセクション側の色だけを当てる
+      local c = status_char_hl(status_str:sub(1, 1), node.section == 'staged')
+      if c then table.insert(hl_queue, { #lines - 1, c, status_base, status_base + 1 }) end
     else
       local c1 = status_char_hl(node.file.x, true)
       local c2 = status_char_hl(node.file.y, false)
       if c1 then table.insert(hl_queue, { #lines - 1, c1, status_base, status_base + 1 }) end
       if c2 then table.insert(hl_queue, { #lines - 1, c2, status_base + 1, status_base + 2 }) end
     end
-    if selection[node.path] then
+    if selection[id] then
       table.insert(hl_queue, { #lines - 1, 'GitPanelSelected', 0, #marker })
     end
 
-    if node.is_dir and not collapsed[node.path] then
+    if node.is_dir and not collapsed[id] then
       for _, c in ipairs(node.children) do
         walk(c, depth + 1, node.path)
       end
     end
   end
-  walk(tree_root, 0, nil)
+  if view_mode == 'list' then
+    -- list表示のルートは器なので描画しない（セクション行がその役目を果たす）
+    for _, section in ipairs(root_node.children) do walk(section, 0, nil) end
+    if #root_node.children == 0 then push('  (変更はありません)', nil, 'GitPanelDim') end
+  else
+    walk(root_node, 0, nil)
+  end
 
-  -- 消えたパスの選択を刈り取る（自動更新で残骸を残さない）
+  -- 消えた行の選択を刈り取る（自動更新で残骸を残さない）
   local alive = {}
   for _, e in pairs(line_entries) do
-    if e then alive[e.path] = true end
+    if e then alive[nid(e)] = true end
   end
   for p in pairs(selection) do
     if not alive[p] then selection[p] = nil end
@@ -329,7 +457,7 @@ local function render()
   total_rows = #lines
   ctx.set_left_lines(lines, hl_queue)
 
-  local target = remembered_row
+  local target = remembered_row or fallback_row
   if not target then
     for i = 1, total_rows do
       if line_entries[i] then target = i; break end
@@ -351,7 +479,7 @@ function M.refresh(auto_capture)
   local function done()
     pending = pending - 1
     if pending == 0 then
-      tree_root = build_tree(files)
+      root_node = build_root()
       if auto_capture then M.remember_cursor() end
       render()
     end
@@ -473,9 +601,16 @@ local function enter_staging_mode()
     vim.notify('新規ファイルはhunk単位のステージに未対応です。Spaceでファイル単位でステージしてください', vim.log.levels.WARN)
     return
   end
-  local staged_first = has_staged(f) and not has_unstaged(f)
+  -- list表示では「今どちらのセクションに並んでいる行から入ったか」でどちら側の
+  -- hunkを触るかが決まる（ステージ済みセクション→ステージ済み差分のhunk）
+  local staged_first
+  if node.section then
+    staged_first = node.section == 'staged'
+  else
+    staged_first = has_staged(f) and not has_unstaged(f)
+  end
   git.diff_file({ path = f.path, section = staged_first and 'staged' or 'unstaged' }, function(diff_text)
-    if not still_current(node.path) then return end
+    if not still_current(nid(node)) then return end
     local header, hunks = git.parse_hunks(diff_text)
     if #hunks == 0 then return end
     hunk_state = { node = node, header = header, hunks = hunks, idx = 1, staged = staged_first }
@@ -497,7 +632,7 @@ local function selected_nodes()
     local list = {}
     for i = 1, total_rows do
       local n = line_entries[i]
-      if n and selection[n.path] then table.insert(list, n) end
+      if n and selection[nid(n)] then table.insert(list, n) end
     end
     return list
   end
@@ -509,16 +644,31 @@ local function pathspec_of(node)
   return node.path ~= '' and node.path or '.'
 end
 
+--- セクション行は自分のパスを持たない「中身の集合」なので、実際に git へ渡す前に
+--- 配下のファイル行へ展開する
+local function expand_sections(nodes)
+  local out = {}
+  for _, node in ipairs(nodes) do
+    if node.is_section then
+      for _, c in ipairs(node.children) do table.insert(out, c) end
+    else
+      table.insert(out, node)
+    end
+  end
+  return out
+end
+
 local function toggle_select_at_cursor(step)
   step = step or 1
   local node = current_entry()
   if not node then return end
-  if selection[node.path] then
-    selection[node.path] = nil
+  local id = nid(node)
+  if selection[id] then
+    selection[id] = nil
   else
-    selection[node.path] = true
+    selection[id] = true
   end
-  cursor_mem = node.path
+  cursor_mem = id
   render()
   local lwin = ctx.get_left_win()
   if lwin and vim.api.nvim_win_is_valid(lwin) then
@@ -538,7 +688,7 @@ end
 local function select_all()
   for i = 1, total_rows do
     local n = line_entries[i]
-    if n then selection[n.path] = true end
+    if n then selection[nid(n)] = true end
   end
   render()
 end
@@ -547,10 +697,11 @@ local function invert_selection()
   for i = 1, total_rows do
     local n = line_entries[i]
     if n then
-      if selection[n.path] then
-        selection[n.path] = nil
+      local id = nid(n)
+      if selection[id] then
+        selection[id] = nil
       else
-        selection[n.path] = true
+        selection[id] = true
       end
     end
   end
@@ -561,7 +712,7 @@ local function clear_selection_or_close()
   if vim.tbl_count(selection) > 0 then
     selection = {}
     local node = current_entry()
-    if node then cursor_mem = node.path end
+    if node then cursor_mem = nid(node) end
     render()
   else
     require('config.git_panel').close()
@@ -575,8 +726,25 @@ end
 local function toggle_collapse()
   local node = current_entry()
   if not node or not node.is_dir then return end
-  collapsed[node.path] = not collapsed[node.path]
-  cursor_mem = node.path
+  local id = nid(node)
+  collapsed[id] = not collapsed[id]
+  cursor_mem = id
+  render()
+end
+
+--- t: ツリー表示 ⇄ セクション別のフラット一覧。tree の行キーはパス、list は
+--- "section:パス" と別物なので、カーソルは今いるファイルの新しいキーへ寄せ直す
+local function toggle_view_mode()
+  local node = current_entry()
+  view_mode = view_mode == 'tree' and 'list' or 'tree'
+  selection = {}
+  cursor_mem = nil
+  if node and not node.is_dir then
+    cursor_mem = view_mode == 'list'
+      and list_id(primary_section(node.file), node.file.path)
+      or node.file.path
+  end
+  root_node = build_root()
   render()
 end
 
@@ -589,10 +757,10 @@ end
 local batched -- 前方宣言（stage_toggle から参照）
 
 local function stage_toggle()
-  local nodes = selected_nodes()
+  local nodes = expand_sections(selected_nodes())
   if #nodes == 0 then return end
   local cur = current_entry()
-  if cur then cursor_mem = cur.path end
+  if cur then cursor_mem = nid(cur) end
   local function done()
     selection = {}
     ctx.render_cmdlog()
@@ -737,6 +905,8 @@ local function discard()
   local label
   if vim.tbl_count(selection) > 0 then
     label = '選択 ' .. #targets .. '件'
+  elseif nodes[1].is_section then
+    label = nodes[1].label .. ' ' .. #targets .. '件'
   elseif nodes[1].is_dir then
     local p = nodes[1].path
     label = (p ~= '' and p or '/') .. '/ 配下 ' .. #targets .. '件'
@@ -767,7 +937,7 @@ end
 
 local function copy_path()
   local node = current_entry()
-  if not node then return end
+  if not node or not node.path then return end -- セクション行はパスを持たない
   vim.fn.setreg('"', node.path)
   pcall(vim.fn.setreg, '+', node.path)
   vim.notify('コピーしました: ' .. node.path, vim.log.levels.INFO)
@@ -901,6 +1071,7 @@ function M.keymaps()
     s = stash_all,
     S = stash_options,
     f = fetch,
+    t = toggle_view_mode,
     ['<CR>'] = enter_or_toggle,
     ['<Tab>'] = function() toggle_select_at_cursor(1) end,
     ['<S-Tab>'] = function() toggle_select_at_cursor(-1) end,
@@ -917,7 +1088,7 @@ function M.activate(c)
     function() return line_entries end,
     function() return total_rows end,
     function(node)
-      cursor_mem = node.path
+      cursor_mem = nid(node)
       show_diff_for(node)
     end
   )
