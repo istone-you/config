@@ -41,8 +41,13 @@ function M.can_complete()
 end
 
 --- 補完リクエストを投げる（メニューが出せる状況なら）
+--- パス文脈なら Path Intellisense を優先し、それ以外は LSP 補完。
 function M.trigger()
-  if not M.can_complete() then return end
+  if vim.bo.buftype ~= '' then return end
+  if vim.fn.mode() ~= 'i' then return end
+  local path = require('config.path_intellisense')
+  if path.trigger() then return end
+  if vim.fn.pumvisible() == 1 then return end
   local ok = pcall(vim.lsp.completion.get)
   if not ok then return end
 end
@@ -67,7 +72,11 @@ function M.schedule_trigger()
     end
     local col  = vim.api.nvim_win_get_cursor(0)[2]
     local line = vim.api.nvim_get_current_line()
-    if M.should_trigger(line:sub(1, col)) then
+    local before = line:sub(1, col)
+    -- パス文脈は path_intellisense 側の TextChangedI が担当するので LSP は出さない
+    local path = require('config.path_intellisense')
+    if path.is_path_context(before) then return end
+    if M.should_trigger(before) then
       M.trigger()
     end
   end))

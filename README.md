@@ -56,6 +56,7 @@ git パネルと docker パネルは UI の骨格（レイアウト・タブバ�
 |---|---|---|
 | `lsp` | LSP の設定。ホバー / リネーム / コードアクション / フォーマット / 診断ジャンプ | `K`、`Space r n`、`Space c a`、`Space f`、`[d` / `]d`、`Space E` |
 | `completion` | VSCode 風の LSP 補完。トリガー文字に加えて単語入力中も自動でメニューを出す（`vim.lsp.completion` + 自前のデバウンス層） | `Tab` / `S-Tab` で候補移動、`Enter` 確定、`Ctrl-Space` 手動 |
+| `path_intellisense` | パス断片入力時にファイル／フォルダ名を補完（VS Code の Path Intellisense 相当。`./` `../` `~/` `/` や `/` を含む断片で発火） | Insert 中（パス文脈）・`Ctrl-Space` |
 | `signature` | シグネチャヘルプ（引数ヒント）。`(` や `,` を打つと自動表示 | `Space k`、インサート中 `Ctrl-s` |
 | `problems` | 問題パネル。開いているバッファ全体の診断をファイルごとにまとめた一覧（下部パネル）。重要度フィルタ付き | `Space p` |
 | `todo_tree` | TODO/FIXME/BUG 等のコメントタグを workspace から検索し、右サイドバーにデフォルト折り畳みの tree / flat / tags 表示・チェックボックス式のタグ種別選択・ジャンプ・ハイライトを行う | `Space T`、パネル内 `f`、`]t` / `[t` |
