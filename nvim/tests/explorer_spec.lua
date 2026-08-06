@@ -450,6 +450,55 @@ T.describe('explorer', function()
     T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
   end)
 
+  T.it('c toggles compact folders in tree view (single-child dir chains collapse to one row)', function()
+    local res = run_child([[
+      local dir = vim.fn.tempname()
+      -- a/b/c は各段が子ディレクトリ1つだけの連鎖 → 圧縮対象。leaf.txt で末端の中身を示す
+      vim.fn.mkdir(dir .. '/a/b/c', 'p')
+      vim.fn.writefile({ 'x' }, dir .. '/a/b/c/leaf.txt')
+      -- multi は子が2つある → 圧縮されず単独の行のまま
+      vim.fn.mkdir(dir .. '/multi/one', 'p')
+      vim.fn.mkdir(dir .. '/multi/two', 'p')
+      vim.fn.chdir(dir)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      vim.wait(80)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+
+      local function text() return table.concat(lines(win), '\n') end
+
+      -- 圧縮無効のツリー表示では a だけが1段目に出て、b/c は畳まれた表示にならない
+      feed('t')
+      vim.wait(80)
+      assert_eq(lines(win)[1]:find('[tree]', 1, true) ~= nil, true, 'tree mode')
+      assert_eq(find_row(win, 'a/b/c') == nil, true, 'without compact, no combined a/b/c row')
+
+      -- c で圧縮を有効化 → a/b/c が1行に畳まれ、ヘッダーに compact 表示が出る
+      feed('c')
+      vim.wait(80)
+      assert_eq(lines(win)[1]:find('tree/compact', 1, true) ~= nil, true, 'header shows compact state')
+      local combined = find_row(win, 'a/b/c')
+      assert_eq(combined ~= nil, true, 'a/b/c collapses into a single row')
+      -- 子が複数ある multi は圧縮されず単独名のまま（multi/one のような結合はしない）
+      assert_eq(find_row(win, 'multi/one') == nil, true, 'multi with 2 children is not compacted')
+      assert_eq(find_row(win, 'multi') ~= nil, true, 'multi still shows as its own row')
+
+      -- 圧縮行を展開すると末端 c の中身（leaf.txt）が出る
+      vim.api.nvim_win_set_cursor(win, { combined, 0 })
+      feed('l')
+      vim.wait(80)
+      assert_eq(text():find('leaf.txt', 1, true) ~= nil, true, 'expanding the compact row reveals the tail dir contents')
+
+      -- もう一度 c で圧縮無効 → 結合行が消える
+      feed('c')
+      vim.wait(80)
+      assert_eq(lines(win)[1]:find('tree/compact', 1, true), nil, 'compact turned off')
+      assert_eq(find_row(win, 'a/b/c') == nil, true, 'no combined row after disabling compact')
+    ]])
+    T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
+  end)
+
   T.it('F reveals the current editor file in both list and tree views', function()
     local res = run_child([[
       local dir = vim.fn.tempname()

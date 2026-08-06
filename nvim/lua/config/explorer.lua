@@ -15,6 +15,9 @@ local show_hidden = true
 local filter = ''
 local view_mode = 'list' -- 'list': 単一カラムのリスト / 'tree': 折りたたみツリー
 local tree_expanded = {} -- [path] = true
+-- 圧縮表示（VSCode の Compact Folders 相当）。子がディレクトリ1つだけの連鎖を
+-- "a/b/c" のように1行へ畳む。ツリー表示専用。c で切替
+local compact_dirs = false
 
 -- 全画面表示(:Explorer!)の時だけ有効になるプレビューパネル。通常のサイドパネル表示は
 -- 幅が狭く単一カラムのままにする（トップのコメント通り）
@@ -256,6 +259,25 @@ local function build_tree_rows(path)
 
   local function walk(dir, depth)
     for _, entry in ipairs(list_dir(dir)) do
+      -- 圧縮表示: 子がディレクトリ1つだけのディレクトリは、その連鎖を "a/b/c" のように
+      -- 1行へ畳む（VSCode の Compact Folders 相当）。畳んだ末端 tail を実体として扱い、
+      -- 展開状態やgit判定は tail.path をキーにする。
+      if compact_dirs and entry.isdir and not entry.link then
+        local names = { entry.name }
+        local tail = entry
+        while true do
+          local children = list_dir(tail.path)
+          if #children == 1 and children[1].isdir and not children[1].link then
+            tail = children[1]
+            table.insert(names, tail.name)
+          else
+            break
+          end
+        end
+        if #names > 1 then
+          entry = { name = tail.name, path = tail.path, isdir = true, display_name = table.concat(names, '/') }
+        end
+      end
       entry.depth = depth
       entry.expandable = entry.isdir and not entry.link
       table.insert(list, entry)
@@ -328,7 +350,7 @@ function render()
     table.insert(hl_queue, { lnum, group, cs or 0, ce or -1 })
   end
 
-  local mode_label = view_mode == 'tree' and 'tree' or 'list'
+  local mode_label = view_mode == 'tree' and (compact_dirs and 'tree/compact' or 'tree') or 'list'
   table.insert(lines, ' ' .. icon_char(FOLDER_ICON) .. ' ' .. build_display_path(cwd) .. '  [' .. mode_label .. ']' .. status_text())
   hl(0, 'ExplorerHeader')
   table.insert(lines, '')
@@ -352,7 +374,7 @@ function render()
     else
       prefix = marker .. ' '
     end
-    local line = prefix .. icon .. '  ' .. entry.name
+    local line = prefix .. icon .. '  ' .. (entry.display_name or entry.name)
     -- シンボリックリンクは yazi 風に「名前 -> ターゲット」を表示する
     local link_cs, link_ce
     if entry.link then
@@ -703,6 +725,18 @@ local function toggle_view_mode()
   else
     if entry then cursor_mem[cwd] = top_child_name(entry.path) or entry.name end
     view_mode = 'list'
+  end
+  render()
+end
+
+-- 圧縮表示（Compact Folders）のトグル。ツリー表示専用の機能なので、リスト表示中に
+-- 有効化したらツリー表示へ切り替えて効果がすぐ見えるようにする。
+local function toggle_compact_dirs()
+  compact_dirs = not compact_dirs
+  if compact_dirs and view_mode == 'list' then
+    local entry = entry_at_cursor()
+    if entry then tree_cursor_mem[cwd] = entry.path end
+    view_mode = 'tree'
   end
   render()
 end
@@ -1896,6 +1930,7 @@ local function open(fullscreen)
   map('<Left>',  go_parent)
   map('.',       toggle_hidden)
   map('t',       toggle_view_mode)
+  map('c',       toggle_compact_dirs)
   map('F',       reveal_current_file)
   map('E',       expand_all_tree_nodes)
   map('W',       collapse_all_tree_nodes)
