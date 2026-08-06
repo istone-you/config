@@ -57,6 +57,7 @@ git パネルと docker パネルは UI の骨格（レイアウト・タブバ�
 | `completion` | VSCode 風の LSP 補完。トリガー文字に加えて単語入力中も自動でメニューを出す（`vim.lsp.completion` + 自前のデバウンス層） | `Tab` / `S-Tab` で候補移動、`Enter` 確定、`Ctrl-Space` 手動 |
 | `signature` | シグネチャヘルプ（引数ヒント）。`(` や `,` を打つと自動表示 | `Space k`、インサート中 `Ctrl-s` |
 | `problems` | 問題パネル。開いているバッファ全体の診断をファイルごとにまとめた一覧（下部パネル）。重要度フィルタ付き | `Space p` |
+| `todo_tree` | TODO/FIXME/BUG 等のコメントタグを workspace から検索し、右サイドバーにデフォルト折り畳みの tree / flat / tags 表示・チェックボックス式のタグ種別選択・ジャンプ・ハイライトを行う | `Space T`、パネル内 `f`、`]t` / `[t` |
 | `glance` | 定義元 / 参照元 / 型定義 / 実装をプレビューパネルで表示 | `g d` / `g r` / `g y` / `g i` |
 | `namu` | LSP シンボル検索 | `Space s s` |
 
@@ -89,7 +90,7 @@ git パネルと docker パネルは UI の骨格（レイアウト・タブバ�
 | `curl` | `git_panel/git.lua` の GitHub GraphQL API 呼び出し（PR情報取得）、`http_client` のリクエスト実行 |
 | `xdg-open` | `browser` のプレビューURLを既定ブラウザで開く（無くてもURLは通知される） |
 | `delta` | `git_panel` の diff 色付き表示（任意、無くても素のテキストにフォールバック） |
-| `rg` (ripgrep) | `rg_fzf.lua` の全文検索・置換 |
+| `rg` (ripgrep) | `rg_fzf.lua` の全文検索・置換、`todo_tree.lua` の TODO タグ検索 |
 | `fzf` | `rg_fzf.lua`（検索UI）、`explorer.lua`（ファイル検索） |
 | `fd` | `rg_fzf.lua` / `explorer.lua` のファイル検索、explorer の空ディレクトリ検索 |
 | `herdr` | `git_panel` Worktree パネルの `w`（カーソル行の worktree を herdr ワークスペースとして開く）。`HERDR_ENV=1` の herdr セッション内でのみ有効、無ければ警告のみ |

@@ -407,6 +407,8 @@
       <tr><td><kbd>[d</kbd> / <kbd>]d</kbd></td><td class="desc">LSP: 前/次の診断へ</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>E</kbd></td><td class="desc">LSP: 診断の詳細を表示</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>p</kbd></td><td class="desc">問題パネルを開閉（全ファイルの診断一覧、詳細は下のセクション）</td></tr>
+      <tr><td><kbd>Space</kbd> <kbd>T</kbd></td><td class="desc">TODOツリーを右サイドバーで開閉（TODO/FIXME/BUG等の一覧、詳細は下のセクション）</td></tr>
+      <tr><td><kbd>]t</kbd> / <kbd>[t</kbd></td><td class="desc">現在ファイルの次 / 前のTODOへ</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>k</kbd></td><td class="desc">LSP: シグネチャヘルプ（引数ヒント）を表示</td></tr>
       <tr><td><kbd>Ctrl-s</kbd></td><td class="desc">LSP: シグネチャヘルプ（インサートモード。<kbd>(</kbd> や <kbd>,</kbd> で自動表示）</td></tr>
       <tr><td class="section-divider" colspan="2">補完メニュー表示中</td></tr>
@@ -444,6 +446,23 @@
       <tr><td><kbd>f</kbd></td><td class="desc">フィルタ切替（すべて → エラー+警告 → エラーのみ）</td></tr>
       <tr><td><kbd>R</kbd></td><td class="desc">一覧を再取得</td></tr>
       <tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td class="desc">閉じる</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-buffer">✅ TODOツリー（<kbd>Space</kbd> <kbd>T</kbd> で右サイドバー開閉）</div>
+    <table>
+      <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td class="desc">カーソルを下 / 上へ（見出しは飛ばしてTODO行だけを移動）</td></tr>
+      <tr><td><kbd>Enter</kbd> / <kbd>Space</kbd> / <kbd>l</kbd></td><td class="desc">ファイル/タグを展開。TODO行では <kbd>Enter</kbd> / <kbd>o</kbd> でジャンプ</td></tr>
+      <tr><td><kbd>h</kbd></td><td class="desc">ファイル/タグを折り畳み</td></tr>
+      <tr><td><kbd>E</kbd> / <kbd>W</kbd></td><td class="desc">すべて展開 / すべて折り畳み</td></tr>
+      <tr><td><kbd>m</kbd></td><td class="desc">表示切替（tree → flat → tags）</td></tr>
+      <tr><td><kbd>f</kbd></td><td class="desc">タグ種別のチェックボックスpopup（<kbd>Space</kbd>で切替、<kbd>a</kbd>全選択、<kbd>c</kbd>全解除、<kbd>Enter</kbd>適用）</td></tr>
+      <tr><td><kbd>/</kbd></td><td class="desc">パス / タグ / 本文でフィルタ</td></tr>
+      <tr><td><kbd>BS</kbd></td><td class="desc">フィルタ解除</td></tr>
+      <tr><td><kbd>R</kbd></td><td class="desc">workspace を再スキャン</td></tr>
+      <tr><td><kbd>q</kbd> / <kbd>Esc</kbd></td><td class="desc">閉じる</td></tr>
+      <tr><td><kbd>]t</kbd> / <kbd>[t</kbd></td><td class="desc">エディタ内: 現在ファイルの次 / 前のTODOへ</td></tr>
     </table>
   </div>
 
