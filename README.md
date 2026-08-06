@@ -30,7 +30,7 @@ Neovim 等の設定ファイル群。
 | 機能 | 説明 | 主なキー |
 |---|---|---|
 | `explorer` | ファイルエクスプローラ（右パネル・単一カラム）。作成 / リネーム / 削除 / コピー / 再帰検索など | `Space e` |
-| `rg_fzf` | rg + fzf による全ファイル文字列検索 / ファイル名検索 / 置換 | `Space /`、`Space *` |
+| `search` | 全ファイル内容検索 / 置換。Ctrl-i/Ctrl-e で include/exclude グロブ絞り込み欄へ出入り（ファイル名検索は explorer の `/`） | `Space /`、`Space *` |
 
 ### Git
 
@@ -92,9 +92,9 @@ git パネルと docker パネルは UI の骨格（レイアウト・タブバ�
 | `curl` | `git_panel/git.lua` の GitHub GraphQL API 呼び出し（PR情報取得）、`http_client` のリクエスト実行 |
 | `xdg-open` | `browser` のプレビューURLを既定ブラウザで開く（無くてもURLは通知される） |
 | `delta` | `git_panel` の diff 色付き表示（任意、無くても素のテキストにフォールバック） |
-| `rg` (ripgrep) | `rg_fzf.lua` の全文検索・置換、`todo_tree.lua` の TODO タグ検索 |
-| `fzf` | `rg_fzf.lua`（検索UI） |
-| `fd` | `rg_fzf.lua` のファイル検索、`explorer.lua` の再帰ファイル名検索（`/`）・空ディレクトリ検索 |
+| `rg` (ripgrep) | `search.lua` の全文検索・置換、`todo_tree.lua` の TODO タグ検索 |
+| `fzf` | `search.lua`（検索UI） |
+| `fd` | `explorer.lua` の再帰ファイル名検索（`/`）・空ディレクトリ検索 |
 | `herdr` | `git_panel` Worktree パネルの `w`（カーソル行の worktree を herdr ワークスペースとして開く）。`HERDR_ENV=1` の herdr セッション内でのみ有効、無ければ警告のみ |
 
 ## ローカル設定

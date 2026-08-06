@@ -1,5 +1,5 @@
 -- ウィンドウ種別の共通判定。「実編集ウィンドウ」か、explorer/gitパネル等の
--- ユーティリティ窓かを一箇所で判定する（auto_quit / quit_confirm / rg_fzf /
+-- ユーティリティ窓かを一箇所で判定する（auto_quit / quit_confirm / search /
 -- tabline / buf_cycle 等で共用）。
 
 local M = {}
