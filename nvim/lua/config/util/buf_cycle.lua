@@ -35,4 +35,36 @@ end
 function M.next() cycle(1) end
 function M.prev() cycle(-1) end
 
+-- バッファを削除するが、それを表示しているウィンドウは閉じない。
+-- nvim_buf_delete は対象を表示中のウィンドウごと閉じてしまい、開いている
+-- ファイルを削除すると「最後の編集窓が消える → auto_quit が nvim を終了」を招く。
+-- 先に各ウィンドウを別バッファ（巡回対象の別ファイル、無ければ新規の空バッファ）へ
+-- 退避してから削除することで、窓とレイアウトを保つ。
+---@param bufnr integer
+---@return boolean deleted
+function M.delete_keep_windows(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) then return false end
+
+  local alt
+  for _, b in ipairs(M.list()) do
+    if b ~= bufnr then alt = b break end
+  end
+
+  local fallback
+  for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
+    if vim.api.nvim_win_is_valid(win) then
+      local target = alt
+      if not target then
+        -- 他に開いているファイルが無ければ空バッファを1つ作って各窓で共有する
+        if not fallback then fallback = vim.api.nvim_create_buf(true, false) end
+        target = fallback
+      end
+      vim.api.nvim_win_set_buf(win, target)
+    end
+  end
+
+  local ok = pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+  return ok
+end
+
 return M

@@ -1464,7 +1464,9 @@ local function delete_targets(permanent)
       selection[e.path] = nil
       local bufnr = vim.fn.bufnr(e.path)
       if bufnr ~= -1 and vim.api.nvim_buf_is_valid(bufnr) then
-        vim.api.nvim_buf_delete(bufnr, { force = true })
+        -- 窓ごと閉じると最後の編集窓が消えて auto_quit が nvim を終了させるので、
+        -- バッファだけ消して窓は別バッファへ退避する。
+        require('config.util.buf_cycle').delete_keep_windows(bufnr)
       end
     end
     git_status_dirty = true

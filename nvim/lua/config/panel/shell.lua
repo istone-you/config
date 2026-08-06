@@ -643,6 +643,11 @@ function M.new(cfg)
       width = L.cmdlog_w, height = L.cmdlog_h,
     })
     vim.wo[win.cmdlog_win].cursorline = false
+    -- 拡大解除で元の見た目（カーソル非表示）に戻す。次にフォーカスが移った窓の
+    -- WinEnter で hidden_cursor.apply が走り guicursor に反映される。
+    if win.cmdlog_buf and vim.api.nvim_buf_is_valid(win.cmdlog_buf) then
+      vim.b[win.cmdlog_buf].hide_cursor = true
+    end
   end
 
   function toggle_cmdlog_focus()
@@ -656,6 +661,9 @@ function M.new(cfg)
         width = L.tabbar_w, height = L.box_h + L.cmdlog_h + 2,
       })
       vim.wo[win.cmdlog_win].cursorline = true
+      -- 拡大中は内容を選択コピーできるように、テキストカーソルを表示する
+      -- （set_current_win の WinEnter で hidden_cursor.apply が visible 側へ戻す）。
+      vim.b[win.cmdlog_buf].hide_cursor = false
       vim.api.nvim_set_current_win(win.cmdlog_win)
       vim.api.nvim_win_set_cursor(win.cmdlog_win, { math.max(1, vim.api.nvim_buf_line_count(win.cmdlog_buf)), 0 })
     else
@@ -1317,7 +1325,18 @@ function M.new(cfg)
       style = 'minimal', border = 'single', title = ' Command Log ', title_pos = 'center',
     })
     vim.wo[win.cmdlog_win].wrap = false
-    bind_click(win.cmdlog_buf)
+    -- コマンドログは @ 拡大中に内容をマウスで選択コピーできるようにする。
+    -- 拡大中にログ内をクリック/ドラッグした時だけ既定のマウス挙動（選択開始）へ
+    -- 委ね、それ以外（拡大中の上部タブバークリックや、拡大していない時）は通常の
+    -- パネルクリック処理へ回す。expr 中は win/cursor 変更が textlock で禁じられるため、
+    -- handle_panel_click は schedule 経由で呼ぶ。
+    vim.keymap.set('n', '<LeftMouse>', function()
+      if cmdlog_focused and vim.fn.getmousepos().winid == win.cmdlog_win then
+        return '<LeftMouse>'
+      end
+      vim.schedule(handle_panel_click)
+      return ''
+    end, { buffer = win.cmdlog_buf, expr = true, replace_keycodes = true, nowait = true, silent = true })
     vim.wo[win.cmdlog_win].signcolumn = 'no'
     vim.wo[win.cmdlog_win].winhighlight = 'Normal:GitPanelBg,FloatBorder:GitPanelBorder'
     -- フォーカス中(@で拡大)は @/q/Escで元の大きさに戻す。フォーカス前ならq/Escはパネル自体を閉じる
