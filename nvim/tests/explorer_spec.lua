@@ -118,6 +118,87 @@ T.describe('explorer', function()
     T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
   end)
 
+  T.it('i toggles visibility of git-ignored entries', function()
+    local res = run_child([[
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir, 'p')
+      local function git(args)
+        local c = { 'git', '-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t' }
+        vim.list_extend(c, args)
+        vim.system(c):wait()
+      end
+      git({ 'init', '-q' })
+      vim.fn.writefile({ 'x' }, dir .. '/keep.txt')
+      vim.fn.writefile({ 'build/', '*.log' }, dir .. '/.gitignore')
+      git({ 'add', 'keep.txt', '.gitignore' })
+      git({ 'commit', '-qm', 'seed' })
+      vim.fn.writefile({ 'y' }, dir .. '/fresh.txt')     -- 未追跡（ignore ではない）
+      vim.fn.writefile({ 'y' }, dir .. '/debug.log')     -- ignore されたファイル
+      vim.fn.mkdir(dir .. '/build', 'p')                 -- ignore されたディレクトリ
+      vim.fn.writefile({ 'y' }, dir .. '/build/out.txt')
+
+      vim.fn.chdir(dir)
+      local explorer = require('config.explorer')
+      explorer.open(false)
+      local win = list_win()
+      vim.api.nvim_set_current_win(win)
+
+      -- git status(非同期)が届くまで待つ
+      local ok = vim.wait(3000, function()
+        for _, l in ipairs(lines(win)) do
+          if l:find('fresh.txt', 1, true) and l:find('?', 1, true) then return true end
+        end
+        return false
+      end, 50)
+      assert_eq(ok, true, 'git status ready')
+
+      local function shown(needle) return find_row(win, needle) ~= nil end
+      -- '.git' は '.gitignore' に部分一致してしまうため行末で厳密に判定する
+      local function shown_exact(name)
+        for _, l in ipairs(lines(win)) do
+          if l:match('%s' .. vim.pesc(name) .. '%s*$') then return true end
+        end
+        return false
+      end
+
+      assert_eq(shown('build'), true, 'ignored dir is shown by default')
+      assert_eq(shown('debug.log'), true, 'ignored file is shown by default')
+
+      feed('i')
+      assert_eq(shown('build'), false, 'ignored dir hidden after i')
+      assert_eq(shown('debug.log'), false, 'ignored file hidden after i')
+      assert_eq(shown('fresh.txt'), true, 'untracked file stays visible')
+      assert_eq(shown('keep.txt'), true, 'tracked file stays visible')
+      assert_eq((lines(win)[1] or ''):find('ignored: off', 1, true) ~= nil, true, 'header shows the state')
+      assert_eq(shown_exact('.git'),false, '.git is hidden too (never reported by git status)')
+
+      feed('i')
+      assert_eq(shown('build'), true, 'ignored dir shown again after i')
+      assert_eq(shown('debug.log'), true, 'ignored file shown again after i')
+      assert_eq(shown_exact('.git'),true, '.git shown again after i')
+      assert_eq((lines(win)[1] or ''):find('ignored: off', 1, true) == nil, true, 'header state cleared')
+
+      -- ツリー表示でも隠れること（t で切替 → build が消える）
+      feed('t')
+      assert_eq(shown('build'), true, 'tree mode shows the ignored dir')
+      feed('i')
+      assert_eq(shown('build'), false, 'tree mode hides the ignored dir too')
+      feed('i')
+      feed('t')
+
+      -- ignore ディレクトリの中へ入ってから隠す設定にしても、一覧が空にならないこと
+      vim.api.nvim_win_set_cursor(win, { find_row(win, 'build'), 0 })
+      feed('l')
+      local ok2 = vim.wait(3000, function()
+        return (lines(win)[1] or ''):find('build', 1, true) ~= nil and find_row(win, 'out.txt') ~= nil
+      end, 50)
+      assert_eq(ok2, true, 'entered the ignored dir')
+      feed('i')
+      assert_eq(shown('out.txt'), true, 'contents stay visible inside an ignored dir')
+    ]])
+    T.ok(res.code == 0, 'child failed: ' .. (res.stderr or ''))
+  end)
+
   T.it('o launches the browser preview for HTML/Markdown and warns otherwise', function()
     local res = run_child([[
       local dir = vim.fn.tempname()

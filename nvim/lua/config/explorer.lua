@@ -12,6 +12,8 @@ local tree_cursor_mem = {}
 local selection = {}
 local clipboard = nil
 local show_hidden = true
+-- git 管理外（.gitignore された node_modules / dist 等）を一覧に出すか。i で切替
+local show_ignored = true
 local filter = ''
 -- 再帰ファイル名検索(/)。fd でファイル名を絞り込み、結果を explorer バッファ内へ
 -- view_mode に従ってインクリメンタル表示する。検索中は専用の入力欄(live_prompt)へ
@@ -181,6 +183,25 @@ local function entry_git_code(entry)
   return nil
 end
 
+--- show_ignored=false のとき、git 管理外（ignore）エントリを一覧から隠すか。
+--- gitステータス未取得（別cwd/非gitリポジトリ）の間は隠さない（取得完了後に再render
+--- されるのでそこで反映される）。
+--- また cwd 自体が ignore 配下（node_modules の中へ入った等）だと配下が全部 ignore に
+--- なって一覧が空になるため、その場合は絞り込まない。
+local function git_hidden_active()
+  if show_ignored then return false end
+  if not git_repo_root or git_status_cwd ~= cwd then return false end
+  return entry_git_code({ path = cwd, isdir = true }) ~= GIT_CODES.ignored
+end
+
+--- git 管理外として隠す対象か。.git 自体は ignore ではなく「ワークツリー外」なので
+--- git status には一切現れない。ユーザから見れば同じ「git 管理しないディレクトリ」なので
+--- ここで明示的に含める。
+local function is_git_unmanaged(entry)
+  if entry.name == '.git' then return true end
+  return entry_git_code(entry) == GIT_CODES.ignored
+end
+
 local function refresh_git_status(target_cwd)
   vim.system(
     { 'git', 'rev-parse', '--show-toplevel', '--absolute-git-dir' },
@@ -243,6 +264,7 @@ end
 local function list_dir(path)
   local names = vim.fn.readdir(path) or {}
   local list = {}
+  local hide_ignored = git_hidden_active()
   for _, name in ipairs(names) do
     if show_hidden or name:sub(1, 1) ~= '.' then
       if filter == '' or name:lower():find(filter:lower(), 1, true) then
@@ -252,7 +274,9 @@ local function list_dir(path)
         if st and st.type == 'link' then
           entry.link = vim.uv.fs_readlink(full)
         end
-        table.insert(list, entry)
+        if not (hide_ignored and is_git_unmanaged(entry)) then
+          table.insert(list, entry)
+        end
       end
     end
   end
@@ -402,7 +426,8 @@ local function status_text()
   if clipboard then
     table.insert(parts, (clipboard.mode == 'copy' and 'コピー' or 'カット') .. ':' .. #clipboard.paths)
   end
-  if not show_hidden then table.insert(parts, '隠しファイル非表示') end
+  if not show_hidden then table.insert(parts, 'hidden: off') end
+  if not show_ignored then table.insert(parts, 'ignored: off') end
   if filter ~= '' then table.insert(parts, 'filter:' .. filter) end
   if search_active then table.insert(parts, 'search:' .. search_query) end
   if #parts == 0 then return '' end
@@ -614,13 +639,16 @@ end
 local function preview_dir_lines(path)
   local names = vim.fn.readdir(path) or {}
   local entries = {}
+  local hide_ignored = git_hidden_active()
   for _, name in ipairs(names) do
     if show_hidden or name:sub(1, 1) ~= '.' then
       local full = join_path(path, name)
       local e = { name = name, path = full, isdir = vim.fn.isdirectory(full) == 1 }
       local st = vim.uv.fs_lstat(full)
       if st and st.type == 'link' then e.link = vim.uv.fs_readlink(full) end
-      entries[#entries + 1] = e
+      if not (hide_ignored and is_git_unmanaged(e)) then
+        entries[#entries + 1] = e
+      end
     end
   end
   -- list_dir と同じ: ディレクトリが先、その後は名前順
@@ -1020,6 +1048,13 @@ end
 
 local function toggle_hidden()
   show_hidden = not show_hidden
+  render()
+end
+
+-- git 管理外（ignore）エントリの表示/非表示。node_modules や dist を一時的に畳んで
+-- 見通しを良くするためのもの
+local function toggle_ignored()
+  show_ignored = not show_ignored
   render()
 end
 
@@ -2143,6 +2178,7 @@ local function open(fullscreen)
   map('h',       go_parent)
   map('<Left>',  go_parent)
   map('.',       toggle_hidden)
+  map('i',       toggle_ignored)
   map('t',       toggle_view_mode)
   map('c',       toggle_compact_dirs)
   map('F',       reveal_current_file)
