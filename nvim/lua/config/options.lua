@@ -52,45 +52,81 @@ vim.keymap.set('n', '<S-Tab>', function()
   require('config.util.buf_cycle').prev()
 end, { desc = 'Prev buffer' })
 
-local function close_buffer(buf)
-  return pcall(vim.api.nvim_buf_delete, buf, {})
+local function close_buffer(buf, force)
+  return pcall(vim.api.nvim_buf_delete, buf, { force = force == true })
 end
 
-local function notify_unsaved_buffers(count)
-  vim.notify(string.format('%d件の未保存バッファは閉じませんでした', count), vim.log.levels.WARN)
+-- 現在バッファを閉じる（複数あるときは直前のタブへ切替してから削除）
+local function close_current_buffer(cur, force)
+  local bufs = require('config.util.buf_cycle').list()
+  if #bufs > 1 then
+    require('config.util.buf_cycle').prev()
+  end
+  -- 最後の1つ: 閉じるとBufDeleteでスタート画面に戻る
+  close_buffer(cur, force)
+end
+
+-- タブライン対象バッファをすべて閉じる
+local function close_all_buffers(force)
+  local bufs = require('config.util.buf_cycle').list()
+  for _, b in ipairs(bufs) do
+    if vim.api.nvim_buf_is_valid(b) and vim.bo[b].buflisted then
+      close_buffer(b, force)
+    end
+  end
 end
 
 vim.keymap.set('n', '<leader>q', function()
   local cur = vim.api.nvim_get_current_buf()
   if not vim.bo[cur].buflisted then return end -- スタート画面等の非listedバッファは対象外
   if vim.bo[cur].modified then
-    notify_unsaved_buffers(1)
+    local qc = require('config.quit_confirm')
+    qc.confirm_unsaved({ qc.buf_display_name(cur) }, function()
+      local ok = pcall(vim.api.nvim_buf_call, cur, function()
+        vim.cmd('write')
+      end)
+      if ok then
+        close_current_buffer(cur, false)
+      else
+        vim.notify('保存できませんでした。手動で保存してください', vim.log.levels.WARN)
+      end
+    end, function()
+      close_current_buffer(cur, true)
+    end)
     return
   end
-  local bufs = require('config.util.buf_cycle').list()
-  if #bufs > 1 then
-    require('config.util.buf_cycle').prev()
-    close_buffer(cur)
-  else
-    -- 最後の1つ: 閉じるとBufDeleteでスタート画面に戻る
-    close_buffer(cur)
-  end
+  close_current_buffer(cur, false)
 end, { desc = 'Close buffer' })
 vim.keymap.set('n', '<leader>Q', function()
   local bufs = require('config.util.buf_cycle').list()
-  local failed = 0
+  local qc = require('config.quit_confirm')
+  local unsaved = {}
   for _, b in ipairs(bufs) do
-    if vim.api.nvim_buf_is_valid(b) and vim.bo[b].buflisted then
-      if vim.bo[b].modified then
-        failed = failed + 1
-      elseif not close_buffer(b) then
-        failed = failed + 1
-      end
+    if vim.api.nvim_buf_is_valid(b) and vim.bo[b].buflisted and vim.bo[b].modified then
+      unsaved[#unsaved + 1] = qc.buf_display_name(b)
     end
   end
-  if failed > 0 then
-    notify_unsaved_buffers(failed)
+  if #unsaved > 0 then
+    qc.confirm_unsaved(unsaved, function()
+      local ok = true
+      for _, b in ipairs(bufs) do
+        if vim.api.nvim_buf_is_valid(b) and vim.bo[b].buflisted and vim.bo[b].modified then
+          if not pcall(vim.api.nvim_buf_call, b, function() vim.cmd('write') end) then
+            ok = false
+          end
+        end
+      end
+      if ok then
+        close_all_buffers(false)
+      else
+        vim.notify('保存できませんでした。手動で保存してください', vim.log.levels.WARN)
+      end
+    end, function()
+      close_all_buffers(true)
+    end)
+    return
   end
+  close_all_buffers(false)
 end, { desc = 'Close all buffer tabs' })
 
 -- 空文字だとマウス無効。以前は options が init から読まれておらず実質オフだった

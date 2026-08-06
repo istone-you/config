@@ -82,24 +82,32 @@ local function confirm(on_yes)
   })
 end
 
--- 未保存がある状態での終了ダイアログ（保存して終了 / 保存せず終了 / キャンセル）
-local function confirm_unsaved(names)
+-- 未保存がある状態での確認ダイアログ（保存して終了 / 保存せず終了 / キャンセル）。
+-- on_save / on_discard はそれぞれ s / d 押下時に呼ばれる。
+function M.confirm_unsaved(names, on_save, on_discard)
   local lines = { '  未保存の変更があります:  ' }
   for _, n in ipairs(names) do
     lines[#lines + 1] = '    ● ' .. n .. '  '
   end
   lines[#lines + 1] = '  s: 保存して終了   d: 保存せず終了   n / Esc: キャンセル  '
   popup(lines, {
-    { 's', function()
-      local ok = pcall(vim.cmd, 'wall')
-      if ok then ok = pcall(vim.cmd, 'quitall') end
-      if not ok then
-        vim.notify('保存できないバッファがあります（名前なし等）。手動で保存してください', vim.log.levels.WARN)
-      end
-    end },
-    { 'd', function() vim.cmd('quitall!') end },
+    { 's', on_save },
+    { 'd', on_discard },
     { 'n' }, { 'N' }, { 'q' }, { '<Esc>' },
   })
+end
+
+-- Neovim 終了用: wall → quitall / quitall!
+local function confirm_unsaved_exit(names)
+  M.confirm_unsaved(names, function()
+    local ok = pcall(vim.cmd, 'wall')
+    if ok then ok = pcall(vim.cmd, 'quitall') end
+    if not ok then
+      vim.notify('保存できませんでした。手動で保存してください', vim.log.levels.WARN)
+    end
+  end, function()
+    vim.cmd('quitall!')
+  end)
 end
 
 -- 実際に終了する場面の入口。未保存があればダイアログ、無ければそのまま終了。
@@ -107,7 +115,7 @@ end
 local function exit_now(quit_cmd)
   local names = unsaved_names()
   if #names > 0 then
-    confirm_unsaved(names)
+    confirm_unsaved_exit(names)
   else
     vim.cmd(quit_cmd)
   end
@@ -124,7 +132,7 @@ local function handle(bang, quit_cmd, force_cmd, always)
   if always or exits_nvim() then
     local names = unsaved_names()
     if #names > 0 then
-      confirm_unsaved(names)
+      confirm_unsaved_exit(names)
     else
       confirm(function() vim.cmd(quit_cmd) end)
     end
@@ -133,9 +141,14 @@ local function handle(bang, quit_cmd, force_cmd, always)
   end
 end
 
--- テスト用/外部（auto_quit）用に公開
+-- テスト用/外部（auto_quit・バッファ閉じ）用に公開
 M._exits_nvim = exits_nvim
 M._unsaved_names = unsaved_names
+-- バッファ表示名（未保存ダイアログ用）
+function M.buf_display_name(buf)
+  local n = vim.api.nvim_buf_get_name(buf)
+  return (n ~= '') and vim.fn.fnamemodify(n, ':~:.') or '[No Name]'
+end
 -- auto_quit から: 実編集ウィンドウが無くなり終了する場面。未保存があればダイアログを出す。
 function M.exit_or_prompt() exit_now('quit') end
 function M.q(bang) handle(bang, 'quit', 'quit!', false) end

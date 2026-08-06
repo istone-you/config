@@ -74,7 +74,13 @@ T.describe('options.lua behavior', function()
     T.rmrf(dir)
   end)
 
-  T.it('<leader>q keeps a modified buffer and notifies instead of showing E89', function()
+  local function float_win()
+    for _, w in ipairs(vim.api.nvim_list_wins()) do
+      if vim.api.nvim_win_get_config(w).relative ~= '' then return w end
+    end
+  end
+
+  T.it('<leader>q on a modified buffer shows the unsaved dialog; cancel keeps it', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir, 'p')
     T.write_file(dir .. '/dirty.txt', { 'dirty' })
@@ -82,25 +88,84 @@ T.describe('options.lua behavior', function()
     local dirty_buf = vim.api.nvim_get_current_buf()
     vim.bo[dirty_buf].modified = true
 
-    local notifications = {}
-    local orig_notify = vim.notify
-    vim.notify = function(msg) table.insert(notifications, tostring(msg)) end
     feed('<leader>q')
     vim.wait(80)
-    vim.notify = orig_notify
+    local fw = float_win()
+    T.ok(fw ~= nil, 'unsaved confirm popup appears')
+    local text = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(fw), 0, -1, false), '\n')
+    T.ok(text:find('未保存', 1, true) ~= nil, 'shows unsaved dialog: ' .. text)
+    T.ok(text:find('保存して終了', 1, true) ~= nil, 'offers save & close')
+    T.ok(text:find('保存せず終了', 1, true) ~= nil, 'offers discard & close')
 
+    vim.api.nvim_set_current_win(fw)
+    feed('n')
+    vim.wait(50)
+    T.ok(float_win() == nil, 'popup closed on cancel')
     T.eq(vim.fn.buflisted(dirty_buf), 1, 'modified buffer should remain listed')
     T.eq(vim.bo[dirty_buf].modified, true, 'modified buffer should remain modified')
-    T.ok(vim.iter(notifications):any(function(msg)
-      return msg:find('未保存', 1, true) ~= nil
-    end), 'should notify about the unsaved buffer')
 
     vim.bo[dirty_buf].modified = false
     vim.cmd('bwipeout! ' .. dirty_buf)
     T.rmrf(dir)
   end)
 
-  T.it('<leader>Q closes all tabline buffers, but keeps modified buffers', function()
+  T.it('<leader>q discard (d) force-closes a modified buffer', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/a.txt', { 'a' })
+    T.write_file(dir .. '/dirty.txt', { 'dirty' })
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/a.txt'))
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/dirty.txt'))
+    local a_buf = vim.fn.bufnr(dir .. '/a.txt')
+    local dirty_buf = vim.fn.bufnr(dir .. '/dirty.txt')
+    vim.bo[dirty_buf].modified = true
+
+    feed('<leader>q')
+    vim.wait(80)
+    local fw = float_win()
+    T.ok(fw ~= nil, 'unsaved confirm popup appears')
+    vim.api.nvim_set_current_win(fw)
+    feed('d')
+    vim.wait(80)
+
+    T.ok(float_win() == nil, 'popup closed after discard')
+    T.eq(vim.fn.buflisted(dirty_buf), 0, 'dirty buffer should be closed')
+    T.eq(vim.api.nvim_get_current_buf(), a_buf, 'should switch to the previous buffer')
+
+    vim.cmd('bwipeout! ' .. a_buf)
+    T.rmrf(dir)
+  end)
+
+  T.it('<leader>q save (s) writes and closes a modified buffer', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/a.txt', { 'a' })
+    T.write_file(dir .. '/dirty.txt', { 'dirty' })
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/a.txt'))
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/dirty.txt'))
+    local a_buf = vim.fn.bufnr(dir .. '/a.txt')
+    local dirty_buf = vim.fn.bufnr(dir .. '/dirty.txt')
+    vim.api.nvim_buf_set_lines(dirty_buf, 0, -1, false, { 'saved content' })
+    vim.bo[dirty_buf].modified = true
+
+    feed('<leader>q')
+    vim.wait(80)
+    local fw = float_win()
+    T.ok(fw ~= nil, 'unsaved confirm popup appears')
+    vim.api.nvim_set_current_win(fw)
+    feed('s')
+    vim.wait(80)
+
+    T.ok(float_win() == nil, 'popup closed after save')
+    T.eq(vim.fn.buflisted(dirty_buf), 0, 'dirty buffer should be closed after save')
+    T.eq(vim.api.nvim_get_current_buf(), a_buf, 'should switch to the previous buffer')
+    T.eq(vim.fn.readfile(dir .. '/dirty.txt')[1], 'saved content', 'file should be written')
+
+    vim.cmd('bwipeout! ' .. a_buf)
+    T.rmrf(dir)
+  end)
+
+  T.it('<leader>Q with modified buffers shows the unsaved dialog; cancel closes nothing', function()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir, 'p')
     T.write_file(dir .. '/a.txt', { 'a' })
@@ -115,22 +180,99 @@ T.describe('options.lua behavior', function()
     local dirty_buf = vim.fn.bufnr(dir .. '/dirty.txt')
     vim.bo[dirty_buf].modified = true
 
-    local notifications = {}
-    local orig_notify = vim.notify
-    vim.notify = function(msg) table.insert(notifications, tostring(msg)) end
     feed('<leader>Q')
     vim.wait(80)
-    vim.notify = orig_notify
+    local fw = float_win()
+    T.ok(fw ~= nil, 'unsaved confirm popup appears')
+    local text = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(fw), 0, -1, false), '\n')
+    T.ok(text:find('未保存', 1, true) ~= nil, 'shows unsaved dialog: ' .. text)
 
-    T.eq(vim.fn.buflisted(a_buf), 0, 'clean buffer a should be closed')
-    T.eq(vim.fn.buflisted(b_buf), 0, 'clean buffer b should be closed')
-    T.eq(vim.fn.buflisted(dirty_buf), 1, 'modified buffer should remain listed')
-    T.ok(vim.iter(notifications):any(function(msg)
-      return msg:find('未保存', 1, true) ~= nil
-    end), 'should notify about kept modified buffers')
+    vim.api.nvim_set_current_win(fw)
+    feed('n')
+    vim.wait(50)
+    T.ok(float_win() == nil, 'popup closed on cancel')
+    T.eq(vim.fn.buflisted(a_buf), 1, 'clean buffer a should remain on cancel')
+    T.eq(vim.fn.buflisted(b_buf), 1, 'clean buffer b should remain on cancel')
+    T.eq(vim.fn.buflisted(dirty_buf), 1, 'modified buffer should remain on cancel')
+    T.eq(vim.bo[dirty_buf].modified, true, 'modified buffer should remain modified')
 
     vim.bo[dirty_buf].modified = false
+    vim.cmd('bwipeout! ' .. a_buf)
+    vim.cmd('bwipeout! ' .. b_buf)
     vim.cmd('bwipeout! ' .. dirty_buf)
+    T.rmrf(dir)
+  end)
+
+  T.it('<leader>Q discard (d) force-closes all tabline buffers including modified', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/a.txt', { 'a' })
+    T.write_file(dir .. '/dirty.txt', { 'dirty' })
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/a.txt'))
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/dirty.txt'))
+
+    local a_buf = vim.fn.bufnr(dir .. '/a.txt')
+    local dirty_buf = vim.fn.bufnr(dir .. '/dirty.txt')
+    vim.bo[dirty_buf].modified = true
+
+    feed('<leader>Q')
+    vim.wait(80)
+    local fw = float_win()
+    T.ok(fw ~= nil, 'unsaved confirm popup appears')
+    vim.api.nvim_set_current_win(fw)
+    feed('d')
+    vim.wait(80)
+
+    T.ok(float_win() == nil, 'popup closed after discard')
+    T.eq(vim.fn.buflisted(a_buf), 0, 'clean buffer should be closed')
+    T.eq(vim.fn.buflisted(dirty_buf), 0, 'modified buffer should be closed')
+    T.rmrf(dir)
+  end)
+
+  T.it('<leader>Q save (s) writes modified buffers then closes all', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/a.txt', { 'a' })
+    T.write_file(dir .. '/dirty.txt', { 'dirty' })
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/a.txt'))
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/dirty.txt'))
+
+    local a_buf = vim.fn.bufnr(dir .. '/a.txt')
+    local dirty_buf = vim.fn.bufnr(dir .. '/dirty.txt')
+    vim.api.nvim_buf_set_lines(dirty_buf, 0, -1, false, { 'saved all' })
+    vim.bo[dirty_buf].modified = true
+
+    feed('<leader>Q')
+    vim.wait(80)
+    local fw = float_win()
+    T.ok(fw ~= nil, 'unsaved confirm popup appears')
+    vim.api.nvim_set_current_win(fw)
+    feed('s')
+    vim.wait(80)
+
+    T.ok(float_win() == nil, 'popup closed after save')
+    T.eq(vim.fn.buflisted(a_buf), 0, 'clean buffer should be closed')
+    T.eq(vim.fn.buflisted(dirty_buf), 0, 'modified buffer should be closed after save')
+    T.eq(vim.fn.readfile(dir .. '/dirty.txt')[1], 'saved all', 'file should be written')
+    T.rmrf(dir)
+  end)
+
+  T.it('<leader>Q closes all clean tabline buffers without a popup', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, 'p')
+    T.write_file(dir .. '/a.txt', { 'a' })
+    T.write_file(dir .. '/b.txt', { 'b' })
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/a.txt'))
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/b.txt'))
+
+    local a_buf = vim.fn.bufnr(dir .. '/a.txt')
+    local b_buf = vim.fn.bufnr(dir .. '/b.txt')
+
+    feed('<leader>Q')
+    vim.wait(50)
+    T.ok(float_win() == nil, 'no popup when all buffers are clean')
+    T.eq(vim.fn.buflisted(a_buf), 0, 'buffer a should be closed')
+    T.eq(vim.fn.buflisted(b_buf), 0, 'buffer b should be closed')
     T.rmrf(dir)
   end)
 

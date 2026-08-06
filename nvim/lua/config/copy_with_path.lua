@@ -50,12 +50,12 @@ local function copy_code_with_path(start_line, end_line)
   vim.notify('コピー: ' .. location, vim.log.levels.INFO)
 end
 
-vim.keymap.set('n', '<leader>P', function()
+vim.keymap.set('n', '<leader>Y', function()
   local line = vim.api.nvim_win_get_cursor(0)[1]
   copy_code_with_path(line, line)
 end, { desc = 'パス付きコードをコピー（現在行）' })
 
-vim.keymap.set('v', '<leader>P', function()
+vim.keymap.set('v', '<leader>Y', function()
   local s = vim.fn.line('v')
   local e = vim.fn.line('.')
   if s > e then s, e = e, s end
