@@ -78,6 +78,7 @@ git パネルと docker パネルは UI の骨格（レイアウト・タブバ�
 | `http_client` | `.http` / `.rest` ファイルに書いた HTTP リクエストを実行し、結果を右パネルに表示（変数・環境ファイル対応） | `Space h r` |
 | `copy_with_path` | 選択コードをファイルパス（行番号付き）とともにコピー | `Space Y` |
 | `copy_all` | バッファ全内容をコピー | `Space A` |
+| `ports_panel` | 使用中のポートと、それを掴んでいるプロセスの一覧パネル（Listening / Connections の2タブ。プロセスの終了・ブラウザで開く・ポート番号コピー） | `Space P`、`:Ports` |
 | `shortcuts` | Neovim のショートカット一覧パネル | `Space ?` |
 
 ## nvim が依存する CLI ツール
@@ -91,6 +92,9 @@ git パネルと docker パネルは UI の骨格（レイアウト・タブバ�
 | `gh` | `git_panel` の GitHub PR 取得・認証（branches.lua の PR 表示、pr.lua の PRパネル: 一覧/詳細/diff/checkout/ブラウザ表示） |
 | `curl` | `git_panel/git.lua` の GitHub GraphQL API 呼び出し（PR情報取得）、`http_client` のリクエスト実行 |
 | `xdg-open` / `open` | `browser` のプレビューURLを既定ブラウザで開く。`xdg-open`（Linux）→ `open`（macOS）の順に探索し、どちらも無い場合はURLを通知するのみ |
+| `lsof` | `ports_panel` の使用中ポート一覧・プロセスのソケット一覧（無い場合はパネルを開いた時にエラー通知して閉じる） |
+| `ps` | `ports_panel` の右ペイン Process タブ（選択中ポートを掴んでいるプロセスの詳細） |
+| `kill` | `ports_panel` の `d`（SIGTERM） / `D`（SIGKILL） |
 | `delta` | `git_panel` の diff 色付き表示（任意、無くても素のテキストにフォールバック） |
 | `rg` (ripgrep) | `search.lua` の全文検索・置換、`todo_tree.lua` の TODO タグ検索 |
 | `fzf` | `search.lua`（検索UI） |

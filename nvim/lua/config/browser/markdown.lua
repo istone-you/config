@@ -661,8 +661,11 @@ local function asset_response(asset_path)
     return http_response('403 Forbidden', 'text/plain', 'forbidden')
   end
 
-  local full = vim.fn.fnamemodify(state.root_dir .. '/' .. asset_path, ':p')
-  local root = vim.fn.fnamemodify(state.root_dir, ':p')
+  -- `./` を含んだまま `:p` に渡すと macOS では symlink が解決されて
+  -- /var/... が /private/var/... になり、root との前方一致が誤って外れる。
+  -- 先に normalize して root と同じパス表現に揃える（`..` は上で弾き済み）
+  local full = vim.fn.fnamemodify(vim.fs.normalize(state.root_dir .. '/' .. asset_path), ':p')
+  local root = vim.fn.fnamemodify(vim.fs.normalize(state.root_dir), ':p')
   if full:sub(1, #root) ~= root then
     return http_response('403 Forbidden', 'text/plain', 'forbidden')
   end

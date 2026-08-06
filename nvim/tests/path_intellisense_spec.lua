@@ -123,6 +123,18 @@ T.describe('path_intellisense.resolve_dir', function()
     T.eq(path.resolve_dir('missing', base), nil)
     T.rmrf(base)
   end)
+
+  T.it('collapses ./ and ../ without resolving symlinks in the path', function()
+    local base = vim.fn.tempname()
+    vim.fn.mkdir(base .. '/sub/deep', 'p')
+    local plain = vim.fn.fnamemodify(base .. '/sub', ':p')
+    -- macOS の tempname() は /var（= /private/var への symlink）配下を返す。
+    -- `./` `../` の有無で symlink 解決の有無が変わらないこと
+    T.eq(path.resolve_dir('./sub', base), plain)
+    T.eq(path.resolve_dir('sub/deep/..', base), plain)
+    T.eq(path.resolve_dir('./sub/./deep/../', base), plain)
+    T.rmrf(base)
+  end)
 end)
 
 T.summary()

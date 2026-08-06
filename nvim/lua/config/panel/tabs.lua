@@ -1,4 +1,5 @@
 -- 右ペインのサブタブ（lazydockerの Logs / Stats / Env / Config / Top 相当）。
+-- docker / ports など shell.lua を使うパネル共通。
 -- lazydocker は右側のビューを `[` / `]` で切り替え、今どれを見ているかを枠のタイトルに出す。
 -- ここでも同じ操作・同じ見せ方にする（タイトルの配色はタブバーと同じ GitPanelTab* を使うので
 -- gitパネルのタブバーと完全に同じ見た目になる）。

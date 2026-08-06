@@ -2,8 +2,8 @@
 -- （lazydocker の Volumes パネル相当）
 
 local docker = require('config.docker_panel.docker')
-local tabs_mod = require('config.docker_panel.tabs')
-local util = require('config.docker_panel.util')
+local tabs_mod = require('config.panel.tabs')
+local util = require('config.panel.text')
 
 local M = {}
 

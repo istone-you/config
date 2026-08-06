@@ -34,6 +34,11 @@ T.describe('browser/html.lua: http response', function()
 
     T.contains(P.response_for_path('/../secret.txt'), 'HTTP/1.1 403 Forbidden')
 
+    -- macOS の tempname() は /var（/private/var への symlink）配下。`./` 入りでも
+    -- root との前方一致が外れて 403 にならないこと
+    T.contains(P.response_for_path('/./style.css'), 'HTTP/1.1 200 OK')
+    T.contains(P.response_for_path('/./style.css'), 'color: red')
+
     vim.api.nvim_buf_delete(buf, { force = true })
     T.rmrf(dir)
   end)

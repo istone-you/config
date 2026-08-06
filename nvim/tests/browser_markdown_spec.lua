@@ -435,6 +435,23 @@ T.describe('browser/markdown.lua: http response', function()
     T.contains(ok_res, 'fakepng')
     T.contains(blocked, 'HTTP/1.1 403 Forbidden')
   end)
+
+  T.it('serves ./-prefixed assets (macOS /var symlink must not break the root check)', function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir .. '/images', 'p')
+    vim.fn.writefile({ 'fakepng' }, dir .. '/images/logo.png', 'b')
+
+    local old_root = P.state.root_dir
+    P.state.root_dir = dir
+    local dotted = P.asset_response('./images/logo.png')
+    local inner_dot = P.asset_response('images/./logo.png')
+    P.state.root_dir = old_root
+    vim.fn.delete(dir, 'rf')
+
+    T.contains(dotted, 'HTTP/1.1 200 OK')
+    T.contains(dotted, 'fakepng')
+    T.contains(inner_dot, 'HTTP/1.1 200 OK')
+  end)
 end)
 
 T.describe('browser/markdown.lua: autocommands', function()

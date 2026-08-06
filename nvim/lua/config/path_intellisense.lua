@@ -32,12 +32,13 @@ function M.resolve_dir(dir_part, base)
     return vim.fn.fnamemodify(base, ':p')
   end
   local path = dir_part
-  if path:sub(1, 1) == '~' then
-    path = vim.fn.fnamemodify(path, ':p')
-  elseif path:sub(1, 1) ~= '/' then
+  if path:sub(1, 1) ~= '/' and path:sub(1, 1) ~= '~' then
     path = base .. '/' .. path
   end
-  path = vim.fn.fnamemodify(path, ':p')
+  -- `~` `./` `../` は vim.fs.normalize で先に畳んでおく。`/./` を含んだまま `:p` に
+  -- 渡すと、実在パスのとき macOS では symlink まで解決され /var/... が
+  -- /private/var/... になり、断片の書き方次第で返すパスが変わってしまう
+  path = vim.fn.fnamemodify(vim.fs.normalize(path), ':p')
   if vim.fn.isdirectory(path) == 0 then return nil end
   return path
 end
