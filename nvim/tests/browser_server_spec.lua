@@ -36,9 +36,12 @@ T.describe('browser/server.lua start/stop', function()
     T.eq(state.port, port)
     T.ok(state.server ~= nil)
 
-    -- 同じポートを別 state で掴もうとすると "already in use" で失敗し、掴んだ側は残る
+    -- 同じポートを別 state で掴もうとすると "already in use" で失敗し、掴んだ側は残る。
+    -- bind先ホストは default_host で決まるので、1回目と必ず揃える。揃えないと
+    -- 2回目は 0.0.0.0 へbindしにいき、macOSでは 127.0.0.1 が埋まっていても成功してしまう
     local other = {}
-    local ok, err = http.start(other, port, { namespace = 'test', handler = function() return '' end })
+    local ok, err = http.start(other, port, { namespace = 'test', default_host = '127.0.0.1',
+      handler = function() return '' end })
     T.eq(ok, false)
     T.contains(err, 'already in use')
     T.eq(other.server, nil)

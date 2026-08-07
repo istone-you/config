@@ -141,9 +141,82 @@ function M.called(state, needle)
   return false
 end
 
+-- ── 待ち合わせ ──
+-- パネルの更新はdockerサブプロセスの応答待ちなので、固定時間ではなく「見たい状態に
+-- なったか」を10ms間隔でポーリングする。成立した時点で即座に返るため、固定待ちに
+-- 比べて実測が桁で縮む（タイムアウトは異常時に止まらないための上限でしかない）。
+
+local DEFAULT_TIMEOUT = 3000
+
+--- condがtrueを返すまで待つ。成立したらtrue、タイムアウトしたらfalse
+function M.until_ok(cond, ms)
+  return vim.wait(ms or DEFAULT_TIMEOUT, cond, 10)
+end
+
+--- 左パネルにsubstringを含む行がすべて出るまで待つ
+function M.wait_rows(subs, ms)
+  return M.until_ok(function()
+    local w = M.left_win()
+    if not w then return false end
+    for _, s in ipairs(subs) do
+      if not M.find_row(w, s) then return false end
+    end
+    return true
+  end, ms)
+end
+
+--- 左パネルからsubstringを含む行が消えるまで待つ
+function M.wait_no_row(substring, ms)
+  return M.until_ok(function()
+    local w = M.left_win()
+    return w ~= nil and M.find_row(w, substring) == nil
+  end, ms)
+end
+
+--- 偽dockerがneedleを含むコマンドを呼ぶまで待つ
+function M.wait_call(state, needle, ms)
+  return M.until_ok(function() return M.called(state, needle) end, ms)
+end
+
+--- 右ペインの選択中サブタブがnameになるまで待つ
+function M.wait_tab(name, ms)
+  return M.until_ok(function() return M.right_active_tab() == name end, ms)
+end
+
+--- 右ペインの中身にtextが出るまで待つ
+function M.wait_right_text(text, ms)
+  return M.until_ok(function()
+    local w = M.right_win()
+    return w ~= nil and table.concat(M.lines(w), '\n'):find(text, 1, true) ~= nil
+  end, ms)
+end
+
+--- 今フォーカスされているモーダル（確認/メニュー）のバッファ。無ければnil。
+--- 左右のペインもフロートなので、それ以外のフロートであることで判別する
+function M.current_modal_buf()
+  local cur = vim.api.nvim_get_current_win()
+  if vim.api.nvim_win_get_config(cur).relative == '' then return nil end
+  if cur == M.left_win() or cur == M.right_win() then return nil end
+  return vim.api.nvim_win_get_buf(cur)
+end
+
+--- モーダルが開いてフォーカスされるまで待つ。prev_bufを渡すと「それとは別の
+--- モーダル」に切り替わるまで待つ（メニュー→確認と続けて出る場合に使う）
+function M.wait_modal(ms, prev_buf)
+  return M.until_ok(function()
+    local b = M.current_modal_buf()
+    return b ~= nil and b ~= prev_buf
+  end, ms)
+end
+
+--- モーダルが閉じてパネルへフォーカスが戻るまで待つ
+function M.wait_no_modal(ms)
+  return M.until_ok(function() return M.current_modal_buf() == nil end, ms)
+end
+
 function M.cleanup(state)
   require('config.docker_panel').close()
-  vim.wait(200)
+  M.until_ok(function() return M.left_win() == nil end, 1000)
   vim.fn.delete(state.dir, 'rf')
   require('config.docker_panel.docker').bin = 'docker'
 end
@@ -152,7 +225,10 @@ function M.open()
   local dp = require('config.docker_panel')
   pcall(dp.close)
   dp.open(false)
-  vim.wait(600)
+  M.until_ok(function()
+    local w = M.left_win()
+    return w ~= nil and #M.lines(w) > 1
+  end)
   return dp
 end
 
@@ -205,16 +281,32 @@ local function feed(keys)
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(keys, true, false, true), 'x', false)
 end
 
+--- keysの先頭1キー。<Space>のような表記も1キーとして扱う
+local function first_key(keys)
+  return keys:match('^<[^>]+>') or keys:sub(1, 1)
+end
+
+--- そのキーがカレントバッファで実際に効くようになるまで待つ。
+--- ウィンドウの生成とバッファローカルなキーマップの登録は同じタイミングとは限らず、
+--- 登録前に送った入力は黙って捨てられるため、送信前に必ず挟む
+local function wait_mapped(keys)
+  M.until_ok(function()
+    return not vim.tbl_isempty(vim.fn.maparg(first_key(keys), 'n', false, true))
+  end, 1000)
+end
+
 --- 左パネルにフォーカスしてキーを送る（`normal!`ではなくマッピング有効の経路）
 function M.press(keys)
   local win = M.left_win()
   vim.api.nvim_set_current_win(win)
+  wait_mapped(keys)
   feed(keys)
 end
 
 --- モーダル(confirm/menu)はopen_win(...,true,...)で即フォーカスされるので、
 --- 現在のカレントウィンドウがそのまま対象になる
 function M.press_modal(keys)
+  wait_mapped(keys)
   feed(keys)
 end
 

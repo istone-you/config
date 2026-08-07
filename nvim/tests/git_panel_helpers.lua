@@ -11,6 +11,17 @@
 
 local M = {}
 
+-- ── 待ち合わせ ──
+-- パネルの更新はgitサブプロセスの応答待ちなので、固定時間ではなく「見たい状態に
+-- なったか」を10ms間隔でポーリングする。成立した時点で即座に返る
+
+local DEFAULT_TIMEOUT = 3000
+
+--- condがtrueを返すまで待つ。成立したらtrue、タイムアウトしたらfalse
+function M.until_ok(cond, ms)
+  return vim.wait(ms or DEFAULT_TIMEOUT, cond, 10)
+end
+
 function M.open(dir, fullscreen)
   -- 前のitがassertion失敗で中断し、後始末(close)まで到達できなかった場合でも
   -- 次のテストへ汚染が伝播しないよう、開く前に必ず一度閉じておく(冪等)
@@ -18,7 +29,18 @@ function M.open(dir, fullscreen)
   pcall(gp.close)
   vim.fn.chdir(dir)
   gp.open(fullscreen)
-  vim.wait(400)
+  -- 開き終わりの本体は「左パネルに中身が出たか」
+  M.until_ok(function()
+    local left = M.left_win()
+    return left ~= nil and #M.lines(left) > 1
+  end)
+  -- 右ペインの初回描画も待つ。ただし右ペインが空のまま(差分なし等)の開き方も
+  -- あり、その場合この条件は永久に成立しない。上限を旧実装の固定待ちと同じ
+  -- 400msに揃えて、成立しない場合でも従来より遅くならないようにする
+  M.until_ok(function()
+    local right = M.right_win()
+    return right ~= nil and #M.lines(right) > 1
+  end, 400)
   return gp
 end
 
@@ -86,12 +108,24 @@ local function feed(keys)
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(keys, true, false, true), 'x', false)
 end
 
+--- カレントバッファにキーマップが張られるまで待つ。
+--- ウィンドウの生成とバッファローカルなキーマップの登録は同じタイミングとは限らず、
+--- 登録前に送った入力は黙って捨てられるため、送信前に必ず挟む。
+--- 「送るキーが個別にマップされているか」ではなく「登録処理が済んだか」を見る
+--- （j/k のような素のモーションを送る呼び出しで無駄に待たないため）
+local function wait_keymaps_ready()
+  M.until_ok(function()
+    return #vim.api.nvim_buf_get_keymap(0, 'n') > 0
+  end, 1000)
+end
+
 --- 左パネルにフォーカスして {cmds} をノーマルモードのキー入力として実行する
 --- (`normal!`ではなく`normal`=マッピング有効。bangを付けると自作キーマップが
 --- 一切発火しなくなる点に注意)
 function M.press(keys)
   local win = M.left_win()
   vim.api.nvim_set_current_win(win)
+  wait_keymaps_ready()
   feed(keys)
 end
 
@@ -99,6 +133,7 @@ end
 --- モーダルはopen_win(...,true,...)で開かれ即フォーカスされるので、
 --- 現在のカレントウィンドウがそのまま対象になる
 function M.press_modal(keys)
+  wait_keymaps_ready()
   feed(keys)
 end
 

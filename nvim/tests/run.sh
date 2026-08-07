@@ -1,12 +1,41 @@
 #!/usr/bin/env bash
 # 自作の最小テストランナー(プラグイン不使用)。tests/*_spec.luaをnvim -lで
-# 個別プロセスとして順に実行し、exit codeで合否判定する。
-# 使い方: nvim/tests/run.sh [パターン]  例: nvim/tests/run.sh explorer
+# 個別プロセスとして実行し、exit codeで合否判定する。
+# 既定ではCPU数ぶん並列に走らせる(各specは独立プロセスなので副作用は共有しない)。
+# 使い方: nvim/tests/run.sh [パターン] [-j 並列数]
+#   例: nvim/tests/run.sh explorer     explorerを含むspecだけ
+#       nvim/tests/run.sh -j 1         逐次実行(出力を流しながら見たいとき)
 set -uo pipefail
 cd "$(dirname "$0")/.."   # -> nvim/
 NVIM_DIR="$(pwd)"
 TESTS_DIR="$NVIM_DIR/tests"
-PATTERN="${1:-}"
+SELF="$TESTS_DIR/run.sh"
+
+# ── 内部モード ──
+# xargs から1ファイルぶんだけ実行する。標準出力と exit code を $RUN_OUT_DIR に落とし、
+# 親側があとで元の順番に並べ直して表示する(並列でも出力が混ざらないようにするため)
+if [ "${1:-}" = "--run-one" ]; then
+  f="$2"
+  base="$(basename "$f")"
+  nvim -u NONE --cmd "set rtp+=$NVIM_DIR" --cmd "lua TESTS_DIR = '$TESTS_DIR'" -l "$f" \
+    >"$RUN_OUT_DIR/$base.out" 2>&1
+  echo $? >"$RUN_OUT_DIR/$base.code"
+  exit 0
+fi
+
+# ── 引数 ──
+PATTERN=''
+JOBS=''
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -j) JOBS="${2:-}"; shift 2 ;;
+    -j*) JOBS="${1#-j}"; shift ;;
+    *) PATTERN="$1"; shift ;;
+  esac
+done
+if [ -z "$JOBS" ]; then
+  JOBS="$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)"
+fi
 
 # 端末に出す時だけ色を付ける(パイプ/リダイレクト先がファイル等の時は無効化)
 if [ -t 1 ]; then
@@ -26,6 +55,27 @@ colorize() {
     -e "s/^\([0-9]* total, \)\([0-9]* passed\)\(, \)\([0-9]* failed\)$/\1${C_GREEN}\2${C_RESET}\3${C_RED}\4${C_RESET}/"
 }
 
+files=()
+for f in "$TESTS_DIR"/*_spec.lua; do
+  base="$(basename "$f")"
+  if [ -n "$PATTERN" ] && [[ "$base" != *"$PATTERN"* ]]; then
+    continue
+  fi
+  files+=("$f")
+done
+
+if [ ${#files[@]} -eq 0 ]; then
+  echo "no spec matched: ${PATTERN:-(all)}"
+  exit 1
+fi
+
+RUN_OUT_DIR="$(mktemp -d)"
+export RUN_OUT_DIR NVIM_DIR TESTS_DIR
+trap 'rm -rf "$RUN_OUT_DIR"' EXIT
+
+[ "$JOBS" -gt 1 ] && echo "${C_CYAN}running ${#files[@]} spec files with ${JOBS} jobs…${C_RESET}"
+printf '%s\0' "${files[@]}" | xargs -0 -P "$JOBS" -n1 "$SELF" --run-one
+
 pass=0
 fail=0
 failed_files=()
@@ -33,16 +83,12 @@ total_cases=0
 passed_cases=0
 failed_cases=0
 
-for f in "$TESTS_DIR"/*_spec.lua; do
+# 実行順ではなくファイル名順に並べ直して表示する(並列でも出力が毎回同じ並びになる)
+for f in "${files[@]}"; do
   base="$(basename "$f")"
-  if [ -n "$PATTERN" ] && [[ "$base" != *"$PATTERN"* ]]; then
-    continue
-  fi
+  out="$(cat "$RUN_OUT_DIR/$base.out" 2>/dev/null)"
+  code="$(cat "$RUN_OUT_DIR/$base.code" 2>/dev/null || echo 1)"
   echo "${C_CYAN}${C_BOLD}── $base ──${C_RESET}"
-  # 出力を捕まえつつそのまま表示する(ファイルごとの"N total, N passed, N failed"を
-  # 集計してスイート全体の合計もまとめて出すため)
-  out="$(nvim -u NONE --cmd "set rtp+=$NVIM_DIR" --cmd "lua TESTS_DIR = '$TESTS_DIR'" -l "$f" 2>&1)"
-  code=$?
   echo "$out" | colorize
   if [[ "$out" =~ ([0-9]+)\ total,\ ([0-9]+)\ passed,\ ([0-9]+)\ failed ]]; then
     total_cases=$((total_cases + ${BASH_REMATCH[1]}))
@@ -56,7 +102,6 @@ for f in "$TESTS_DIR"/*_spec.lua; do
     failed_files+=("$base")
   fi
   echo
-  sleep 0.2 # 前specの非同期処理(gitサブプロセス等)が完全に片付く猶予を少し置く
 done
 
 echo "======================================"
