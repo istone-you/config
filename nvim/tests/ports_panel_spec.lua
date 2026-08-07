@@ -1,7 +1,7 @@
 local T = dofile(TESTS_DIR .. '/helpers.lua')
 local ports = require('config.ports_panel.ports')
 
--- lsof -nP -i -F pcLPnT 相当のフィールド出力。
+-- lsof -nP -i -F pcLPnTf 相当のフィールド出力（f がソケット境界）。
 -- node は同じポートを2つのfdで持ち(dedupe対象)、確立済み接続も1本持っている。
 -- postgres は TCP LISTEN と UDP バインドの両方、Chrome は IPv6 の接続と SYN_SENT を持つ。
 local FIXTURE = table.concat({
@@ -80,6 +80,37 @@ T.describe('ports.parse', function()
     T.eq(ports.parse(nil), {})
     -- n(名前)が無いブロックは行として成立しないので落とす
     T.eq(ports.parse('p1\ncfoo\nf3\nPTCP'), {})
+  end)
+
+  T.it('yields nothing when f (fd) lines are missing — lsof -F must request f', function()
+    -- -F に f が無い実出力に相当。ソケット境界が立たず P/n/T を取りこぼす
+    local without_f = table.concat({
+      'p111', 'cnode', 'Listone',
+      'PTCP', 'n*:3000', 'TST=LISTEN',
+    }, '\n')
+    T.eq(ports.parse(without_f), {})
+  end)
+end)
+
+T.describe('ports.sockets', function()
+  T.it('asks lsof for the f field so parse can see socket boundaries', function()
+    local seen
+    local orig = ports.run
+    ports.run = function(cmd, cb, opts)
+      seen = cmd
+      if cb then cb({ stdout = FIXTURE, code = 0 }) end
+    end
+    local entries
+    ports.sockets(function(e) entries = e end)
+    ports.run = orig
+
+    local f_arg
+    for i, a in ipairs(seen) do
+      if a == '-F' then f_arg = seen[i + 1]; break end
+    end
+    T.ok(f_arg ~= nil, '-F must be present')
+    T.ok(f_arg:find('f', 1, true) ~= nil, '-F must include f (got ' .. tostring(f_arg) .. ')')
+    T.eq(#entries, 7)
   end)
 end)
 

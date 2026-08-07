@@ -85,9 +85,10 @@ function M.split_name(name)
   return addr, port, peer
 end
 
---- `lsof -F pcLPnT` の出力をエントリ配列にする。
+--- `lsof -F pcLPnTf` の出力をエントリ配列にする。
 --- フィールド出力は状態を持つ形式で、`p`(プロセス)行のあとに `f`(ソケット)行が続き、
 --- 次の `f`/`p` が来るまでがひとつのソケットの情報になる。
+--- `f` は必須。`-F` から外すとソケット境界が取れず一覧が常に空になる。
 ---@return table[] { pid, command, user, fd, proto, state, addr, port, peer, name }
 function M.parse(text)
   local out = {}
@@ -200,7 +201,7 @@ end
 
 --- ネットワークソケット全件。cb(entries)
 function M.sockets(cb)
-  read({ M.bin, '-nP', '-i', '-F', 'pcLPnT' }, function(text)
+  read({ M.bin, '-nP', '-i', '-F', 'pcLPnTf' }, function(text)
     cb(M.parse(text))
   end)
 end
