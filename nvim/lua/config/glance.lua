@@ -226,6 +226,6 @@ vim.api.nvim_create_autocmd('ColorScheme', { callback = setup_hl })
 vim.keymap.set('n', 'gd', M.definition,      { desc = 'Glance: definition' })
 vim.keymap.set('n', 'gr', M.references,      { desc = 'Glance: references' })
 vim.keymap.set('n', 'gy', M.type_definition, { desc = 'Glance: type definition' })
-vim.keymap.set('n', 'gi', M.implementation,  { desc = 'Glance: implementation' })
+vim.keymap.set('n', 'gI', M.implementation,  { desc = 'Glance: implementation' })
 
 return M

@@ -160,6 +160,15 @@ T.describe('glance (LSP go-to-definition/references peek)', function()
 
     T.rmrf(dir)
   end)
+
+  T.it('maps implementation to gI, leaving the standard gi (last insert position) alone', function()
+    T.contains(vim.fn.maparg('gI', 'n', false, true).desc or '', 'implementation')
+    T.ok(vim.tbl_isempty(vim.fn.maparg('gi', 'n', false, true)),
+      'gi must stay unmapped so the standard "jump to last insert position" keeps working')
+    for key, want in pairs({ gd = 'definition', gr = 'references', gy = 'type definition' }) do
+      T.contains(vim.fn.maparg(key, 'n', false, true).desc or '', want)
+    end
+  end)
 end)
 
 T.summary()

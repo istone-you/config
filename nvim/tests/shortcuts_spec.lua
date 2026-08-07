@@ -50,6 +50,44 @@ T.describe('shortcuts', function()
     vim.wait(50)
   end)
 
+  T.it('covers the standard-key sections, including the ones added later', function()
+    local win = open_fresh()
+    local text = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false), '\n')
+    for _, header in ipairs({
+      'ファイル・タグジャンプ', '折りたたみ', 'quickfix / location list',
+      'diffモード', 'スペルチェック', 'その他・便利コマンド',
+    }) do
+      T.contains(text, header)
+    end
+    -- 標準キーの代表。gf は「パス先へのジャンプ」の入口なので特に落とさない
+    for _, key in ipairs({ 'gf', 'gx', '{ / }', 'gn / gN', ']p', 'z=', 'do / dp' }) do
+      T.contains(text, key)
+    end
+    vim.api.nvim_set_current_win(win)
+    feed('q')
+    vim.wait(50)
+  end)
+
+  T.it("lists '. (not the nonexistent '- mark) for the last-change jump", function()
+    local win = open_fresh()
+    local text = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false), '\n')
+    T.contains(text, "'.")
+    T.ok(not text:find("'%-%s+最後の変更行へ"), "'- is not a real Vim mark and must not be listed")
+    vim.api.nvim_set_current_win(win)
+    feed('q')
+    vim.wait(50)
+  end)
+
+  T.it('documents Glance on gI so the standard gi stays free', function()
+    local win = open_fresh()
+    local text = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false), '\n')
+    T.contains(text, 'g y / g I')
+    T.contains(text, '最後にインサートした位置へ')
+    vim.api.nvim_set_current_win(win)
+    feed('q')
+    vim.wait(50)
+  end)
+
   T.it('panel window hides the number column and uses a transparent background', function()
     local win = open_fresh()
     T.ok(vim.wo[win].number == false, 'number column should be off')

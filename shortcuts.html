@@ -150,10 +150,20 @@
       <tr><td><kbd>0</kbd></td><td class="desc">行の先頭（列0）へ</td></tr>
       <tr><td><kbd>^</kbd></td><td class="desc">行の最初の非空白文字へ</td></tr>
       <tr><td><kbd>$</kbd></td><td class="desc">行末へ</td></tr>
+      <tr><td><kbd>g_</kbd></td><td class="desc">行末の非空白文字へ</td></tr>
+      <tr><td><kbd>+</kbd> / <kbd>-</kbd></td><td class="desc">次 / 前の行の非空白へ</td></tr>
+      <tr><td><kbd>{N}|</kbd></td><td class="desc">N列目へ</td></tr>
       <tr><td><kbd>gg</kbd></td><td class="desc">ファイル先頭へ</td></tr>
       <tr><td><kbd>G</kbd></td><td class="desc">ファイル末尾へ</td></tr>
       <tr><td><kbd>{N}G</kbd></td><td class="desc">N行目へジャンプ</td></tr>
+      <tr><td><kbd>{</kbd> / <kbd>}</kbd></td><td class="desc">前 / 次の段落へ</td></tr>
+      <tr><td><kbd>(</kbd> / <kbd>)</kbd></td><td class="desc">前 / 次の文へ</td></tr>
+      <tr><td><kbd>[[</kbd> / <kbd>]]</kbd></td><td class="desc">前 / 次のセクションへ</td></tr>
       <tr><td><kbd>%</kbd></td><td class="desc">対応する括弧へ</td></tr>
+      <tr><td><kbd>[(</kbd> / <kbd>[{</kbd></td><td class="desc">囲っている開き括弧へ</td></tr>
+      <tr><td><kbd>])</kbd> / <kbd>]}</kbd></td><td class="desc">囲っている閉じ括弧へ</td></tr>
+      <tr><td><kbd>gj</kbd> / <kbd>gk</kbd></td><td class="desc">折り返し表示行で下 / 上へ</td></tr>
+      <tr><td><kbd>g0</kbd> / <kbd>g^</kbd> / <kbd>g$</kbd></td><td class="desc">表示行の行頭 / 非空白 / 行末へ</td></tr>
       <tr><td><kbd>Ctrl-e</kbd></td><td class="desc">1行下へスクロール（カーソル固定）</td></tr>
       <tr><td><kbd>Ctrl-y</kbd></td><td class="desc">1行上へスクロール（カーソル固定）</td></tr>
       <tr><td><kbd>Ctrl-d</kbd></td><td class="desc">半画面下へスクロール</td></tr>
@@ -180,21 +190,29 @@
       <tr><td><kbd>yy</kbd> / <kbd>Y</kbd></td><td class="desc">行をコピー（ヤンク）</td></tr>
       <tr><td><kbd>p</kbd></td><td class="desc">カーソル後にペースト</td></tr>
       <tr><td><kbd>P</kbd></td><td class="desc">カーソル前にペースト</td></tr>
+      <tr><td><kbd>gp</kbd> / <kbd>gP</kbd></td><td class="desc">ペースト後カーソルを末尾へ</td></tr>
+      <tr><td><kbd>]p</kbd></td><td class="desc">現在行にインデントを合わせてペースト</td></tr>
       <tr><td><kbd>u</kbd></td><td class="desc">アンドゥ</td></tr>
       <tr><td><kbd>Ctrl-r</kbd></td><td class="desc">リドゥ</td></tr>
+      <tr><td><kbd>g-</kbd> / <kbd>g+</kbd></td><td class="desc">アンドゥ履歴を時系列で前 / 次へ</td></tr>
+      <tr><td><kbd>:earlier</kbd> / <kbd>:later</kbd></td><td class="desc">時間・回数を指定してアンドゥ/リドゥ（例 <kbd>:earlier 10m</kbd>）</td></tr>
       <tr><td><kbd>.</kbd></td><td class="desc">直前の変更を繰り返す</td></tr>
       <tr><td><kbd>r{c}</kbd></td><td class="desc">1文字を{c}に置換</td></tr>
       <tr><td><kbd>R</kbd></td><td class="desc">置換モードへ</td></tr>
       <tr><td><kbd>~</kbd></td><td class="desc">大文字/小文字を切り替え</td></tr>
       <tr><td><kbd>gu{motion}</kbd></td><td class="desc">小文字に変換</td></tr>
       <tr><td><kbd>gU{motion}</kbd></td><td class="desc">大文字に変換</td></tr>
-      <tr><td><kbd>J</kbd></td><td class="desc">次の行を現在行に結合</td></tr>
+      <tr><td><kbd>g~~</kbd> / <kbd>guu</kbd> / <kbd>gUU</kbd></td><td class="desc">行全体を 大小切替 / 小文字 / 大文字に</td></tr>
+      <tr><td><kbd>J</kbd> / <kbd>gJ</kbd></td><td class="desc">次の行を結合（<kbd>gJ</kbd> は空白を入れない）</td></tr>
       <tr><td><kbd>cc</kbd></td><td class="desc">行を削除してインサートへ</td></tr>
       <tr><td><kbd>C</kbd></td><td class="desc">行末まで削除してインサートへ</td></tr>
       <tr><td><kbd>s</kbd></td><td class="desc">1文字削除してインサートへ</td></tr>
       <tr><td><kbd>S</kbd></td><td class="desc">行削除してインサートへ</td></tr>
       <tr><td><kbd>&gt;&gt;</kbd> / <kbd>&lt;&lt;</kbd></td><td class="desc">インデントを増やす/減らす</td></tr>
       <tr><td><kbd>==</kbd></td><td class="desc">行を自動インデント</td></tr>
+      <tr><td><kbd>gq{motion}</kbd> / <kbd>gw{motion}</kbd></td><td class="desc">textwidth で整形（<kbd>gw</kbd> はカーソル位置を維持）</td></tr>
+      <tr><td><kbd>Ctrl-a</kbd> / <kbd>Ctrl-x</kbd></td><td class="desc">カーソル下の数値を増やす / 減らす</td></tr>
+      <tr><td><kbd>&amp;</kbd> / <kbd>g&amp;</kbd></td><td class="desc">直前の <kbd>:s</kbd> を この行 / 全行 に繰り返す</td></tr>
       <tr><td><kbd>gcc</kbd></td><td class="desc">現在行をコメントトグル</td></tr>
     </table>
   </div>
@@ -204,6 +222,7 @@
     <table>
       <tr><td><kbd>i</kbd></td><td class="desc">カーソル前からインサート</td></tr>
       <tr><td><kbd>I</kbd></td><td class="desc">行先頭からインサート</td></tr>
+      <tr><td><kbd>gI</kbd></td><td class="desc">列0からインサート（本設定では Glance: 実装 に割当て済み）</td></tr>
       <tr><td><kbd>a</kbd></td><td class="desc">カーソル後からインサート</td></tr>
       <tr><td><kbd>A</kbd></td><td class="desc">行末からインサート</td></tr>
       <tr><td><kbd>o</kbd></td><td class="desc">下に新規行を作りインサート</td></tr>
@@ -216,6 +235,9 @@
       <tr><td><kbd>Ctrl-n</kbd> / <kbd>Ctrl-p</kbd></td><td class="desc">補完候補を次/前へ</td></tr>
       <tr><td><kbd>Ctrl-r{reg}</kbd></td><td class="desc">レジスタの内容を挿入</td></tr>
       <tr><td><kbd>Ctrl-o{cmd}</kbd></td><td class="desc">ノーマルコマンドを1回実行</td></tr>
+      <tr><td><kbd>Ctrl-v{code}</kbd></td><td class="desc">文字コードを直接入力（例 <kbd>Ctrl-v u00e9</kbd>）</td></tr>
+      <tr><td><kbd>Ctrl-k{c}{c}</kbd></td><td class="desc">ダイグラフで特殊文字を入力（<kbd>:digraphs</kbd> で一覧）</td></tr>
+      <tr><td><kbd>Ctrl-a</kbd></td><td class="desc">直前に挿入したテキストを再挿入</td></tr>
     </table>
   </div>
 
@@ -226,7 +248,7 @@
       <tr><td><kbd>V</kbd></td><td class="desc">行単位のビジュアルモード</td></tr>
       <tr><td><kbd>Ctrl-v</kbd></td><td class="desc">矩形ビジュアルモード</td></tr>
       <tr><td><kbd>gv</kbd></td><td class="desc">前回の選択を再選択</td></tr>
-      <tr><td><kbd>o</kbd></td><td class="desc">選択範囲の反対端へ移動</td></tr>
+      <tr><td><kbd>o</kbd> / <kbd>O</kbd></td><td class="desc">選択範囲の反対端 / 反対角へ移動</td></tr>
       <tr><td><kbd>d</kbd> / <kbd>x</kbd></td><td class="desc">選択範囲を削除</td></tr>
       <tr><td><kbd>y</kbd></td><td class="desc">選択範囲をコピー</td></tr>
       <tr><td><kbd>c</kbd></td><td class="desc">選択範囲を削除してインサート</td></tr>
@@ -236,6 +258,9 @@
       <tr><td><kbd>u</kbd> / <kbd>U</kbd></td><td class="desc">小文字/大文字に変換</td></tr>
       <tr><td><kbd>I</kbd></td><td class="desc">矩形選択の各行先頭にインサート</td></tr>
       <tr><td><kbd>A</kbd></td><td class="desc">矩形選択の各行末尾にインサート</td></tr>
+      <tr><td><kbd>$</kbd></td><td class="desc">矩形選択を各行の行末まで伸ばす</td></tr>
+      <tr><td><kbd>r{c}</kbd></td><td class="desc">選択範囲を{c}で埋める</td></tr>
+      <tr><td><kbd>g Ctrl-a</kbd></td><td class="desc">選択範囲の数値を連番にする</td></tr>
       <tr><td><kbd>gc</kbd></td><td class="desc">選択範囲をコメントトグル</td></tr>
     </table>
   </div>
@@ -268,6 +293,7 @@
       <tr><td><kbd>*</kbd></td><td class="desc">カーソル下の単語を前方検索</td></tr>
       <tr><td><kbd>#</kbd></td><td class="desc">カーソル下の単語を後方検索</td></tr>
       <tr><td><kbd>g*</kbd> / <kbd>g#</kbd></td><td class="desc">* / # の部分一致版</td></tr>
+      <tr><td><kbd>gn</kbd> / <kbd>gN</kbd></td><td class="desc">次 / 前のマッチを選択（<kbd>.</kbd> と組むと強力）</td></tr>
       <tr><td><kbd>:noh</kbd></td><td class="desc">ハイライトを消去</td></tr>
       <tr><td><kbd>f{c}</kbd></td><td class="desc">行内を{c}で前方検索</td></tr>
       <tr><td><kbd>F{c}</kbd></td><td class="desc">行内を{c}で後方検索</td></tr>
@@ -275,6 +301,7 @@
       <tr><td><kbd>T{c}</kbd></td><td class="desc">{c}の1文字後ろへ移動</td></tr>
       <tr><td><kbd>;</kbd></td><td class="desc">f/t の検索を繰り返す</td></tr>
       <tr><td><kbd>,</kbd></td><td class="desc">f/t の検索を逆方向に繰り返す</td></tr>
+      <tr><td><kbd>q/</kbd> / <kbd>q?</kbd></td><td class="desc">検索履歴をウィンドウで開いて編集</td></tr>
     </table>
   </div>
 
@@ -283,7 +310,7 @@
     <table>
       <tr><td><kbd>Ctrl-w s</kbd></td><td class="desc">水平分割</td></tr>
       <tr><td><kbd>Ctrl-w v</kbd></td><td class="desc">垂直分割</td></tr>
-      <tr><td><kbd>Ctrl-w w</kbd></td><td class="desc">次のウィンドウへ</td></tr>
+      <tr><td><kbd>Ctrl-w w</kbd> / <kbd>Ctrl-w W</kbd></td><td class="desc">次 / 前のウィンドウへ</td></tr>
       <tr><td><kbd>Ctrl-w h/j/k/l</kbd></td><td class="desc">左/下/上/右のウィンドウへ</td></tr>
       <tr><td><kbd>Ctrl-w H/J/K/L</kbd></td><td class="desc">ウィンドウを移動</td></tr>
       <tr><td><kbd>Ctrl-w q</kbd></td><td class="desc">ウィンドウを閉じる</td></tr>
@@ -323,8 +350,12 @@
       <tr><td><kbd>:e!</kbd></td><td class="desc">ファイルを再読み込み</td></tr>
       <tr><td><kbd>:%s/old/new/g</kbd></td><td class="desc">ファイル全体で置換</td></tr>
       <tr><td><kbd>:%s/old/new/gc</kbd></td><td class="desc">確認しながら置換</td></tr>
+      <tr><td><kbd>:%s//new/g</kbd></td><td class="desc">直前の検索結果をそのまま置換（パターン省略）</td></tr>
+      <tr><td><kbd>:sort</kbd> / <kbd>:sort u</kbd></td><td class="desc">行をソート / 重複を除いてソート</td></tr>
       <tr><td><kbd>:! {cmd}</kbd></td><td class="desc">シェルコマンドを実行</td></tr>
       <tr><td><kbd>Ctrl-p</kbd> / <kbd>Ctrl-n</kbd></td><td class="desc">コマンド履歴を前/次へ</td></tr>
+      <tr><td><kbd>q:</kbd></td><td class="desc">コマンド履歴をウィンドウで開いて編集</td></tr>
+      <tr><td><kbd>Ctrl-f</kbd></td><td class="desc">入力中にコマンドライン窓へ切り替え</td></tr>
     </table>
   </div>
 
@@ -335,9 +366,24 @@
       <tr><td><kbd>m{A-Z}</kbd></td><td class="desc">グローバルマークをセット</td></tr>
       <tr><td><kbd>'{mark}</kbd></td><td class="desc">マークの行先頭へジャンプ</td></tr>
       <tr><td><kbd>`{mark}</kbd></td><td class="desc">マークの正確な位置へジャンプ</td></tr>
+      <tr><td><kbd>:marks</kbd></td><td class="desc">マーク一覧を表示</td></tr>
       <tr><td><kbd>Ctrl-o</kbd></td><td class="desc">ジャンプリストを前へ</td></tr>
-      <tr><td><kbd>Ctrl-i</kbd></td><td class="desc">ジャンプリストを次へ</td></tr>
+      <tr><td><kbd>Ctrl-i</kbd></td><td class="desc">ジャンプリストを次へ（端末上 <kbd>Tab</kbd> と同一コードのため、<kbd>Tab</kbd> をバッファ移動に割当てている本設定では効かないことがある）</td></tr>
+      <tr><td><kbd>:jumps</kbd></td><td class="desc">ジャンプリストを表示</td></tr>
       <tr><td><kbd>g;</kbd> / <kbd>g,</kbd></td><td class="desc">変更リストを前/次へ</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-search">🔗 ファイル・タグジャンプ</div>
+    <table>
+      <tr><td><kbd>gf</kbd></td><td class="desc">カーソル下のパスのファイルを開く（<code>suffixesadd</code> が効くので ts/js は拡張子省略も可）</td></tr>
+      <tr><td><kbd>gF</kbd></td><td class="desc">同上（<code>path:12</code> の行番号も反映して開く）</td></tr>
+      <tr><td><kbd>Ctrl-w f</kbd></td><td class="desc">カーソル下のファイルを分割して開く</td></tr>
+      <tr><td><kbd>Ctrl-w gf</kbd></td><td class="desc">カーソル下のファイルを新規タブで開く</td></tr>
+      <tr><td><kbd>gx</kbd></td><td class="desc">カーソル下のURL・パスをOSの既定アプリで開く</td></tr>
+      <tr><td><kbd>Ctrl-]</kbd> / <kbd>Ctrl-t</kbd></td><td class="desc">タグへジャンプ / 戻る（<kbd>:help</kbd> 内の移動に使う）</td></tr>
+      <tr><td><kbd>Ctrl-w ]</kbd></td><td class="desc">タグを分割して開く</td></tr>
     </table>
   </div>
 
@@ -353,6 +399,7 @@
       <tr><td><kbd>"{reg}p</kbd></td><td class="desc">指定レジスタからペースト</td></tr>
       <tr><td><kbd>"+y</kbd></td><td class="desc">クリップボードにコピー</td></tr>
       <tr><td><kbd>"+p</kbd></td><td class="desc">クリップボードからペースト</td></tr>
+      <tr><td><kbd>"0p</kbd></td><td class="desc">ヤンク専用レジスタからペースト（削除で上書きされない）</td></tr>
       <tr><td><kbd>:reg</kbd></td><td class="desc">レジスタ一覧を表示</td></tr>
     </table>
   </div>
@@ -361,12 +408,47 @@
     <div class="section-header mode-misc">🗂️ 折りたたみ</div>
     <table>
       <tr><td><kbd>zf{motion}</kbd></td><td class="desc">フォールドを作成</td></tr>
-      <tr><td><kbd>zo</kbd> / <kbd>zO</kbd></td><td class="desc">フォールドを開く / すべて開く</td></tr>
-      <tr><td><kbd>zc</kbd> / <kbd>zC</kbd></td><td class="desc">フォールドを閉じる / すべて閉じる</td></tr>
-      <tr><td><kbd>za</kbd></td><td class="desc">フォールドのトグル</td></tr>
-      <tr><td><kbd>zR</kbd></td><td class="desc">すべてのフォールドを開く</td></tr>
-      <tr><td><kbd>zM</kbd></td><td class="desc">すべてのフォールドを閉じる</td></tr>
+      <tr><td><kbd>zo</kbd> / <kbd>zO</kbd></td><td class="desc">開く / カーソル下を再帰的に開く</td></tr>
+      <tr><td><kbd>zc</kbd> / <kbd>zC</kbd></td><td class="desc">閉じる / カーソル下を再帰的に閉じる</td></tr>
+      <tr><td><kbd>za</kbd> / <kbd>zA</kbd></td><td class="desc">トグル / 再帰的にトグル</td></tr>
+      <tr><td><kbd>zR</kbd> / <kbd>zM</kbd></td><td class="desc">ファイル全体を すべて開く / すべて閉じる</td></tr>
+      <tr><td><kbd>zr</kbd> / <kbd>zm</kbd></td><td class="desc">全体を1段階だけ 開く / 閉じる</td></tr>
       <tr><td><kbd>zj</kbd> / <kbd>zk</kbd></td><td class="desc">次/前のフォールドへ</td></tr>
+      <tr><td><kbd>zd</kbd> / <kbd>zE</kbd></td><td class="desc">フォールドを削除 / すべて削除</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-misc">📋 quickfix / location list</div>
+    <table>
+      <tr><td><kbd>:copen</kbd> / <kbd>:cclose</kbd></td><td class="desc">quickfixウィンドウを開く / 閉じる</td></tr>
+      <tr><td><kbd>:cnext</kbd> / <kbd>:cprev</kbd></td><td class="desc">次 / 前の項目へ</td></tr>
+      <tr><td><kbd>:cfirst</kbd> / <kbd>:clast</kbd></td><td class="desc">最初 / 最後の項目へ</td></tr>
+      <tr><td><kbd>:cdo {cmd}</kbd></td><td class="desc">全項目に対してコマンドを実行（一括置換などに使う）</td></tr>
+      <tr><td><kbd>:vimgrep /pat/ **/*</kbd></td><td class="desc">再帰検索して結果をquickfixへ入れる</td></tr>
+      <tr><td><kbd>:lopen</kbd> / <kbd>:lnext</kbd></td><td class="desc">location list版（quickfixと違いウィンドウ単位で持つ）</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-misc">🔀 diffモード</div>
+    <table>
+      <tr><td><kbd>:diffthis</kbd></td><td class="desc">このウィンドウをdiff対象にする（2つのウィンドウで実行）</td></tr>
+      <tr><td><kbd>:diffoff</kbd></td><td class="desc">diffモードを解除</td></tr>
+      <tr><td><kbd>]c</kbd> / <kbd>[c</kbd></td><td class="desc">次 / 前の差分へ</td></tr>
+      <tr><td><kbd>do</kbd> / <kbd>dp</kbd></td><td class="desc">差分を取り込む（obtain） / 相手に反映（put）</td></tr>
+      <tr><td><kbd>:diffupdate</kbd></td><td class="desc">差分を再計算</td></tr>
+    </table>
+  </div>
+
+  <div class="section" data-section>
+    <div class="section-header mode-misc">🔤 スペルチェック</div>
+    <table>
+      <tr><td><kbd>:set spell</kbd></td><td class="desc">有効化（<kbd>:set nospell</kbd> で解除）</td></tr>
+      <tr><td><kbd>]s</kbd> / <kbd>[s</kbd></td><td class="desc">次 / 前のスペルミスへ</td></tr>
+      <tr><td><kbd>z=</kbd></td><td class="desc">修正候補を表示</td></tr>
+      <tr><td><kbd>zg</kbd> / <kbd>zw</kbd></td><td class="desc">正しい単語 / 誤りとして辞書登録</td></tr>
+      <tr><td><kbd>zug</kbd> / <kbd>zuw</kbd></td><td class="desc"><kbd>zg</kbd> / <kbd>zw</kbd> の登録を取り消す</td></tr>
     </table>
   </div>
 
@@ -375,9 +457,14 @@
     <table>
       <tr><td><kbd>Ctrl-a</kbd></td><td class="desc">カーソル下の数値をインクリメント</td></tr>
       <tr><td><kbd>Ctrl-x</kbd></td><td class="desc">カーソル下の数値をデクリメント</td></tr>
-      <tr><td><kbd>K</kbd></td><td class="desc">カーソル下の単語をmanで調べる</td></tr>
+      <tr><td><kbd>K</kbd></td><td class="desc">カーソル下の単語をmanで調べる（LSP接続中はホバーに上書きされる）</td></tr>
+      <tr><td><kbd>ga</kbd></td><td class="desc">カーソル下の文字コードを表示</td></tr>
+      <tr><td><kbd>Ctrl-g</kbd></td><td class="desc">ファイル名と現在位置を表示</td></tr>
+      <tr><td><kbd>g Ctrl-g</kbd></td><td class="desc">文字数・単語数・行数を表示</td></tr>
       <tr><td><kbd>:checkhealth</kbd></td><td class="desc">Neovimの健全性チェック</td></tr>
       <tr><td><kbd>:help {topic}</kbd></td><td class="desc">ヘルプを開く</td></tr>
+      <tr><td><kbd>:set {opt}?</kbd></td><td class="desc">オプションの現在値を確認（例 <kbd>:set shiftwidth?</kbd>）</td></tr>
+      <tr><td><kbd>:verbose map {key}</kbd></td><td class="desc">そのキーの定義元ファイルと行を調べる</td></tr>
       <tr><td><kbd>ZZ</kbd></td><td class="desc">変更があれば保存して終了</td></tr>
       <tr><td><kbd>ZQ</kbd></td><td class="desc">保存せず終了</td></tr>
     </table>
@@ -401,7 +488,7 @@
       <tr><td><kbd>g d</kbd></td><td class="desc">Glance: 定義元をプレビュー</td></tr>
       <tr><td><kbd>g r</kbd></td><td class="desc">Glance: 参照元をプレビュー</td></tr>
       <tr><td><kbd>g y</kbd></td><td class="desc">Glance: 型定義をプレビュー</td></tr>
-      <tr><td><kbd>g i</kbd></td><td class="desc">Glance: 実装をプレビュー</td></tr>
+      <tr><td><kbd>g I</kbd></td><td class="desc">Glance: 実装をプレビュー（標準の <kbd>gi</kbd> を残すため <kbd>gI</kbd> に割当て）</td></tr>
       <tr><td><kbd>K</kbd></td><td class="desc">LSP: ホバードキュメント</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>r n</kbd></td><td class="desc">LSP: リネーム</td></tr>
       <tr><td><kbd>Space</kbd> <kbd>c a</kbd></td><td class="desc">LSP: コードアクション</td></tr>
