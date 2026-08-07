@@ -75,6 +75,7 @@ git パネルと docker パネルは UI の骨格（レイアウト・タブバ�
 | 機能 | 説明 | 主なキー |
 |---|---|---|
 | `browser` | HTML / MarkdownをローカルHTTPサーバで既定ブラウザに開く（Markdownは保存時に自動リフレッシュ） | `Space o` |
+| `diff_review` | 作業ツリーの差分をブラウザ（difit 風）で開き、その差分上で AI と双方向にコメントをやりとりする（hunk 参考）。行クリックでコメント追加・スレッド返信、`/__version` ポーリングで AI 追加分も自動反映。AI は `.agents/skills/nvim-diff-review` の HTTP API 経由で読み書きする | `Space R`、`:DiffReview` / `:DiffReviewClose` |
 | `http_client` | `.http` / `.rest` ファイルに書いた HTTP リクエストを実行し、結果を右パネルに表示（変数・環境ファイル対応） | `Space h r` |
 | `copy_with_path` | 選択コードをファイルパス（行番号付き）とともにコピー | `Space Y` |
 | `copy_all` | バッファ全内容をコピー | `Space A` |
@@ -87,7 +88,7 @@ git パネルと docker パネルは UI の骨格（レイアウト・タブバ�
 
 | ツール | 用途 |
 |---|---|
-| `git` | git_panel, github_permalink, terminal など git 操作全般 |
+| `git` | git_panel, github_permalink, terminal, diff_review など git 操作全般（diff_review は作業ツリー差分の取得に `git diff HEAD` と未追跡ファイルの `--no-index` を使う） |
 | `docker` | `docker_panel` のコンテナ / イメージ / ボリューム / ネットワーク操作全般（無い場合はパネルを開いた時にエラー通知して閉じる） |
 | `gh` | `git_panel` の GitHub PR 取得・認証（branches.lua の PR 表示、pr.lua の PRパネル: 一覧/詳細/diff/checkout/ブラウザ表示） |
 | `curl` | `git_panel/git.lua` の GitHub GraphQL API 呼び出し（PR情報取得）、`http_client` のリクエスト実行 |

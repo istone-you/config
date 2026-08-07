@@ -1,5 +1,6 @@
 local M = {}
 local browser = require('config.browser.util')
+local http = require('config.browser.server')
 
 local state = {
   source_buf = nil,
@@ -100,13 +101,8 @@ local function stop_server(opts)
   opts = opts or {}
   local port = state.port
   local had_server = state.server ~= nil
-  if state.server then
-    pcall(function() state.server:close() end)
-  end
+  http.stop(state) -- state.server/port/host をクリア
   state.source_buf = nil
-  state.server = nil
-  state.port = nil
-  state.host = nil
   if had_server and opts.notify ~= false and not exiting then
     local suffix = port and (': http://localhost:' .. tostring(port) .. '/') or ''
     vim.schedule(function()
@@ -118,49 +114,11 @@ end
 local function start_server(port)
   if state.server and state.port == port then return true end
   if state.server and state.port ~= port then stop_server() end
-
-  local local_cfg = browser.config('html')
-  local bind_host = local_cfg.host or '0.0.0.0'
-  local uv = vim.uv or vim.loop
-  local server = uv.new_tcp()
-  local ok = pcall(function()
-    assert(server:bind(bind_host, port))
-  end)
-  if not ok then
-    pcall(function() server:close() end)
-    return false, string.format('port %d is already in use', port)
-  end
-
-  local listen_ok = pcall(function()
-    assert(server:listen(128, function(err)
-      if err then return end
-      local client = uv.new_tcp()
-      server:accept(client)
-      local req = ''
-      client:read_start(function(read_err, chunk)
-        if read_err or not chunk then
-          pcall(function() client:close() end)
-          return
-        end
-        req = req .. chunk
-        if not req:find('\r\n\r\n', 1, true) then return end
-        local path = req:match('^GET%s+([^%s]+)') or '/'
-        client:write(response_for_path(path), function()
-          pcall(function() client:shutdown() end)
-          pcall(function() client:close() end)
-        end)
-      end)
-    end))
-  end)
-  if not listen_ok then
-    pcall(function() server:close() end)
-    return false, string.format('port %d is already in use', port)
-  end
-
-  state.server = server
-  state.port = port
-  state.host = bind_host
-  return true
+  return http.start(state, port, {
+    namespace = 'html',
+    default_host = '0.0.0.0',
+    handler = function(req) return response_for_path(req.path) end,
+  })
 end
 
 function M.open_on_port(port)
