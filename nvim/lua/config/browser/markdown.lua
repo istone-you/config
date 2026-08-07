@@ -688,30 +688,10 @@ local VENDOR_FILES = {
   ['highlight-theme.css'] = true,
 }
 
--- 同梱アセット(nvim/vendor/*)の絶対パスを、このソースファイルからの相対で解決する。
--- runtimepath に依存しないので、テストハーネス(require 経由)でも同じように解決できる。
-local function vendor_file(name)
-  local src = (debug.getinfo(1, 'S').source or ''):gsub('^@', '')
-  if src == '' then return nil end
-  -- .../nvim/lua/config/browser/markdown.lua -> .../nvim/vendor/<name>
-  local dir = vim.fn.fnamemodify(src, ':p:h')
-  return vim.fn.fnamemodify(dir .. '/../../../vendor/' .. name, ':p')
-end
-
--- 同梱 JS はバージョン固定なので immutable キャッシュを付けて返す。
--- こうしないと自動リロードのたびに 3MB を再取得してブラウザがもたつく。
--- ファイルは要求時にだけディスクから読む(nvim のメモリには常駐させない)。
-local function vendor_response(name)
-  local path = vendor_file(name)
-  if not path or vim.fn.filereadable(path) ~= 1 then
-    return http_response('404 Not Found', 'text/plain', 'not found')
-  end
-  local f = io.open(path, 'rb')
-  if not f then return http_response('404 Not Found', 'text/plain', 'not found') end
-  local content = f:read('*a')
-  f:close()
-  return http_response('200 OK', browser.content_type_for(path), content, 'public, max-age=31536000, immutable')
-end
+-- 同梱アセット解決/配信は browser/util.lua に共通化(diff_review と共有)。ホワイトリスト
+-- 判定は response_for_path 側(VENDOR_FILES)で行う。
+local function vendor_file(name) return browser.vendor_file(name) end
+local function vendor_response(name) return browser.vendor_response(name) end
 
 local function response_for_path(path)
   if path == '/__version' then

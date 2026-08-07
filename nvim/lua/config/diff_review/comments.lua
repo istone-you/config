@@ -67,12 +67,22 @@ function M.add(input)
   local target, err = normalize_target(input)
   if not target then return nil, err end
 
+  -- 範囲コメント(複数行選択)の終端行。省略可。あれば line 以上の整数。
+  local line_end = input.line_end or input.new_line_end or input.old_line_end
+  if line_end ~= nil then
+    line_end = tonumber(line_end)
+    if not line_end or line_end ~= math.floor(line_end) or line_end < target.line then
+      return nil, 'line_end must be an integer >= line'
+    end
+  end
+
   state.seq = state.seq + 1
   local comment = {
     id = 'c' .. tostring(state.seq),
     file = file,
     side = target.side,
     line = target.line,
+    line_end = line_end or vim.NIL,
     body = body,
     author = (type(input.author) == 'string' and input.author ~= '') and input.author or 'human',
     created_at = os.time(),
@@ -106,6 +116,7 @@ function M.reply(input)
     file = root.file,
     side = root.side,
     line = root.line,
+    line_end = root.line_end,
     body = body,
     author = (type(input.author) == 'string' and input.author ~= '') and input.author or 'human',
     created_at = os.time(),

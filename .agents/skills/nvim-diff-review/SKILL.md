@@ -84,6 +84,13 @@ curl -s -X POST "$BASE/api/comments" -H 'Content-Type: application/json' \
   -d '{"file":"api/handler.go","old_line":40,"body":"Was this guard intentional to drop?","author":"claude"}' | jq
 ```
 
+Range (multi-line) comment — add `line_end` (must be >= the start line, same side):
+
+```bash
+curl -s -X POST "$BASE/api/comments" -H 'Content-Type: application/json' \
+  -d '{"file":"web/src/App.tsx","new_line":40,"line_end":52,"body":"This whole block can be extracted into a hook.","author":"claude"}' | jq
+```
+
 On success you get `{ "comment": { "id": "c7", ... } }`. On bad input you get `400` with `{ "error": ... }`
 (missing `file` / `body`, or no/invalid line target).
 

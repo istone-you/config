@@ -29,6 +29,8 @@ header .spacer{flex:1;}
 header .pill{background:#21262d;border:1px solid #30363d;border-radius:999px;padding:2px 10px;font-size:12px;color:#8b949e;}
 header button.pill{cursor:pointer;color:#c9d1d9;}
 header button.pill:hover{background:#30363d;border-color:#8b949e;}
+header button.pill.danger{color:#f85149;}
+header button.pill.danger:hover{background:#da363322;border-color:#f85149;}
 .seg{display:inline-flex;border:1px solid #30363d;border-radius:999px;overflow:hidden;}
 .seg button{background:#21262d;color:#8b949e;border:0;padding:3px 12px;font-size:12px;cursor:pointer;}
 .seg button:hover{background:#30363d;}
@@ -51,6 +53,14 @@ nav.tree .tree-title{color:#8b949e;font-size:11px;font-weight:600;text-transform
 .tcount{margin-left:auto;background:#388bfd33;color:#79c0ff;border-radius:999px;padding:0 6px;font-size:11px;flex:none;}
 @media(max-width:820px){nav.tree{display:none;}}
 .empty{color:#8b949e;text-align:center;padding:60px 0;}
+/* シンタックスハイライト(同梱 highlight.js)。トークン色だけ使い、背景/余白は付けない。 */
+td.content .hljs,td.content code.hljs{background:transparent;padding:0;color:inherit;}
+/* 範囲選択コメントの対象行(All ビューで shift+クリック中) */
+td.content.range-sel{outline:1px solid #388bfd66;outline-offset:-1px;}
+/* ファイル折りたたみ(lock/生成物/削除ファイルは既定で畳む) */
+.file-head{cursor:pointer;}
+.file-head .fchev{color:#8b949e;width:12px;flex:none;}
+.file.collapsed .collapsed-note{color:#8b949e;font-size:12px;padding:10px 14px;}
 .file{border:1px solid #30363d;border-radius:8px;margin:0 0 20px;overflow:hidden;background:#0d1117;}
 .file-head{background:#161b22;border-bottom:1px solid #30363d;padding:8px 12px;display:flex;align-items:center;gap:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;}
 .file-head .path{font-weight:600;}
@@ -87,6 +97,8 @@ tr.del td.content .sign,td.content.del .sign{color:#f85149;}
 .comment .who .time{color:#6e7681;font-weight:400;}
 .comment .who .del{margin-left:auto;color:#6e7681;cursor:pointer;font-weight:400;border:0;background:none;font-size:13px;}
 .comment .who .del:hover{color:#f85149;}
+.comment .who .crange{color:#8b949e;font-weight:400;font-size:12px;}
+.cform .crange{color:#8b949e;font-size:12px;margin-bottom:6px;}
 .comment .body{white-space:pre-wrap;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;line-height:1.65;}
 .cform{padding:9px 13px;background:#0d1117;}
 .cform textarea{width:100%;min-height:60px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:9px;font:14.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;resize:vertical;}
@@ -98,6 +110,8 @@ button.btn.ghost:hover{background:#30363d;}
 .orphans{padding:10px 12px;border-top:1px solid #30363d;background:#11161d;}
 .orphans .h{color:#8b949e;font-size:12px;margin-bottom:6px;}
 </style>
+<link rel="stylesheet" href="/__vendor/highlight-theme.css">
+<script src="/__vendor/highlight.min.js"></script>
 </head>
 <body>
 <header>
@@ -111,6 +125,7 @@ button.btn.ghost:hover{background:#30363d;}
     <button data-view="staged">Staged</button>
   </span>
   <button class="pill" id="modebtn" title="表示を切り替え (unified / side-by-side)"></button>
+  <button class="pill danger" id="clearbtn" title="すべてのコメントを削除" style="display:none">🗑 全コメント削除</button>
   <span class="pill" id="counts"></span>
   <span class="pill" id="status">接続中…</span>
 </header>
@@ -121,13 +136,39 @@ button.btn.ghost:hover{background:#30363d;}
 <script>
 const state = {
   session:null, diff:{files:[]}, comments:[], version:null,
-  openForm:null, draft:'',
+  draft:'',
   mode: (localStorage.getItem('diffReviewMode')==='split') ? 'split' : 'unified',
   view: (['unstaged','staged'].indexOf(localStorage.getItem('diffReviewView'))>=0) ? localStorage.getItem('diffReviewView') : 'all',
   collapsedDirs: new Set(),
   treeCollapsed: localStorage.getItem('diffReviewTreeCollapsed')==='1',
+  fileCollapse: {},          // path -> bool（ユーザーが明示的に開閉した上書き）
+  anchor: null,              // 直近クリック行（範囲選択の起点）
+  pending: null,             // 編集中フォーム {file, side, start, end}（末尾行 end にフォームを出す）
+  curLang: null,             // 描画中ファイルの hljs 言語
 };
+// コメントの表示アンカー行。範囲コメントは末尾行(line_end)に出す(GitHub と同じ)。
+function anchorLine(c){ return (c.line_end!=null) ? c.line_end : c.line; }
 function applyTreeCollapsed(){ document.getElementById('layout').classList.toggle('tree-collapsed', state.treeCollapsed); }
+
+// 拡張子 -> highlight.js 言語
+const HL_EXT = {lua:'lua',js:'javascript',jsx:'javascript',mjs:'javascript',cjs:'javascript',ts:'typescript',tsx:'typescript',py:'python',go:'go',rs:'rust',rb:'ruby',java:'java',kt:'kotlin',swift:'swift',c:'c',h:'c',cpp:'cpp',cc:'cpp',hpp:'cpp',cs:'csharp',php:'php',json:'json',md:'markdown',markdown:'markdown',html:'xml',htm:'xml',xml:'xml',vue:'xml',css:'css',scss:'scss',less:'less',sh:'bash',bash:'bash',zsh:'bash',sql:'sql',yaml:'yaml',yml:'yaml',toml:'ini',ini:'ini'};
+function hlLang(path){
+  if(!window.hljs) return null;
+  const base = (path.split('/').pop()||'').toLowerCase();
+  if(base==='dockerfile') return hljs.getLanguage('dockerfile') ? 'dockerfile' : null;
+  if(base==='makefile') return hljs.getLanguage('makefile') ? 'makefile' : null;
+  const ext = base.indexOf('.')>=0 ? base.split('.').pop() : '';
+  const lang = HL_EXT[ext];
+  return (lang && hljs.getLanguage(lang)) ? lang : null;
+}
+
+// 既定で畳むファイル（lock / 生成物 / minify / source map）。difit の auto-collapse 相当。
+const GEN_RE = /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock|poetry\.lock|composer\.lock|Gemfile\.lock|flake\.lock|go\.sum)$|\.min\.(js|css)$|\.map$/i;
+function isGenerated(path){ return GEN_RE.test(path); }
+function shouldCollapse(f){
+  if(Object.prototype.hasOwnProperty.call(state.fileCollapse, f.path)) return state.fileCollapse[f.path];
+  return isGenerated(f.path) || f.status==='D';
+}
 // コメントを付けられるのは All ビューのみ。Unstaged/Staged は閲覧専用。
 function commentable(){ return state.view==='all'; }
 
@@ -145,7 +186,7 @@ function targetOf(line){
   return {side:'new', line:line.new_line};
 }
 function topFor(file, side, line){
-  return state.comments.filter(c=>c.parent_id==null && c.file===file && c.side===side && Number(c.line)===Number(line));
+  return state.comments.filter(c=>c.parent_id==null && c.file===file && c.side===side && Number(anchorLine(c))===Number(line));
 }
 function repliesFor(id){ return state.comments.filter(c=>c.parent_id===id); }
 function fmtTime(t){ if(!t) return ''; try{ return new Date(t*1000).toLocaleString(); }catch(e){ return ''; } }
@@ -171,13 +212,15 @@ function render(){
   document.getElementById('repo').textContent = state.session ? (state.session.repoRoot||'') + ' · ' + (state.session.source||'') : '';
   document.getElementById('modebtn').textContent = state.mode==='split' ? '⇆ Side-by-side' : '≡ Unified';
   document.querySelectorAll('#viewseg button').forEach(b=>b.classList.toggle('active', b.dataset.view===state.view));
+  // 全削除ボタンは All ビューでコメントがあるときだけ出す
+  document.getElementById('clearbtn').style.display = (commentable() && state.comments.length) ? '' : 'none';
   let add=0, del=0; files.forEach(f=>{add+=f.added||0; del+=f.deleted||0;});
   document.getElementById('counts').textContent = files.length+' files  +'+add+' -'+del;
 
   if(!files.length){ app.appendChild(el('div','empty','変更はありません')); renderTree([]); return; }
   files.forEach((f,idx)=>app.appendChild(renderFile(f, idx)));
   renderTree(files);
-  if(state.openForm) restoreForm();
+  if(state.pending) restoreForm();
 }
 
 // ── 変更ファイルのツリー(サイドバー) ─────────────────────────
@@ -213,7 +256,10 @@ function renderTreeNode(node, prefix, depth, out){
     const cc = fileCommentCount(f.path);
     if(cc) row.appendChild(el('span','tcount', String(cc)));
     row.title = f.path + '  +' + (f.added||0) + ' -' + (f.deleted||0);
-    row.onclick = ()=>{ const b=document.getElementById('file-'+item.idx); if(b) b.scrollIntoView({behavior:'smooth', block:'start'}); };
+    row.onclick = ()=>{
+      if(shouldCollapse(f)){ state.fileCollapse[f.path] = false; render(); } // 畳まれていたら開いてから
+      const b=document.getElementById('file-'+item.idx); if(b) b.scrollIntoView({behavior:'smooth', block:'start'});
+    };
     out.appendChild(row);
   });
 }
@@ -236,18 +282,44 @@ function fileHead(f){
   return head;
 }
 
-// content セル。side/lineNo があればクリックでその行にコメントフォームを開く。
+// 編集中フォームが範囲選択のとき、この行が範囲内か
+function inPendingRange(file, side, lineNo){
+  const p = state.pending;
+  if(!p || p.file!==file || p.side!==side) return false;
+  return lineNo>=p.start && lineNo<=p.end;
+}
+
+// content セル。side/lineNo があればクリックでコメント、shift+クリックで範囲コメント。
 function contentCell(file, side, lineNo, type, content, extraClass){
   let cls = 'content';
   if(extraClass) cls += ' '+extraClass;
   if(type) cls += ' '+type;
+  if(side && lineNo!=null && commentable() && inPendingRange(file, side, lineNo)) cls += ' range-sel';
   const td = el('td', cls);
   if(content==null && !type){ return td; } // filler(空セル)
   td.appendChild(el('span','sign', type==='add'?'+':(type==='del'?'-':' ')));
-  if(content!=null) td.appendChild(document.createTextNode(content));
+  if(content){
+    const lang = state.curLang;
+    if(lang && window.hljs){
+      const span = document.createElement('span');
+      try{ span.innerHTML = hljs.highlight(content, {language:lang, ignoreIllegals:true}).value; }
+      catch(e){ span.textContent = content; }
+      td.appendChild(span);
+    }else{
+      td.appendChild(document.createTextNode(content));
+    }
+  }else if(content===''){ /* 空行 */ }
   if(side && lineNo!=null && commentable()){
     td.style.cursor='pointer';
-    td.onclick=(ev)=>{ if(ev.target.closest('.thread,.cform')) return; openForm(file, side, lineNo); };
+    td.onclick=(ev)=>{
+      if(ev.target.closest('.thread,.cform')) return;
+      if(ev.shiftKey && state.anchor && state.anchor.file===file && state.anchor.side===side){
+        openForm(file, side, Math.min(state.anchor.line, lineNo), Math.max(state.anchor.line, lineNo));
+      }else{
+        state.anchor = {file, side, line:lineNo};
+        openForm(file, side, lineNo);
+      }
+    };
   }
   return td;
 }
@@ -265,17 +337,34 @@ function afterRowThreads(table, f, targets, colspan, seen){
     if(!t || t.line==null) return;
     if(state.view==='unstaged' && t.side!=='new') return;
     const tops = topFor(f.path, t.side, t.line);
-    const k = keyOf(f.path, t.side, t.line);
-    if(tops.length || (commentable() && state.openForm===k)){ seen[k]=true; table.appendChild(threadRow(f.path, t.side, t.line, tops, colspan)); }
+    const p = state.pending;
+    // フォームは範囲の末尾行(p.end)に出す
+    const formHere = commentable() && p && p.file===f.path && p.side===t.side && p.end===t.line;
+    if(tops.length || formHere){
+      seen[keyOf(f.path, t.side, t.line)] = true;
+      table.appendChild(threadRow(f.path, t.side, t.line, tops, colspan, formHere ? p : null));
+    }
   });
 }
 
 function renderFile(f, idx){
   const box = el('div','file');
   if(idx!=null) box.id = 'file-'+idx;
-  box.appendChild(fileHead(f));
+  const collapsed = shouldCollapse(f);
+  if(collapsed) box.classList.add('collapsed');
+
+  const head = fileHead(f);
+  head.insertBefore(el('span','fchev', collapsed?'▸':'▾'), head.firstChild);
+  head.onclick = ()=>{ state.fileCollapse[f.path] = !collapsed; render(); };
+  box.appendChild(head);
+
+  if(collapsed){
+    box.appendChild(el('div','collapsed-note', '折りたたみ中（クリックで展開）  +'+(f.added||0)+' -'+(f.deleted||0)));
+    return box;
+  }
   if(f.binary){ const b=el('div','orphans'); b.appendChild(el('div','h','バイナリファイル(差分表示なし)')); box.appendChild(b); return box; }
 
+  state.curLang = hlLang(f.path); // このファイルの diff 行に使う言語
   const table = el('table', state.mode==='split' ? 'diff split' : 'diff');
   if(state.mode==='split'){
     // colgroup で 4 列(行番号/コード/行番号/コード)の幅を固定する
@@ -292,7 +381,7 @@ function renderFile(f, idx){
 
   // インライン表示できなかったコメントはファイル末尾にまとめる。
   // All では「行がずれた等で一致しないもの」、Unstaged/Staged では「All で付いた閲覧専用コメント」。
-  const orphans = state.comments.filter(c=>c.parent_id==null && c.file===f.path && !seen[keyOf(f.path,c.side,c.line)]);
+  const orphans = state.comments.filter(c=>c.parent_id==null && c.file===f.path && !seen[keyOf(f.path,c.side,anchorLine(c))]);
   if(orphans.length){
     const heading = state.view==='all' ? '表示中の差分に一致しないコメント' : 'All のコメント（このビューでは閲覧のみ）';
     const ob = el('div','orphans'); ob.appendChild(el('div','h', heading));
@@ -355,10 +444,10 @@ function renderHunkSplit(table, f, h, seen){
   }
 }
 
-function threadRow(file, side, line, tops, colspan){
+function threadRow(file, side, line, tops, colspan, pending){
   const tr = el('tr','threadrow'); const td=el('td'); td.colSpan=colspan||3;
   tops.forEach(c=>td.appendChild(renderThread(c)));
-  if(commentable()){ const k = keyOf(file, side, line); if(state.openForm===k){ td.appendChild(commentForm({file, side, line})); } }
+  if(pending){ td.appendChild(commentForm({file, side, line: pending.start, lineEnd: (pending.end!==pending.start ? pending.end : null)})); }
   tr.appendChild(td);
   return tr;
 }
@@ -376,6 +465,7 @@ function renderComment(c){
   const who = el('div','who');
   const isAI = c.author && c.author!=='human';
   who.appendChild(el('span', isAI?'author-ai':'author-human', c.author||'human'));
+  if(c.line_end && c.line_end!==c.line){ who.appendChild(el('span','crange', 'L'+c.line+'–'+c.line_end)); }
   who.appendChild(el('span','time', fmtTime(c.created_at)));
   if(commentable()){ // 閲覧専用ビューでは削除ボタンを出さない
     const del = el('button','del','✕'); del.title='削除';
@@ -389,18 +479,21 @@ function renderComment(c){
 
 function commentForm(tgt){
   const form = el('div','cform');
-  const ta = el('textarea'); ta.placeholder='コメントを書く…'; ta.id='cf-active'; ta.value=state.draft||'';
+  if(tgt.lineEnd){ form.appendChild(el('div','crange', '範囲コメント: '+tgt.side+' L'+tgt.line+'–'+tgt.lineEnd+'（shift+クリックで範囲変更）')); }
+  const ta = el('textarea'); ta.placeholder='コメントを書く…（shift+クリックで複数行を選択）'; ta.id='cf-active'; ta.value=state.draft||'';
   ta.oninput = ()=>{ state.draft = ta.value; };
   const actions = el('div','actions');
   const submit = el('button','btn','コメント');
   submit.onclick = async ()=>{
     const body = ta.value.trim(); if(!body) return;
-    state.draft=''; state.openForm=null;
-    await postJSON('/api/comments', {file:tgt.file, side:tgt.side, line:tgt.line, body, author:'human'});
+    const payload = {file:tgt.file, side:tgt.side, line:tgt.line, body, author:'human'};
+    if(tgt.lineEnd) payload.line_end = tgt.lineEnd;
+    closeForm();
+    await postJSON('/api/comments', payload);
     await loadAll();
   };
   const cancel = el('button','btn ghost','キャンセル');
-  cancel.onclick = ()=>{ state.draft=''; state.openForm=null; render(); };
+  cancel.onclick = ()=>{ closeForm(); render(); };
   actions.appendChild(submit); actions.appendChild(cancel);
   form.appendChild(ta); form.appendChild(actions);
   return form;
@@ -421,12 +514,15 @@ function replyForm(parentId){
   return form;
 }
 
-function openForm(file, side, line){
-  state.openForm = keyOf(file, side, line);
+function openForm(file, side, line, lineEnd){
+  const start = (lineEnd!=null) ? Math.min(line, lineEnd) : line;
+  const end   = (lineEnd!=null) ? Math.max(line, lineEnd) : line;
+  state.pending = {file, side, start, end};
   state.draft = '';
   render();
   restoreForm();
 }
+function closeForm(){ state.draft=''; state.pending=null; }
 function restoreForm(){
   const ta = document.getElementById('cf-active');
   if(ta){ ta.focus(); ta.scrollIntoView({block:'center', behavior:'smooth'}); }
@@ -444,6 +540,14 @@ document.getElementById('modebtn').onclick = ()=>{
   render();
 };
 
+document.getElementById('clearbtn').onclick = async ()=>{
+  if(!state.comments.length) return;
+  if(!window.confirm('すべてのコメントを削除します（'+state.comments.length+'件、元に戻せません）。よろしいですか？')) return;
+  await postJSON('/api/comments/clear', {});
+  closeForm();
+  await loadAll();
+};
+
 document.getElementById('treebtn').onclick = ()=>{
   state.treeCollapsed = !state.treeCollapsed;
   localStorage.setItem('diffReviewTreeCollapsed', state.treeCollapsed ? '1' : '0');
@@ -456,7 +560,7 @@ document.querySelectorAll('#viewseg button').forEach(b=>{
     if(state.view===b.dataset.view) return;
     state.view = b.dataset.view;
     localStorage.setItem('diffReviewView', state.view);
-    state.openForm = null; // ビューをまたぐ編集中フォームは畳む
+    closeForm(); // ビューをまたぐ編集中フォームは畳む
     loadAll(); // 選択ビューの diff を取り直して再描画
   };
 });

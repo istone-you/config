@@ -71,10 +71,20 @@ local function decode_body(body)
   return decoded
 end
 
+-- /__vendor で配信を許可する同梱アセット(シンタックスハイライト用)。パストラバーサル防止。
+local VENDOR_FILES = {
+  ['highlight.min.js'] = true,
+  ['highlight-theme.css'] = true,
+}
+
 local function handle_get(req)
   local path = req.path
   if path == '/' or path == '/index.html' then
     return browser.http_response('200 OK', 'text/html', web.render({ repo_root = state.repo_root }))
+  end
+  local vf = path:match('^/__vendor/([%w._-]+)$')
+  if vf and VENDOR_FILES[vf] then
+    return browser.vendor_response(vf)
   end
   if path == '/__version' then
     return browser.http_response('200 OK', 'text/plain', tostring(M.version()))

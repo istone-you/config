@@ -43,6 +43,28 @@ T.describe('diff_review/web.lua', function()
     T.contains(html, 'scrollIntoView')
   end)
 
+  T.it('loads syntax highlighting from vendored highlight.js', function()
+    local html = web.render({})
+    T.contains(html, '/__vendor/highlight.min.js')
+    T.contains(html, '/__vendor/highlight-theme.css')
+    T.contains(html, 'hljs.highlight')
+  end)
+
+  T.it('supports range (multi-line) comments and generated-file collapse', function()
+    local html = web.render({})
+    T.contains(html, 'function isGenerated')      -- lock/generated auto-collapse
+    T.contains(html, 'shouldCollapse')
+    T.contains(html, 'line_end')                  -- range comment payload
+    T.contains(html, 'range-sel')
+  end)
+
+  T.it('has a delete-all-comments button guarded by a confirm dialog', function()
+    local html = web.render({})
+    T.contains(html, 'id="clearbtn"')
+    T.contains(html, '/api/comments/clear')
+    T.contains(html, 'window.confirm')
+  end)
+
   T.it('puts the repo basename in the title', function()
     local html = web.render({ repo_root = '/home/me/project' })
     T.contains(html, '<title>Diff Review · project</title>')

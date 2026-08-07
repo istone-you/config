@@ -108,4 +108,28 @@ function M.content_type_for(path)
   return (ext and CONTENT_TYPES[ext:lower()]) or 'application/octet-stream'
 end
 
+-- 同梱アセット(nvim/vendor/*)の絶対パスを、このファイルからの相対で解決する。
+-- runtimepath に依存しないので、テストハーネス(require 経由)でも同じように解決できる。
+-- .../nvim/lua/config/browser/util.lua -> .../nvim/vendor/<name>
+function M.vendor_file(name)
+  local src = (debug.getinfo(1, 'S').source or ''):gsub('^@', '')
+  if src == '' then return nil end
+  local dir = vim.fn.fnamemodify(src, ':p:h')
+  return vim.fn.fnamemodify(dir .. '/../../../vendor/' .. name, ':p')
+end
+
+-- 同梱アセットを immutable キャッシュ付きで返す(バージョン固定なので再取得を避ける)。
+-- ホワイトリスト判定は呼び出し側で行う(パストラバーサル防止)。ファイルは要求時にだけ読む。
+function M.vendor_response(name)
+  local path = M.vendor_file(name)
+  if not path or vim.fn.filereadable(path) ~= 1 then
+    return M.http_response('404 Not Found', 'text/plain', 'not found')
+  end
+  local f = io.open(path, 'rb')
+  if not f then return M.http_response('404 Not Found', 'text/plain', 'not found') end
+  local content = f:read('*a')
+  f:close()
+  return M.http_response('200 OK', M.content_type_for(path), content, 'public, max-age=31536000, immutable')
+end
+
 return M

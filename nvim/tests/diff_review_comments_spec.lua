@@ -13,6 +13,21 @@ T.describe('diff_review/comments.lua', function()
     T.eq(comments.version(), 1)
   end)
 
+  T.it('stores an optional line_end for range comments and rejects bad ranges', function()
+    comments.reset()
+    local c = comments.add({ file = 'a.lua', new_line = 10, line_end = 14, body = 'range', author = 'claude' })
+    T.eq(c.line, 10)
+    T.eq(c.line_end, 14)
+    -- replies inherit the range
+    local r = comments.reply({ parent_id = c.id, body = 'ok' })
+    T.eq(r.line_end, 14)
+    -- line_end < line is rejected
+    T.ok(select(1, comments.add({ file = 'a', new_line = 10, line_end = 5, body = 'x' })) == nil)
+    -- plain single-line comment has no line_end
+    local single = comments.add({ file = 'a', new_line = 2, body = 'y' })
+    T.eq(single.line_end, vim.NIL)
+  end)
+
   T.it('normalizes old_line to the old side', function()
     comments.reset()
     local c = comments.add({ file = 'a.txt', old_line = 4, body = 'x' })
