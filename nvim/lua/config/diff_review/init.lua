@@ -7,6 +7,8 @@
 -- 表示は browser/*.lua と同じローカル HTTP サーバ方式。AI はセッションレジストリ
 -- (registry.lua)から port を引き、localhost:port の JSON API 経由でコメントを読み書きする。
 -- ブラウザ画面は /__version ポーリングで、AI が足したコメントを自動反映する。
+-- 差分自体も POLL_MS ごとに作り直し、内容が変わったときだけ反映する。これで nvim の保存を
+-- 経由しない変更(git add/commit/checkout/stash や外部エージェントのディスク書き換え)も拾う。
 
 local M = {}
 local server = require('config.diff_review.server')
@@ -16,10 +18,59 @@ local registry = require('config.diff_review.registry')
 local augrp = vim.api.nvim_create_augroup('diff_review', { clear = true })
 local exiting = false
 
-local state = { root = nil, port = nil }
+-- git 状態/外部編集の自動反映用ポーリング間隔。差分が実際に変わった時だけ version を上げる。
+local POLL_MS = 1500
+
+local state = {
+  root = nil,
+  port = nil,
+  last_sig = nil,     -- 直近適用した差分のシグネチャ(変化検知用)
+  polling = false,    -- 再ビルド実行中フラグ(tick 重複防止)
+  watch_timer = nil,
+}
 
 local function notify(msg, level)
   vim.notify(msg, level or vim.log.levels.INFO, { title = 'Diff Review' })
+end
+
+-- 3 ビューの差分をサーバへ適用する。force か、前回と内容が変わったときだけ version を上げる
+-- (毎ポーリングで無駄にブラウザを再取得させないため)。反映したら true。
+local function apply_views(views, force)
+  local sig = vim.json.encode(views)
+  if force or sig ~= state.last_sig then
+    state.last_sig = sig
+    server.set_diff(views)
+    return true
+  end
+  return false
+end
+
+local function stop_watch()
+  if state.watch_timer then
+    pcall(function() state.watch_timer:stop() end)
+    pcall(function() state.watch_timer:close() end)
+    state.watch_timer = nil
+  end
+end
+
+-- git add/commit/checkout/stash や、外部プロセス(別エージェント等)の書き換えは nvim の
+-- 保存イベントを経由しない。そこで一定間隔で差分を作り直し、内容が変わったときだけ反映する。
+local function tick()
+  if state.polling or not server.is_running() or not state.root then return end
+  state.polling = true
+  diff.build_views(state.root, function(views)
+    state.polling = false
+    apply_views(views)
+  end)
+end
+
+local function start_watch()
+  stop_watch()
+  local uv = vim.uv or vim.loop
+  local t = uv.new_timer()
+  if not t then return end
+  t:start(POLL_MS, POLL_MS, function() vim.schedule(tick) end)
+  state.watch_timer = t
 end
 
 -- browser(html/markdown)と同じく、ポートは毎回選択制。既定値は持たない。
@@ -53,7 +104,7 @@ function M.refresh(opts)
   opts = opts or {}
   if not state.root then return end
   diff.build_views(state.root, function(views)
-    server.set_diff(views)
+    apply_views(views)
     if not opts.silent then
       notify('差分を更新しました' .. (server.server_url() and (': ' .. server.server_url()) or ''))
     end
@@ -69,7 +120,7 @@ function M.open_on_port(port)
     state.root = root
     server.set_session({ repo_root = root, source = 'worktree' })
     diff.build_views(root, function(views)
-      server.set_diff(views)
+      apply_views(views, true)
       local ok, err = server.start(port)
       if not ok then
         notify(err or 'failed to start diff review server', vim.log.levels.ERROR)
@@ -77,6 +128,7 @@ function M.open_on_port(port)
       end
       state.port = port
       registry.register(root, port)
+      start_watch() -- git 状態/外部編集の自動反映を開始
       local url = server.server_url()
       require('config.browser.util').open_url(url, {
         fallback_message = 'Diff Review URL: ',
@@ -118,9 +170,11 @@ function M.close(opts)
   opts = opts or {}
   local port = state.port
   local was_running = server.is_running()
+  stop_watch()
   server.stop()
   if port then registry.unregister(port) end
   state.port = nil
+  state.last_sig = nil
   if was_running and not opts.silent and not exiting then
     notify('Diff Review を停止しました')
   end
@@ -173,6 +227,8 @@ vim.keymap.set('n', '<leader>R', function() M.open() end, {
 M._private = {
   parse_port = parse_port,
   resolve_root = resolve_root,
+  apply_views = apply_views,
+  tick = tick,
   state = state,
 }
 

@@ -84,6 +84,35 @@ T.describe('diff_review/server.lua routing', function()
     T.contains(list, '"threads"')
   end)
 
+  T.it('re-anchors a comment to follow its line, and marks it outdated when the line disappears', function()
+    local diff = require('config.diff_review.diff')
+    local function added(path, lines)
+      local parts = { 'diff --git a/'..path..' b/'..path, 'new file mode 100644', '--- /dev/null', '+++ b/'..path,
+        '@@ -0,0 +1,'..#lines..' @@' }
+      for _, l in ipairs(lines) do parts[#parts+1] = '+'..l end
+      return diff.parse(table.concat(parts, '\n'))
+    end
+    comments.reset()
+    -- 初期差分: a.lua = [one, two, three]
+    server.set_diff({ all = added('a.lua', {'one','two','three'}) })
+    -- 'two'(2行目)にコメント
+    local post = server.response_for_request({ method='POST', path='/api/comments', query='',
+      body = '{"file":"a.lua","new_line":2,"body":"on two","author":"human"}' })
+    T.contains(post, '200 OK')
+    local id = vim.json.decode(post:match('\r\n\r\n(.*)$')).comment.id
+
+    -- 差分更新: 先頭に2行挿入 → 'two' は 4行目へ
+    server.set_diff({ all = added('a.lua', {'x','y','one','two','three'}) })
+    local c = comments.get(id)
+    T.eq(c.line, 4, 'comment followed its line to 4')
+    T.eq(c.outdated, false)
+
+    -- 差分更新: 'two' が消える → outdated
+    server.set_diff({ all = added('a.lua', {'one','three'}) })
+    c = comments.get(id)
+    T.eq(c.outdated, true)
+  end)
+
   T.it('rejects an invalid comment with 400', function()
     comments.reset()
     local resp = server.response_for_request({

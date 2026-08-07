@@ -83,6 +83,8 @@ function M.add(input)
     side = target.side,
     line = target.line,
     line_end = line_end or vim.NIL,
+    anchor = vim.NIL,   -- サーバが作成時に fingerprint を付ける(anchor.lua)
+    outdated = false,   -- 差分更新で本文が見つからなくなると true
     body = body,
     author = (type(input.author) == 'string' and input.author ~= '') and input.author or 'human',
     created_at = os.time(),
@@ -117,6 +119,8 @@ function M.reply(input)
     side = root.side,
     line = root.line,
     line_end = root.line_end,
+    anchor = vim.NIL,   -- 返信は親スレッドに追従するので独自アンカーは持たない
+    outdated = false,
     body = body,
     author = (type(input.author) == 'string' and input.author ~= '') and input.author or 'human',
     created_at = os.time(),

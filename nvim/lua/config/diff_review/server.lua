@@ -11,6 +11,7 @@ local M = {}
 local browser = require('config.browser.util')
 local http = require('config.browser.server')
 local comments = require('config.diff_review.comments')
+local anchor = require('config.diff_review.anchor')
 local web = require('config.diff_review.web')
 
 local state = {
@@ -41,6 +42,10 @@ function M.set_diff(diffs)
     unstaged = (diffs and diffs.unstaged) or EMPTY,
     staged = (diffs and diffs.staged) or EMPTY,
   }
+  -- 差分が変わったので、既存コメントを新しい All 差分へ貼り直す(hunk 相当の追従/outdated)。
+  for _, c in ipairs(comments.list()) do
+    if c.parent_id == vim.NIL then anchor.reanchor(c, state.diff_models.all) end
+  end
   state.diff_version = state.diff_version + 1
 end
 
@@ -52,6 +57,26 @@ end
 
 local function json_response(status, tbl)
   return browser.http_response(status, 'application/json', vim.json.encode(tbl))
+end
+
+-- クライアントへ返すコメント表現。内部用の anchor(fingerprint)は除く。
+local function public_comment(c)
+  local o = {}
+  for k, v in pairs(c) do
+    if k ~= 'anchor' then o[k] = v end
+  end
+  if o.replies then
+    local reps = {}
+    for i, r in ipairs(o.replies) do reps[i] = public_comment(r) end
+    o.replies = reps
+  end
+  return o
+end
+
+local function public_list(list)
+  local out = {}
+  for i, c in ipairs(list) do out[i] = public_comment(c) end
+  return out
 end
 
 -- "a=1&b=hi%20there" -> { a='1', b='hi there' }
@@ -108,8 +133,8 @@ local function handle_get(req)
     if q.file and q.file ~= '' then filter.file = q.file end
     if q.author and q.author ~= '' then filter.author = q.author end
     return json_response('200 OK', {
-      comments = comments.list(filter),
-      threads = comments.threads(filter),
+      comments = public_list(comments.list(filter)),
+      threads = public_list(comments.threads(filter)),
       version = M.version(),
     })
   end
@@ -126,12 +151,14 @@ local function handle_post(req)
   if path == '/api/comments' then
     local comment, err = comments.add(body)
     if not comment then return json_response('400 Bad Request', { error = err }) end
-    return json_response('200 OK', { comment = comment })
+    -- 作成時に現在の All 差分から fingerprint(本文＋前後行)を控える → 以後の更新で追従できる
+    comment.anchor = anchor.capture(state.diff_models.all, comment.file, comment.side, comment.line) or vim.NIL
+    return json_response('200 OK', { comment = public_comment(comment) })
   end
   if path == '/api/comments/reply' then
     local comment, err = comments.reply(body)
     if not comment then return json_response('400 Bad Request', { error = err }) end
-    return json_response('200 OK', { comment = comment })
+    return json_response('200 OK', { comment = public_comment(comment) })
   end
   if path == '/api/comments/delete' then
     local ok = comments.remove(body.id)

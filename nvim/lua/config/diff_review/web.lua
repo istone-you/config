@@ -98,6 +98,7 @@ tr.del td.content .sign,td.content.del .sign{color:#f85149;}
 .comment .who .del{margin-left:auto;color:#6e7681;cursor:pointer;font-weight:400;border:0;background:none;font-size:13px;}
 .comment .who .del:hover{color:#f85149;}
 .comment .who .crange{color:#8b949e;font-weight:400;font-size:12px;}
+.comment .who .outdated{color:#d29922;font-weight:600;font-size:11px;border:1px solid #9e6a03;border-radius:4px;padding:0 5px;}
 .cform .crange{color:#8b949e;font-size:12px;margin-bottom:6px;}
 .comment .body{white-space:pre-wrap;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;line-height:1.65;}
 .cform{padding:9px 13px;background:#0d1117;}
@@ -109,6 +110,7 @@ button.btn.ghost{background:#21262d;color:#c9d1d9;border:1px solid #30363d;}
 button.btn.ghost:hover{background:#30363d;}
 .orphans{padding:10px 12px;border-top:1px solid #30363d;background:#11161d;}
 .orphans .h{color:#8b949e;font-size:12px;margin-bottom:6px;}
+.orphans .gone-file{color:#adbac7;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;margin:10px 0 4px;}
 </style>
 <link rel="stylesheet" href="/__vendor/highlight-theme.css">
 <script src="/__vendor/highlight.min.js"></script>
@@ -125,9 +127,9 @@ button.btn.ghost:hover{background:#30363d;}
     <button data-view="staged">Staged</button>
   </span>
   <button class="pill" id="modebtn" title="表示を切り替え (unified / side-by-side)"></button>
-  <button class="pill danger" id="clearbtn" title="すべてのコメントを削除" style="display:none">🗑 全コメント削除</button>
+  <button class="pill danger" id="clearbtn" title="すべてのコメントを削除" style="display:none">🗑 Clear all</button>
   <span class="pill" id="counts"></span>
-  <span class="pill" id="status">接続中…</span>
+  <span class="pill" id="status">Connecting…</span>
 </header>
 <div id="layout">
 <nav id="tree" class="tree"></nav>
@@ -186,7 +188,8 @@ function targetOf(line){
   return {side:'new', line:line.new_line};
 }
 function topFor(file, side, line){
-  return state.comments.filter(c=>c.parent_id==null && c.file===file && c.side===side && Number(anchorLine(c))===Number(line));
+  // outdated（差分更新で本文が見つからなくなった）コメントはインライン配置しない → 末尾の一覧へ回す
+  return state.comments.filter(c=>c.parent_id==null && !c.outdated && c.file===file && c.side===side && Number(anchorLine(c))===Number(line));
 }
 function repliesFor(id){ return state.comments.filter(c=>c.parent_id===id); }
 function fmtTime(t){ if(!t) return ''; try{ return new Date(t*1000).toLocaleString(); }catch(e){ return ''; } }
@@ -198,10 +201,10 @@ async function loadAll(){
     ]);
     state.session=session; state.diff=diff||{files:[]}; state.comments=(comments&&comments.comments)||[];
     state.version = String(session.version);
-    document.getElementById('status').textContent='接続中';
+    document.getElementById('status').textContent='Connected';
     render();
   }catch(e){
-    document.getElementById('status').textContent='切断';
+    document.getElementById('status').textContent='Disconnected';
   }
 }
 
@@ -217,10 +220,35 @@ function render(){
   let add=0, del=0; files.forEach(f=>{add+=f.added||0; del+=f.deleted||0;});
   document.getElementById('counts').textContent = files.length+' files  +'+add+' -'+del;
 
-  if(!files.length){ app.appendChild(el('div','empty','変更はありません')); renderTree([]); return; }
-  files.forEach((f,idx)=>app.appendChild(renderFile(f, idx)));
+  if(!files.length){ app.appendChild(el('div','empty','変更はありません')); }
+  else { files.forEach((f,idx)=>app.appendChild(renderFile(f, idx))); }
+  const gone = renderGoneSection(files);
+  if(gone) app.appendChild(gone);
   renderTree(files);
   if(state.pending) restoreForm();
+}
+
+// ファイルごと差分から消えたコメントを全体の末尾にまとめる(All ビューのみ)。
+// 「行だけ消えてファイルは残る」ケースは各ファイル末尾に出るのでここでは扱わない。
+function renderGoneSection(files){
+  if(state.view!=='all') return null;
+  const present = {};
+  files.forEach(f=>{ present[f.path]=true; });
+  const gone = state.comments.filter(c=>c.parent_id==null && !present[c.file]);
+  if(!gone.length) return null;
+  const box = el('div','file');
+  const head = el('div','file-head');
+  head.appendChild(el('span','path','No longer in diff'));
+  box.appendChild(head);
+  const body = el('div','orphans');
+  const byFile = {};
+  gone.forEach(c=>{ (byFile[c.file]=byFile[c.file]||[]).push(c); });
+  Object.keys(byFile).sort().forEach(path=>{
+    body.appendChild(el('div','gone-file', path));
+    byFile[path].forEach(c=>body.appendChild(renderThread(c)));
+  });
+  box.appendChild(body);
+  return box;
 }
 
 // ── 変更ファイルのツリー(サイドバー) ─────────────────────────
@@ -239,14 +267,20 @@ function buildTree(files){
 }
 function renderTreeNode(node, prefix, depth, out){
   Object.keys(node.dirs).sort().forEach(name=>{
-    const path = prefix ? prefix+'/'+name : name;
+    // compact folders (difit / VSCode 相当): 子が「ディレクトリ1つだけ・ファイル無し」の間は
+    // a/b/c のように 1 行へ圧縮する。
+    let label = name, path = prefix ? prefix+'/'+name : name, dnode = node.dirs[name];
+    while(Object.keys(dnode.dirs).length===1 && dnode.files.length===0){
+      const only = Object.keys(dnode.dirs)[0];
+      label += '/' + only; path += '/' + only; dnode = dnode.dirs[only];
+    }
     const collapsed = state.collapsedDirs.has(path);
     const row = el('div','tnode tdir'); row.style.paddingLeft = (6+depth*12)+'px';
     row.appendChild(el('span','tw', collapsed?'▸':'▾'));
-    row.appendChild(el('span','tname', name));
+    row.appendChild(el('span','tname', label));
     row.onclick = ()=>{ if(collapsed) state.collapsedDirs.delete(path); else state.collapsedDirs.add(path); renderTree((state.diff&&state.diff.files)||[]); };
     out.appendChild(row);
-    if(!collapsed) renderTreeNode(node.dirs[name], path, depth+1, out);
+    if(!collapsed) renderTreeNode(dnode, path, depth+1, out);
   });
   node.files.sort((a,b)=>a.name.localeCompare(b.name)).forEach(item=>{
     const f = item.file;
@@ -383,8 +417,8 @@ function renderFile(f, idx){
   // All では「行がずれた等で一致しないもの」、Unstaged/Staged では「All で付いた閲覧専用コメント」。
   const orphans = state.comments.filter(c=>c.parent_id==null && c.file===f.path && !seen[keyOf(f.path,c.side,anchorLine(c))]);
   if(orphans.length){
-    const heading = state.view==='all' ? '表示中の差分に一致しないコメント' : 'All のコメント（このビューでは閲覧のみ）';
-    const ob = el('div','orphans'); ob.appendChild(el('div','h', heading));
+    const ob = el('div','orphans');
+    if(state.view!=='all'){ ob.appendChild(el('div','h', 'All のコメント（このビューでは閲覧のみ）')); }
     orphans.forEach(c=>ob.appendChild(renderThread(c)));
     box.appendChild(ob);
   }
@@ -464,8 +498,9 @@ function renderComment(c){
   const box = el('div','comment');
   const who = el('div','who');
   const isAI = c.author && c.author!=='human';
-  who.appendChild(el('span', isAI?'author-ai':'author-human', c.author||'human'));
+  who.appendChild(el('span', isAI?'author-ai':'author-human', isAI ? c.author : 'You'));
   if(c.line_end && c.line_end!==c.line){ who.appendChild(el('span','crange', 'L'+c.line+'–'+c.line_end)); }
+  if(c.outdated){ who.appendChild(el('span','outdated', 'outdated')); }
   who.appendChild(el('span','time', fmtTime(c.created_at)));
   if(commentable()){ // 閲覧専用ビューでは削除ボタンを出さない
     const del = el('button','del','✕'); del.title='削除';
@@ -571,8 +606,8 @@ setInterval(async ()=>{
     const v = (await (await fetch('/__version')).text()).trim();
     if(state.version!==null && v!==state.version){ await refresh(); }
     state.version = v;
-    document.getElementById('status').textContent='接続中';
-  }catch(e){ document.getElementById('status').textContent='切断'; }
+    document.getElementById('status').textContent='Connected';
+  }catch(e){ document.getElementById('status').textContent='Disconnected'; }
 }, 1000);
 </script>
 </body>

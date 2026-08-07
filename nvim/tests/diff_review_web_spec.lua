@@ -58,6 +58,12 @@ T.describe('diff_review/web.lua', function()
     T.contains(html, 'range-sel')
   end)
 
+  T.it('has a bottom section for comments whose file left the diff', function()
+    local html = web.render({})
+    T.contains(html, 'function renderGoneSection')
+    T.contains(html, 'No longer in diff')
+  end)
+
   T.it('has a delete-all-comments button guarded by a confirm dialog', function()
     local html = web.render({})
     T.contains(html, 'id="clearbtn"')

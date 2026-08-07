@@ -59,8 +59,13 @@ curl -s "$BASE/api/comments?file=web/src/App.tsx" | jq '.threads'     # one file
 curl -s "$BASE/api/comments?author=human" | jq '.comments'            # only the human's notes
 ```
 
-Each comment: `{id, file, side("old"|"new"), line, body, author, created_at, parent_id}`.
+Each comment: `{id, file, side("old"|"new"), line, line_end?, body, author, created_at, parent_id, outdated}`.
 Top-level comments have `parent_id: null`; replies carry their thread's `parent_id`.
+
+Comments are anchored by line content: when the diff changes, the server re-anchors each comment to
+the line it was placed on (following it if it moved). If that line no longer exists in the diff, the
+comment is kept but marked `"outdated": true` (it drops out of the inline view into an "outdated" list).
+You don't manage this — just be aware a listed comment may be `outdated` after the code changed.
 
 ## 4. Add a comment
 

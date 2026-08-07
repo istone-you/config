@@ -75,7 +75,7 @@ git パネルと docker パネルは UI の骨格（レイアウト・タブバ�
 | 機能 | 説明 | 主なキー |
 |---|---|---|
 | `browser` | HTML / MarkdownをローカルHTTPサーバで既定ブラウザに開く（Markdownは保存時に自動リフレッシュ） | `Space o` |
-| `diff_review` | 作業ツリーの差分をブラウザ（difit 風）で開き、その差分上で AI と双方向にコメントをやりとりする（hunk 参考）。行クリックでコメント追加・スレッド返信、`/__version` ポーリングで AI 追加分も自動反映。AI は `.agents/skills/nvim-diff-review` の HTTP API 経由で読み書きする | `Space R`、`:DiffReview` / `:DiffReviewClose` |
+| `diff_review` | 作業ツリーの差分をブラウザ（difit 風）で開き、その差分上で AI と双方向にコメントをやりとりする（hunk 参考）。行クリック（shift で範囲）でコメント追加・スレッド返信、unified/side-by-side 切替、ファイルツリー（折りたたみ・compact folders）、All/Unstaged/Staged 切替、シンタックスハイライト、全コメント削除。差分は保存＋定期ポーリングで自動更新（git add/commit/外部編集も反映）。AI は `.agents/skills/nvim-diff-review` の HTTP API 経由で読み書きする | `Space R`、`:DiffReview` / `:DiffReviewClose` |
 | `http_client` | `.http` / `.rest` ファイルに書いた HTTP リクエストを実行し、結果を右パネルに表示（変数・環境ファイル対応） | `Space h r` |
 | `copy_with_path` | 選択コードをファイルパス（行番号付き）とともにコピー | `Space Y` |
 | `copy_all` | バッファ全内容をコピー | `Space A` |
