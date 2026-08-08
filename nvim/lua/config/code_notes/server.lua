@@ -219,6 +219,24 @@ local function handle_post(req, respond)
     if not entry then return json_response('404 Not Found', { error = update_err }) end
     return json_response('200 OK', { entry = with_code(entry) })
   end
+  if req.path == '/api/entries/status' then
+    local entry, err = entries.set_status(body.id, body.status)
+    if not entry then return json_response(err == 'entry not found' and '404 Not Found' or '400 Bad Request', { error = err }) end
+    return json_response('200 OK', { entry = with_code(entry) })
+  end
+  if req.path == '/api/entries/comment' then
+    local entry, comment_or_err = entries.add_comment(body)
+    if not entry then
+      local status = comment_or_err == 'entry not found' and '404 Not Found' or '400 Bad Request'
+      return json_response(status, { error = comment_or_err })
+    end
+    return json_response('200 OK', { entry = with_code(entry), comment = comment_or_err })
+  end
+  if req.path == '/api/entries/comment/delete' then
+    local entry, err = entries.remove_comment(body.id or body.entryId, body.commentId)
+    if not entry then return json_response(err == 'entry not found' and '404 Not Found' or '400 Bad Request', { error = err }) end
+    return json_response('200 OK', { entry = with_code(entry) })
+  end
   if req.path == '/api/entries/delete' then
     if entries.remove(body.id) then return json_response('200 OK', { ok = true }) end
     return json_response('404 Not Found', { error = 'entry not found' })

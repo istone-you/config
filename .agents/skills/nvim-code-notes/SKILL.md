@@ -4,16 +4,17 @@ description: >-
   Read and write Code Notes entries on a Neovim browser board over its
   local HTTP API (curl + jq). Use when the user opened Code Notes from
   Neovim (:CodeNotes / <leader>B) and wants AI-visible code-reading notes:
-  add entries with file/line/text, read human/AI entries, or jump Neovim to an entry
-  location. nvim の Code Notes 上で AI がコードリーディング用 entry を読み書きしたいときに使う。
+  add entries with file/line/text, read human/AI entries and comments, update entry status,
+  or jump Neovim to an entry location. nvim の Code Notes 上で AI がコードリーディング用 entry
+  と comment を読み書きしたいときに使う。
 ---
 
 # Neovim Code Notes
 
 Code Notes は、AI / 人間がコードリーディング中のコメントを `file` / `line` / `lineEnd`
-/ `col` / `text` の entry として置き、ブラウザ上で一覧・詳細・コード断片を見ながら該当位置へ
-ジャンプするための nvim 機能。quickfix のような「場所付きリスト」だが、UI はブラウザで、AI と
-人間が同じ HTTP API を通じて読み書きできる。
+/ `col` / `text` の entry として置き、status と entry 配下の comments を持てる nvim 機能。
+ブラウザ上で一覧・詳細・コード断片を見ながら該当位置へジャンプできる。quickfix のような
+「場所付きリスト」だが、UI はブラウザで、AI と人間が同じ HTTP API を通じて読み書きできる。
 
 The browser page is for the human. Your job is to read existing entries, add focused entries,
 and update or delete entries through the HTTP API below.
@@ -54,8 +55,18 @@ Each entry:
   "line": 12,
   "lineEnd": 14,
   "col": 3,
+  "status": "open",
   "text": "This block builds the browser-side code preview.",
   "author": "codex",
+  "comments": [
+    {
+      "id": "c1",
+      "text": "The browser renders human as You.",
+      "author": "human",
+      "createdAt": 1786200001,
+      "updatedAt": 1786200001
+    }
+  ],
   "createdAt": 1786200000,
   "updatedAt": 1786200000,
   "code": {
@@ -74,6 +85,7 @@ Use `lineEnd` for a multi-line range; omit it for a single-line entry. `endLine`
 are accepted as aliases, but prefer `lineEnd`.
 For location-backed entries, the API includes a small code context around `line`; the browser renders
 that code in the detail pane and highlights `line` through `lineEnd`.
+`status` is `open` or `closed`. Browser display renders `author: "human"` as `You`, matching Diff Review.
 
 ## 3. Add an entry
 
@@ -92,7 +104,28 @@ curl -s -X POST "$BASE/api/entries" -H 'Content-Type: application/json' -d '{
 
 On success you get `{ "entry": { ... } }`. Bad input returns `400` with `{ "error": "..." }`.
 
-## 4. Replace or clear the board
+## 4. Status and comments
+
+Use `status` for the note itself, not for individual comments. Comments are for follow-up,
+clarification, replies, and results.
+
+```bash
+curl -s -X POST "$BASE/api/entries/status" -H 'Content-Type: application/json' \
+  -d '{"id":"f1","status":"closed"}' | jq
+
+curl -s -X POST "$BASE/api/entries/comment" -H 'Content-Type: application/json' -d '{
+  "id": "f1",
+  "text": "I checked this and the parser now handles file:line:col.",
+  "author": "codex"
+}' | jq
+
+curl -s -X POST "$BASE/api/entries/comment/delete" -H 'Content-Type: application/json' \
+  -d '{"id":"f1","commentId":"c1"}' | jq
+```
+
+Accepted status values are `open` and `closed`; unknown values become `open`.
+
+## 5. Replace or clear the board
 
 Use bulk replace only when you are intentionally refreshing the whole investigation set.
 
@@ -107,7 +140,7 @@ curl -s -X POST "$BASE/api/entries/set" -H 'Content-Type: application/json' -d '
 curl -s -X POST "$BASE/api/entries/clear" -H 'Content-Type: application/json' -d '{}' | jq
 ```
 
-## 5. Update or delete
+## 6. Update or delete
 
 ```bash
 curl -s -X POST "$BASE/api/entries/update" -H 'Content-Type: application/json' \
@@ -117,7 +150,7 @@ curl -s -X POST "$BASE/api/entries/delete" -H 'Content-Type: application/json' \
   -d '{"id":"f1"}' | jq
 ```
 
-## 6. Jump Neovim to an entry
+## 7. Jump Neovim to an entry
 
 Usually the human clicks `Open in nvim` in the browser. You can also request it:
 

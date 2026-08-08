@@ -26,15 +26,27 @@ button:hover{background:#30363d}button.primary{background:#238636;border-color:#
 #layout{display:grid;grid-template-columns:minmax(260px,380px) 1fr;height:calc(100vh - var(--header-h));min-height:0}
 #list{border-right:1px solid #30363d;overflow:auto;min-height:0}.row{padding:10px 12px;border-bottom:1px solid #21262d;cursor:pointer}
 .row:hover{background:#11161d}.row.active{background:#172033}
+.rowmeta{display:flex;gap:6px;align-items:center;margin-top:6px;color:#8b949e;font-size:12px}
+.badge{border:1px solid #30363d;border-radius:999px;padding:0 7px;font-size:11px;color:#8b949e}
+.badge.open{color:#79c0ff;border-color:#1f6feb}.badge.closed{color:#3fb950;border-color:#238636}
 .path{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#79c0ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .text{margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.empty{color:#8b949e;padding:36px;text-align:center}
 #detail{padding:22px;overflow:auto;min-height:0}.detail-card{max-width:980px}
 .body{white-space:pre-wrap;font-size:16px;line-height:1.7;margin:14px 0 20px}
+.topline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.topline .path{flex:1;min-width:220px}
 .code{border:1px solid #30363d;border-radius:6px;overflow:auto;background:#010409;margin:0 0 18px}
 .code table{border-collapse:collapse;width:100%;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .code td{padding:0 10px;vertical-align:top}.code .ln{width:1%;text-align:right;color:#6e7681;border-right:1px solid #21262d;user-select:none}
 .code .src{white-space:pre}.code .hljs{background:transparent;padding:0;color:inherit}.code tr.hit{background:#1f2a44}.code tr.hit .ln{color:#79c0ff}
 .kv{display:grid;grid-template-columns:90px 1fr;gap:6px 12px;color:#8b949e;margin:12px 0}.kv code{color:#c9d1d9}
+.comments{margin-top:22px;border-top:1px solid #30363d;padding-top:14px}.comments h2{font-size:14px;margin:0 0 10px}
+.comment{border-bottom:1px solid #21262d;padding:10px 0}.comment:last-child{border-bottom:0}
+.comment .who{display:flex;gap:8px;align-items:center;color:#8b949e;font-size:12px;margin-bottom:4px}
+.comment .who .author-ai{color:#d2a8ff;font-weight:600}.comment .who .author-human{color:#79c0ff;font-weight:600}
+.comment .body{font-size:14px;line-height:1.6;margin:0;white-space:pre-wrap}
+.comment .del{margin-left:auto;border:0;background:none;color:#6e7681;padding:0 4px}.comment .del:hover{color:#f85149;background:none}
+.comment-form{display:grid;gap:8px;margin-top:12px}.comment-form textarea{min-height:74px}
 textarea,input{width:100%;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:8px;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 textarea{min-height:110px;resize:vertical}.form{display:grid;gap:8px}
 .form .grid{display:grid;grid-template-columns:1fr 90px 90px 90px;gap:8px}.actions{display:flex;gap:8px;flex-wrap:wrap}
@@ -51,6 +63,7 @@ textarea{min-height:110px;resize:vertical}.form{display:grid;gap:8px}
   <h1>Code Notes</h1>
   <span class="meta" id="repo"></span>
   <span class="spacer"></span>
+  <span class="seg" id="filterseg"><button data-filter="all">All</button><button data-filter="open">Open</button><button data-filter="closed">Closed</button></span>
   <button id="showadd" class="primary">Add</button>
   <button id="clear" class="danger">Clear</button>
   <span class="status" id="status">Connecting…</span>
@@ -66,7 +79,7 @@ textarea{min-height:110px;resize:vertical}.form{display:grid;gap:8px}
   </div>
 </div>
 <script>
-const state={session:null,items:[],selected:null,version:null};
+const state={session:null,items:[],selected:null,version:null,filter:localStorage.getItem('codeNotesFilter')||'all'};
 const $=id=>document.getElementById(id);
 function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 async function getJSON(p){const r=await fetch(p);return r.json();}
@@ -76,6 +89,9 @@ function loc(f){
   const start=f.line||1, end=f.lineEnd&&f.lineEnd!==start ? `-${f.lineEnd}` : '';
   return `${f.file}:${start}${end}:${f.col||1}`;
 }
+function displayAuthor(a){return a==='human'?'You':(a||'ai');}
+function authorClass(a){return a==='human'?'author-human':'author-ai';}
+function visibleItems(){return state.items.filter(x=>state.filter==='all'||(x.status||'open')===state.filter);}
 const HL_EXT={lua:'lua',js:'javascript',jsx:'javascript',mjs:'javascript',cjs:'javascript',ts:'typescript',tsx:'typescript',py:'python',go:'go',rs:'rust',rb:'ruby',java:'java',kt:'kotlin',swift:'swift',c:'c',h:'c',cpp:'cpp',cc:'cpp',hpp:'cpp',cs:'csharp',php:'php',json:'json',md:'markdown',markdown:'markdown',html:'xml',htm:'xml',xml:'xml',vue:'xml',css:'css',scss:'scss',less:'less',sh:'bash',bash:'bash',zsh:'bash',sql:'sql',yaml:'yaml',yml:'yaml',toml:'ini',ini:'ini'};
 function hlLang(path){
   if(!window.hljs||!path) return null;
@@ -110,7 +126,9 @@ async function load(){
     const data=await getJSON('/api/entries');
     state.items=data.entries||[]; state.version=String(data.version);
     if(state.selected && !state.items.find(x=>x.id===state.selected)) state.selected=null;
-    if(!state.selected && state.items[0]) state.selected=state.items[0].id;
+    const vis=visibleItems();
+    if(state.selected && !vis.find(x=>x.id===state.selected)) state.selected=null;
+    if(!state.selected && vis[0]) state.selected=vis[0].id;
     $('repo').textContent=state.session.repoRoot||''; $('status').textContent='Connected';
     render();
   }catch(e){$('status').textContent='Disconnected';}
@@ -118,32 +136,51 @@ async function load(){
 function selected(){return state.items.find(x=>x.id===state.selected)||null;}
 function renderList(){
   const list=$('list'); list.innerHTML='';
-  if(!state.items.length){list.innerHTML='<div class="empty">entry はありません</div>'; return;}
-  for(const f of state.items){
+  const items=visibleItems();
+  if(!items.length){list.innerHTML='<div class="empty">entry はありません</div>'; return;}
+  for(const f of items){
     const row=document.createElement('div'); row.className='row '+(f.id===state.selected?'active ':'');
-    row.innerHTML=`<div class="path">${esc(loc(f))}</div><div class="text">${esc(f.text)}</div>`;
+    const st=f.status||'open';
+    const count=(f.comments||[]).length;
+    row.innerHTML=`<div class="path">${esc(loc(f))}</div><div class="text">${esc(f.text)}</div><div class="rowmeta"><span class="badge ${esc(st)}">${esc(st)}</span><span>${count} comments</span></div>`;
     row.onclick=()=>{state.selected=f.id;render();};
     list.appendChild(row);
   }
 }
 function renderDetail(){
   const f=selected(); const d=$('detail');
-  if(!f){d.innerHTML=state.items.length?'<div class="empty">左の entry を選択</div>':''; return;}
+  if(!f){d.innerHTML=visibleItems().length?'<div class="empty">左の entry を選択</div>':''; return;}
+  const st=f.status||'open';
   d.innerHTML=`<div class="detail-card">
-    <div class="path">${esc(loc(f))}</div>
+    <div class="topline"><div class="path">${esc(loc(f))}</div><button id="toggleStatus">${st==='closed'?'Reopen':'Close'}</button></div>
     <div class="body">${esc(f.text)}</div>
     ${codeHTML(f)}
     <div class="kv">
-      <div>author</div><code>${esc(f.author)}</code>
+      <div>status</div><code>${esc(st)}</code>
+      <div>author</div><code>${esc(displayAuthor(f.author))}</code>
       <div>id</div><code>${esc(f.id)}</code>
     </div>
     <div class="actions">
       <button class="primary" id="jump">Open in nvim</button>
       <button class="danger" id="delete">Delete</button>
     </div>
+    ${commentsHTML(f)}
   </div>`;
+  $('toggleStatus').onclick=async()=>{ await postJSON('/api/entries/status',{id:f.id,status:st==='closed'?'open':'closed'}); await load(); };
   $('jump').onclick=async()=>{ if(f.file) await postJSON('/api/jump',{file:f.file,line:f.line,col:f.col}); };
   $('delete').onclick=async()=>{ await postJSON('/api/entries/delete',{id:f.id}); state.selected=null; await load(); };
+  $('addcomment').onclick=async()=>{
+    const text=$('newcomment').value.trim(); if(!text) return;
+    await postJSON('/api/entries/comment',{id:f.id,text,author:'human'});
+    await load();
+  };
+  for(const btn of Array.from(document.querySelectorAll('[data-del-comment]'))){
+    btn.onclick=async()=>{ await postJSON('/api/entries/comment/delete',{id:f.id,commentId:btn.dataset.delComment}); await load(); };
+  }
+}
+function commentsHTML(f){
+  const items=f.comments||[];
+  return `<div class="comments"><h2>Comments</h2>${items.map(c=>`<div class="comment"><div class="who"><span class="${authorClass(c.author)}">${esc(displayAuthor(c.author))}</span><span>${esc(new Date((c.createdAt||0)*1000).toLocaleString())}</span><button class="del" data-del-comment="${esc(c.id)}">Delete</button></div><div class="body">${esc(c.text)}</div></div>`).join('')}<div class="comment-form"><textarea id="newcomment" placeholder="コメントを書く..."></textarea><div class="actions"><button class="primary" id="addcomment">Comment</button></div></div></div>`;
 }
 function formHTML(){return `<div class="form">
   <input id="newloc" placeholder="file:line:col or file:start-end:col">
@@ -178,11 +215,16 @@ function bindForm(){
   $('canceladd2').onclick=closeForm;
 }
 function render(){renderList();renderDetail();}
+function renderFilter(){
+  document.querySelectorAll('#filterseg button').forEach(b=>b.classList.toggle('active',b.dataset.filter===state.filter));
+}
 $('showadd').onclick=openForm;
 $('canceladd').onclick=closeForm;
 $('modal').onclick=e=>{if(e.target===$('modal')) closeForm();};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('modal').classList.contains('open')) closeForm();});
 $('clear').onclick=async()=>{if(confirm('entry をすべて削除しますか？')){await postJSON('/api/entries/clear',{});state.selected=null;await load();}};
+document.querySelectorAll('#filterseg button').forEach(b=>{b.onclick=()=>{state.filter=b.dataset.filter;localStorage.setItem('codeNotesFilter',state.filter);state.selected=null;renderFilter();render();};});
+renderFilter();
 setInterval(async()=>{try{const v=await fetch('/__version').then(r=>r.text()); if(state.version!=null && v!==state.version) await load();}catch(e){}},1000);
 load();
 </script>

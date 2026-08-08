@@ -79,6 +79,9 @@ T.describe('code_notes/server.lua routing', function()
       T.contains(page_body, 'parseLocation')
       T.contains(page_body, 'const range=s.match')
       T.contains(page_body, 'const point=s.match')
+      T.contains(page_body, '/api/entries/status')
+      T.contains(page_body, '/api/entries/comment')
+      T.contains(page_body, "a==='human'?'You'")
       T.contains(page_body, '/__vendor/highlight.min.js')
       T.contains(page_body, '/__vendor/highlight-theme.css')
       T.contains(page_body, 'hljs.highlight')
@@ -151,6 +154,26 @@ T.describe('code_notes/server.lua routing', function()
       })
       T.eq(update_status, 200)
       T.eq(updated.entry.text, '更新した説明')
+
+      local status_status, status_json = post('/api/entries/status', { id = json.entry.id, status = 'closed' })
+      T.eq(status_status, 200)
+      T.eq(status_json.entry.status, 'closed')
+
+      local comment_status, comment_json = post('/api/entries/comment', {
+        id = json.entry.id,
+        text = 'human follow-up',
+        author = 'human',
+      })
+      T.eq(comment_status, 200)
+      T.eq(comment_json.comment.text, 'human follow-up')
+      T.eq(comment_json.entry.comments[1].author, 'human')
+
+      local comment_delete_status, comment_delete_json = post('/api/entries/comment/delete', {
+        id = json.entry.id,
+        commentId = comment_json.comment.id,
+      })
+      T.eq(comment_delete_status, 200)
+      T.eq(#comment_delete_json.entry.comments, 0)
 
       local delete_status = post('/api/entries/delete', { id = json.entry.id })
       T.eq(delete_status, 200)
