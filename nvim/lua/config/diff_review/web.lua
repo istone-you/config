@@ -65,6 +65,8 @@ td.content.range-sel{outline:1px solid #388bfd66;outline-offset:-1px;}
 .file-head{background:#161b22;border-bottom:1px solid #30363d;padding:8px 12px;display:flex;align-items:center;gap:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;}
 .file-head .path{font-weight:600;}
 .file-head .stat-add{color:#3fb950;} .file-head .stat-del{color:#f85149;}
+.file-head .open-nvim{margin-left:auto;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:2px 8px;font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;}
+.file-head .open-nvim:hover{background:#30363d;border-color:#8b949e;}
 .badge{font-size:11px;padding:1px 6px;border-radius:4px;border:1px solid #30363d;color:#8b949e;}
 .badge.A{color:#3fb950;border-color:#238636;} .badge.D{color:#f85149;border-color:#da3633;}
 .badge.R{color:#d29922;border-color:#9e6a03;}
@@ -76,6 +78,8 @@ table.diff.split col.c-ln{width:50px;}
 table.diff.split col.c-code{width:calc(50% - 50px);}
 table.diff td{padding:0 8px;vertical-align:top;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;}
 td.ln{width:50px;text-align:right;color:#6e7681;user-select:none;background:#0d1117;border-right:1px solid #21262d;}
+td.ln.jumpable{cursor:pointer;}
+td.ln.jumpable:hover{color:#79c0ff;background:#11161d;}
 td.content.left{border-right:1px solid #30363d;}
 /* 追加・削除の色付けは unified では行(tr)に、split ではセル(td)に付く */
 tr.add td.content,td.content.add{background:rgba(63,185,80,.15);}
@@ -179,6 +183,10 @@ async function getJSON(p){ const r=await fetch(p); return r.json(); }
 async function postJSON(p, body){
   const r = await fetch(p, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   return {ok:r.ok, data: await r.json().catch(()=>({}))};
+}
+async function openInNvim(file, line, col){
+  if(!file) return;
+  await postJSON('/api/jump', {file, line:line||1, col:col||1});
 }
 
 function keyOf(file, side, line){ return file+' '+side+' '+line; }
@@ -305,6 +313,16 @@ function renderTree(files){
   renderTreeNode(buildTree(files), '', 0, tree);
 }
 
+function firstLine(f){
+  for(const h of (f.hunks||[])){
+    for(const l of (h.lines||[])){
+      if(l.new_line!=null) return l.new_line;
+      if(l.old_line!=null) return l.old_line;
+    }
+  }
+  return 1;
+}
+
 function fileHead(f){
   const head = el('div','file-head');
   head.appendChild(el('span','badge '+(f.status||'M'), f.status||'M'));
@@ -313,7 +331,21 @@ function fileHead(f){
   st.appendChild(el('span','stat-add',' +'+(f.added||0)));
   st.appendChild(el('span','stat-del',' -'+(f.deleted||0)));
   head.appendChild(st);
+  const open = el('button','open-nvim','Open in nvim');
+  open.title = 'nvim で開く';
+  open.onclick = (ev)=>{ ev.stopPropagation(); openInNvim(f.path, firstLine(f), 1); };
+  head.appendChild(open);
   return head;
+}
+
+function lineCell(file, lineNo, cls){
+  const td = el('td', cls || 'ln', lineNo!=null?String(lineNo):'');
+  if(lineNo!=null){
+    td.classList.add('jumpable');
+    td.title = 'nvim で開く';
+    td.onclick = (ev)=>{ ev.stopPropagation(); openInNvim(file, lineNo, 1); };
+  }
+  return td;
 }
 
 // 編集中フォームが範囲選択のとき、この行が範囲内か
@@ -429,8 +461,8 @@ function renderHunkUnified(table, f, h, seen){
   table.appendChild(hunkHeaderRow(h, 3));
   (h.lines||[]).forEach(line=>{
     const tr = el('tr','line '+line.type);
-    tr.appendChild(el('td','ln', line.old_line!=null?String(line.old_line):''));
-    tr.appendChild(el('td','ln', line.new_line!=null?String(line.new_line):''));
+    tr.appendChild(lineCell(f.path, line.old_line));
+    tr.appendChild(lineCell(f.path, line.new_line));
     const tgt = targetOf(line);
     tr.appendChild(contentCell(f.path, tgt.side, tgt.line, line.type, line.content));
     table.appendChild(tr);
@@ -447,9 +479,9 @@ function renderHunkSplit(table, f, h, seen){
     const line = lines[i];
     if(line.type==='context'){
       const tr = el('tr','line');
-      tr.appendChild(el('td','ln', line.old_line!=null?String(line.old_line):''));
+      tr.appendChild(lineCell(f.path, line.old_line));
       tr.appendChild(contentCell(f.path,'old',line.old_line,'context',line.content,'left'));
-      tr.appendChild(el('td','ln', line.new_line!=null?String(line.new_line):''));
+      tr.appendChild(lineCell(f.path, line.new_line));
       tr.appendChild(contentCell(f.path,'new',line.new_line,'context',line.content));
       table.appendChild(tr);
       afterRowThreads(table, f, [{side:'old',line:line.old_line},{side:'new',line:line.new_line}], 4, seen);
@@ -462,10 +494,10 @@ function renderHunkSplit(table, f, h, seen){
       for(let k=0;k<n;k++){
         const d=dels[k], a=adds[k];
         const tr = el('tr','line');
-        tr.appendChild(el('td', d?'ln del':'ln', d?String(d.old_line):''));
+        tr.appendChild(lineCell(f.path, d&&d.old_line, d?'ln del':'ln'));
         tr.appendChild(d ? contentCell(f.path,'old',d.old_line,'del',d.content,'left')
                          : contentCell(f.path,null,null,null,null,'left filler'));
-        tr.appendChild(el('td', a?'ln add':'ln', a?String(a.new_line):''));
+        tr.appendChild(lineCell(f.path, a&&a.new_line, a?'ln add':'ln'));
         tr.appendChild(a ? contentCell(f.path,'new',a.new_line,'add',a.content)
                          : contentCell(f.path,null,null,null,null,'filler'));
         table.appendChild(tr);

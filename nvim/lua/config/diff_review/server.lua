@@ -96,6 +96,63 @@ local function decode_body(body)
   return decoded
 end
 
+local function real(path)
+  local p = vim.fs.normalize(tostring(path or ''))
+  if p == '' then return nil end
+  p = vim.fn.fnamemodify(p, ':p')
+  local resolved = vim.fn.resolve(p)
+  if resolved and resolved ~= '' then p = resolved end
+  return (p:gsub('(.)/$', '%1'))
+end
+
+local function abs_path(file)
+  local p = vim.fs.normalize(tostring(file or ''))
+  if p == '' then return nil, 'file is required' end
+  if p:sub(1, 1) ~= '/' then p = vim.fs.normalize((state.repo_root or vim.fn.getcwd()) .. '/' .. p) end
+  local abs = real(p)
+  local root = real(state.repo_root or vim.fn.getcwd())
+  if abs ~= root and abs:sub(1, #root + 1) ~= root .. '/' then
+    return nil, 'path is outside the repository root: ' .. abs
+  end
+  return abs
+end
+
+local function jump(body)
+  local abs, err = abs_path(body.file)
+  if not abs then return nil, err end
+  if vim.fn.filereadable(abs) ~= 1 then return nil, 'file not readable: ' .. abs end
+  local ok = pcall(function()
+    local win_util = require('config.util.win_util')
+    local bufnr = vim.fn.bufnr(abs)
+    local target
+    if bufnr > 0 then
+      for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if win_util.is_editor(win) and vim.api.nvim_win_get_buf(win) == bufnr then
+          target = win
+          break
+        end
+      end
+    else
+      bufnr = nil
+    end
+    if target then
+      vim.api.nvim_set_current_win(target)
+    else
+      win_util.focus_editor()
+      vim.cmd('edit ' .. vim.fn.fnameescape(abs))
+      bufnr = vim.api.nvim_get_current_buf()
+    end
+    vim.bo[bufnr].buflisted = true
+    vim.api.nvim_win_set_cursor(0, {
+      math.max(tonumber(body.line) or 1, 1),
+      math.max((tonumber(body.col) or 1) - 1, 0),
+    })
+    vim.cmd('normal! zz')
+  end)
+  if not ok then return nil, 'failed to jump' end
+  return true
+end
+
 -- /__vendor で配信を許可する同梱アセット(シンタックスハイライト用)。パストラバーサル防止。
 local VENDOR_FILES = {
   ['highlight.min.js'] = true,
@@ -141,7 +198,13 @@ local function handle_get(req)
   return browser.http_response('404 Not Found', 'application/json', vim.json.encode({ error = 'not found' }))
 end
 
-local function handle_post(req)
+local function jump_response(body)
+  local ok, err = jump(body)
+  if not ok then return json_response('400 Bad Request', { error = err }) end
+  return json_response('200 OK', { ok = true })
+end
+
+local function handle_post(req, respond)
   local path = req.path
   local body = decode_body(req.body)
   if body == nil then
@@ -172,13 +235,20 @@ local function handle_post(req)
     comments.clear(next(filter) and filter or nil)
     return json_response('200 OK', { ok = true })
   end
+  if path == '/api/jump' then
+    if respond then
+      vim.schedule(function() respond(jump_response(body)) end)
+      return nil
+    end
+    return jump_response(body)
+  end
   return json_response('404 Not Found', { error = 'not found' })
 end
 
 --- ソケット非依存のルーティング本体。req = {method, path, query, body}
-function M.response_for_request(req)
+function M.response_for_request(req, respond)
   if req.method == 'GET' then return handle_get(req) end
-  if req.method == 'POST' then return handle_post(req) end
+  if req.method == 'POST' then return handle_post(req, respond) end
   if req.method == 'OPTIONS' then
     return browser.http_response('204 No Content', 'text/plain', '')
   end
@@ -205,7 +275,7 @@ function M.start(port)
   return http.start(state, port, {
     namespace = 'diff_review',
     default_host = '0.0.0.0', -- 既存 browser と同じ。Dev Container のポート転送で 127.0.0.1 だと届かないことがある
-    handler = function(req) return M.response_for_request(req) end,
+    handler = function(req, respond) return M.response_for_request(req, respond) end,
   })
 end
 

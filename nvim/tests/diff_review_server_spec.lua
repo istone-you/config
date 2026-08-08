@@ -1,6 +1,7 @@
 local T = dofile(TESTS_DIR .. '/helpers.lua')
 local server = require('config.diff_review.server')
 local comments = require('config.diff_review.comments')
+local util = require('config.nvim_api.util')
 
 local P = server._private
 
@@ -127,6 +128,39 @@ T.describe('diff_review/server.lua routing', function()
       method = 'POST', path = '/api/comments', query = '', body = 'not json',
     })
     T.contains(resp, '400 Bad Request')
+  end)
+
+  T.it('jumps to a location in nvim', function()
+    local root = util.real(vim.fn.tempname())
+    vim.fn.mkdir(root, 'p')
+    vim.fn.writefile({ 'one', 'two', 'three' }, root .. '/a.lua')
+    server.set_session({ repo_root = root, source = 'worktree' })
+
+    local resp = server.response_for_request({
+      method = 'POST',
+      path = '/api/jump',
+      query = '',
+      body = '{"file":"a.lua","line":2,"col":1}',
+    })
+    T.contains(resp, '200 OK')
+    T.eq(util.real(vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf())), root .. '/a.lua')
+    T.eq(vim.api.nvim_win_get_cursor(0), { 2, 0 })
+    T.eq(vim.bo[vim.api.nvim_get_current_buf()].buflisted, true)
+
+    pcall(vim.api.nvim_buf_delete, vim.api.nvim_get_current_buf(), { force = true })
+    vim.fn.delete(root, 'rf')
+  end)
+
+  T.it('rejects jump paths outside the repository root', function()
+    server.set_session({ repo_root = vim.fn.getcwd(), source = 'worktree' })
+    local resp = server.response_for_request({
+      method = 'POST',
+      path = '/api/jump',
+      query = '',
+      body = '{"file":"/etc/hosts","line":1}',
+    })
+    T.contains(resp, '400 Bad Request')
+    T.contains(resp, 'outside the repository root')
   end)
 
   T.it('serves whitelisted vendor assets and rejects others', function()
