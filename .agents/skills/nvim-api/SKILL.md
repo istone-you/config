@@ -20,6 +20,7 @@ nvim 起動時に 127.0.0.1 の空きポートで自動的に立ち上がる。
 |---|---|---|
 | シンボルの定義・参照・型を正確に知る | [コードを追う](#コードを追う-lsp) | `POST /api/lsp/references` |
 | いま何が壊れているか知る | [診断を読む](#診断を読む) | `GET /api/diagnostics/summary` |
+| 人間がいま選択/表示している文脈を読む | [現在の選択範囲を読む](#現在の選択範囲を読む) | `GET /api/editor/selection?fallback=context` |
 | 調べた結果を人間に渡す | [quickfix に置く](#quickfix-に置く) | `POST /api/qflist` |
 
 なぜ nvim 経由なのか:
@@ -177,6 +178,26 @@ curl -s -X POST "$BASE/api/qflist/clear" -d '{}' | jq    # 空にして閉じる
 ```
 
 `GET` があるので、エージェント間の受け渡しにも使える（調査役が置き、実装役が読む）。
+
+---
+
+## 現在の選択範囲を読む
+
+**使う場面**: ユーザーが「このへん」「選択しているところ」と言っているとき。ディスクではなく
+nvim のバッファから読むので、未保存の編集内容も含まれる。
+
+```bash
+curl -s "$BASE/api/editor/selection?fallback=context&context=5" | jq
+```
+
+返り値は現在バッファの `file`、カーソル `line` / `col`、`mode`、`modified` と、
+選択範囲またはカーソル周辺の本文。
+
+- Visual / Select mode 中なら `selection.active: true` になり、`selection.range` と
+  `selection.text` を返す。
+- 選択がないときに `fallback=context` を付けると、カーソル前後 `context` 行を
+  `context.text` として返す（既定 5 行）。
+- `range.end_col` は 1-based の終端位置（exclusive）。`start_col` から `end_col` の手前までが範囲。
 
 ---
 

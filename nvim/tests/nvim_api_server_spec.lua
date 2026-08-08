@@ -65,6 +65,7 @@ T.describe('nvim_api/server.lua ルーティング', function()
       T.contains(json.capabilities, 'diagnostics')
       T.contains(json.capabilities, 'lsp')
       T.contains(json.capabilities, 'qflist')
+      T.contains(json.capabilities, 'editor')
     end)
   end)
 
@@ -126,6 +127,36 @@ T.describe('nvim_api/server.lua ルーティング', function()
         if b.file == 'a.lua' then found = true end
       end
       T.ok(found, 'a.lua が /api/buffers に出る')
+    end)
+  end)
+
+  T.it('returns the current editor selection or cursor context', function()
+    with_root(function(root)
+      local bufnr = vim.fn.bufadd(root .. '/a.lua')
+      vim.fn.bufload(bufnr)
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+        'local M = {}',
+        'function M.open()',
+        '  return 1',
+        'end',
+        'return M',
+      })
+      vim.api.nvim_set_current_buf(bufnr)
+      vim.api.nvim_win_set_cursor(0, { 3, 2 })
+
+      local status, json = get('/api/editor/selection', 'fallback=context&context=1')
+      T.eq(status, 200)
+      T.eq(json.file, 'a.lua')
+      T.eq(json.line, 3)
+      T.eq(json.col, 3)
+      T.eq(json.selection.active, false)
+      T.eq(json.context.range.start_line, 2)
+      T.eq(json.context.range.end_line, 4)
+      T.eq(json.context.text, table.concat({
+        'function M.open()',
+        '  return 1',
+        'end',
+      }, '\n'))
     end)
   end)
 

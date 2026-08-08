@@ -20,6 +20,7 @@ local diagnostics = require('config.nvim_api.diagnostics')
 local buffers = require('config.nvim_api.buffers')
 local lsp = require('config.nvim_api.lsp')
 local qflist = require('config.nvim_api.qflist')
+local editor = require('config.nvim_api.editor')
 
 local state = {
   server = nil,
@@ -48,7 +49,7 @@ local function root()
 end
 
 local CAPABILITIES = {
-  'diagnostics', 'lsp', 'qflist', 'buffers',
+  'diagnostics', 'lsp', 'qflist', 'buffers', 'editor',
 }
 
 -- ── GET ─────────────────────────────────────────────
@@ -111,6 +112,15 @@ local function handle_get(req, respond)
 
   if path == '/api/buffers' then
     return util.ok({ buffers = buffers.list(root()) })
+  end
+
+  if path == '/api/editor/selection' then
+    local result, err = editor.selection(root(), {
+      fallback = q.fallback,
+      context_lines = util.to_number(q.context, 5),
+    })
+    if not result then return util.bad_request(err) end
+    return util.ok(result)
   end
 
   if path == '/api/qflist' then
