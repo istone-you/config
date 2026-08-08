@@ -5,10 +5,21 @@
 local M = {}
 
 -- スプリット型サイドバーの filetype。
--- 新しいサイドバーをスプリットで追加したら、ここに filetype を足すか、
--- 窓を開いた直後に M.mark_sidebar(win, buf) を呼ぶ（推奨は両方）。
+-- 新しい窓を追加したら、ここに filetype を足し、かつ窓を開いた直後に
+-- M.mark_sidebar(win, buf) を呼ぶ。両方やること:
+--   ・mark_sidebar は自作モジュール経由で開いたときしか付かない
+--     （:copen や :vimgrep など素のコマンドで開かれると漏れる）
+--   ・SIDEBAR_FT だけだと filetype を持たない窓を拾えない
 -- ※ git パネル等のフロートは is_float で既に非エディタ扱いなので登録不要。
-M.SIDEBAR_FT = { explorer = true, shortcuts = true, httpresult = true, problems = true }
+--
+-- 登録を忘れると is_editor が真になり、次の形で壊れる。症状が「そのパネルを
+-- 開いているときだけ他の機能が効かない」と出るので、原因に気づきにくい。
+--   ・auto_quit の「実編集ウィンドウが残っていない」判定が成立せず、
+--     その窓を開いている間だけ Space Q（全バッファを閉じる）で終了しなくなる
+--   ・focus_editor がその窓にフォーカスを移し、open_buf がその窓に
+--     ファイルバッファを載せてしまう
+-- qf（quickfix / location list は同じ filetype）で実際に踏んだ。
+M.SIDEBAR_FT = { explorer = true, shortcuts = true, httpresult = true, problems = true, qf = true }
 
 function M.is_float(win)
   return vim.api.nvim_win_get_config(win).relative ~= ''

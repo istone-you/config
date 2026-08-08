@@ -15,6 +15,8 @@ nvim の自作機能が新たに CLI ツールに依存するようになった�
 
 Neovim の自作機能を新規実装・変更したときは、必ず `nvim/tests/` にテスト（`*_spec.lua`）を追加・更新すること。`nvim/tests/run.sh` で実行できる（プラグイン不使用の自作ハーネス）。
 
+新しいウィンドウ（パネル / リスト窓）を追加したときは、`lua/config/util/win_util.lua` の `SIDEBAR_FT` に filetype を足し、かつ開いた直後に `mark_sidebar(win, buf)` を呼ぶこと（両方）。忘れるとその窓を開いている間だけ `Space Q` で終了しなくなる。理由は `win_util.lua` 冒頭。
+
 ## パスの扱い（macOS の /var → /private/var）
 
 macOS では `/var` `/tmp` `/etc` が `/private/...` への symlink で、`vim.fn.tempname()` も `/var/folders/...` を返す。

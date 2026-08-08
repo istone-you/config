@@ -27,12 +27,15 @@ Sessions are advertised in a small registry file. Resolve the current repo and l
 ```bash
 REPO=$(git rev-parse --show-toplevel)
 REG="${XDG_CACHE_HOME:-$HOME/.cache}/nvim/diff-review/sessions.json"
-PORT=$(jq -r --arg r "$REPO" '.[] | select(.repoRoot==$r) | .port' "$REG" | head -1)
+PORT=$(jq -r --arg r "$REPO" '[.[] | select(.repoRoot==$r)] | sort_by(-.startedAt) | .[0].port // empty' "$REG")
 BASE="http://localhost:$PORT"
 echo "$BASE"
 ```
 
 - If `PORT` is empty, list everything and pick by hand: `jq . "$REG"`.
+- The same repo can be open in more than one nvim, so there may be several entries for it.
+  The query above takes the most recently started one; if that turns out to be the wrong window,
+  run `jq . "$REG"` and pick by `pid`.
 - Confirm the session is live: `curl -s "$BASE/api/session" | jq` → `{repoRoot, source, port, version}`.
 - `version` bumps on every diff rebuild and every comment change; poll it if you want to notice
   the human replying.

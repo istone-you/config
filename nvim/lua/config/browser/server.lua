@@ -30,11 +30,14 @@ function M.parse_request(raw)
   return { method = method, path = path or '/', query = query or '', body = body }
 end
 
---- port で listen を開始し、接続ごとに opts.handler(req) の返す文字列をレスポンスとして書き戻す。
+--- port で listen を開始し、接続ごとに opts.handler(req, respond) を呼ぶ。
+--- ハンドラが文字列を返せばそれをレスポンスとして書き戻す(同期)。nil を返した場合は
+--- あとから respond(文字列) が呼ばれるのを待つ(非同期。LSP のようにメインループへ
+--- 戻ってから答える必要があるハンドラ用)。
 --- ソケットは state.server / state.port / state.host に載せる(呼び出し側が所有)。
 --- 既存の start_server と同じ契約: 成功で true、bind/listen 失敗で false, "port N is already in use"。
 --- 呼び出し側は「既に起動中なら止める / 同じポートなら短絡する」といった判断を先に済ませておくこと。
---- opts = { handler = function(req) -> response string, namespace, default_host }
+--- opts = { handler = function(req, respond) -> response string|nil, namespace, default_host }
 function M.start(state, port, opts)
   opts = opts or {}
   local bind_host = browser.config(opts.namespace).host or opts.default_host or '0.0.0.0'
@@ -61,15 +64,36 @@ function M.start(state, port, opts)
         req = req .. chunk
         local parsed = M.parse_request(req)
         if not parsed then return end
-        local resp
-        local resp_ok, resp_err = pcall(function() resp = opts.handler(parsed) end)
-        if not resp_ok then
-          resp = browser.http_response('500 Internal Server Error', 'text/plain', tostring(resp_err))
+        -- 1 リクエスト = 1 レスポンスで閉じるので、読み切ったら以降のチャンクは見ない
+        pcall(function() client:read_stop() end)
+
+        -- respond は 2 通りの経路から呼ばれる: 同期ハンドラの返り値をそのまま流す経路と、
+        -- 非同期ハンドラ(LSP のようにメインループへ戻る必要があるもの)が後から呼ぶ経路。
+        -- 二重送信は done で弾く。
+        local done = false
+        local function respond(resp)
+          if done then return end
+          done = true
+          if type(resp) ~= 'string' then
+            resp = browser.http_response('500 Internal Server Error', 'text/plain', 'empty response')
+          end
+          local write_ok = pcall(function()
+            client:write(resp, function()
+              pcall(function() client:shutdown() end)
+              pcall(function() client:close() end)
+            end)
+          end)
+          if not write_ok then pcall(function() client:close() end) end
         end
-        client:write(resp, function()
-          pcall(function() client:shutdown() end)
-          pcall(function() client:close() end)
-        end)
+
+        local resp
+        local resp_ok, resp_err = pcall(function() resp = opts.handler(parsed, respond) end)
+        if not resp_ok then
+          respond(browser.http_response('500 Internal Server Error', 'text/plain', tostring(resp_err)))
+        elseif resp ~= nil then
+          respond(resp)
+        end
+        -- resp が nil のときは非同期ハンドラ。respond() が後から呼ばれるまで書き戻さない。
       end)
     end))
   end)
