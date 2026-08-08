@@ -6,6 +6,36 @@ local function feed(keys)
 end
 
 T.describe('copy_with_path', function()
+  T.it('normal mode <leader>y copies a Code Notes location with the cursor column', function()
+    local dir = T.tmp_git_repo()
+    T.write_file(dir .. '/sub/main.lua', { 'local a = 1', 'local b = 2', 'local c = 3' })
+    vim.fn.chdir(dir)
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/sub/main.lua'))
+    vim.api.nvim_win_set_cursor(0, { 2, 6 })
+
+    feed('<leader>y')
+    vim.wait(50)
+    T.eq(vim.fn.getreg('"'), 'sub/main.lua:2:7')
+
+    T.rmrf(dir)
+  end)
+
+  T.it('visual mode <leader>y copies a Code Notes location range', function()
+    local dir = T.tmp_git_repo()
+    T.write_file(dir .. '/main.ts', { 'const a = 1', 'const b = 2', 'const c = 3' })
+    vim.fn.chdir(dir)
+    vim.cmd('edit ' .. vim.fn.fnameescape(dir .. '/main.ts'))
+
+    vim.api.nvim_win_set_cursor(0, { 1, 2 })
+    feed('v')
+    vim.api.nvim_win_set_cursor(0, { 3, 0 })
+    feed('<leader>y')
+    vim.wait(50)
+    T.eq(vim.fn.getreg('"'), 'main.ts:1-3:3')
+
+    T.rmrf(dir)
+  end)
+
   T.it('normal mode <leader>Y copies "path:line" + a fenced code block using the mapped language tag', function()
     local dir = T.tmp_git_repo()
     T.write_file(dir .. '/sub/main.lua', { 'local a = 1', 'local b = 2', 'local c = 3' })

@@ -76,9 +76,10 @@ git パネルと docker パネルは UI の骨格（レイアウト・タブバ�
 |---|---|---|
 | `browser` | HTML / MarkdownをローカルHTTPサーバで既定ブラウザに開く（Markdownは保存時に自動リフレッシュ） | `Space o` |
 | `diff_review` | 作業ツリーの差分をブラウザ（difit 風）で開き、その差分上で AI と双方向にコメントをやりとりする（hunk 参考）。行クリック（shift で範囲）でコメント追加・スレッド返信、unified/side-by-side 切替、ファイルツリー（折りたたみ・compact folders）、All/Unstaged/Staged 切替、シンタックスハイライト、全コメント削除。差分は保存＋定期ポーリングで自動更新（git add/commit/外部編集も反映）。AI は `.agents/skills/nvim-diff-review` の HTTP API 経由で読み書きする | `Space R`、`:DiffReview` / `:DiffReviewClose` |
+| `code_notes` | ブラウザ上の Code Notes とローカル HTTP API を組み合わせ、AI / 人間が file/line/lineEnd/text の entry を追加し、一覧・詳細・コード断片を見ながら該当位置へジャンプできる。コードリーディング用メモを共有する用途。AI は `.agents/skills/nvim-code-notes` の HTTP API 経由で読み書きする | `Space B`、`:CodeNotes` / `:CodeNotesClose` |
 | `nvim_api` | 起動中の nvim が持っている情報（LSP の定義 / 参照 / シンボル / ホバー、診断、開いているバッファ、現在の選択範囲やカーソル周辺文脈）を、ローカル HTTP API で AI から読めるようにする。AI の調査結果を quickfix へ書き込む口も持つ（`Space l` で開閉し、j/k + Enter で巡回、`:cdo` で一括編集できる）。nvim 起動時に 127.0.0.1 の空きポートで自動起動し、`.agents/skills/nvim-api` の HTTP API 経由で叩く。LSP の待ちは全て非同期（`vim.wait` を使わない）なので、AI が問い合わせている間もエディタは固まらない。grep と違い LSP はスコープを解決するため、同名シンボルや import のエイリアスを取り違えない | `:NvimApi` / `:NvimApiStart` / `:NvimApiStop` |
 | `http_client` | `.http` / `.rest` ファイルに書いた HTTP リクエストを実行し、結果を右パネルに表示（変数・環境ファイル対応） | `Space h r` |
-| `copy_with_path` | 選択コードをファイルパス（行番号付き）とともにコピー | `Space Y` |
+| `copy_with_path` | Code Notes 用の location、または選択コードをファイルパス（行番号付き）とともにコピー | `Space y`、`Space Y` |
 | `copy_all` | バッファ全内容をコピー | `Space A` |
 | `ports_panel` | 使用中のポートと、それを掴んでいるプロセスの一覧パネル（Listening / Connections の2タブ。プロセスの終了・ブラウザで開く・ポート番号コピー） | `Space P`、`:Ports` |
 | `shortcuts` | Neovim のショートカット一覧パネル | `Space ?` |
@@ -89,7 +90,7 @@ git パネルと docker パネルは UI の骨格（レイアウト・タブバ�
 
 | ツール | 用途 |
 |---|---|
-| `git` | git_panel, github_permalink, terminal, diff_review, nvim_api など git 操作全般（diff_review は作業ツリー差分の取得に `git diff HEAD` と未追跡ファイルの `--no-index` を使う。nvim_api は `git rev-parse --show-toplevel` でリポジトリ root を解決するだけで、git 管理下でなければ cwd に倒す） |
+| `git` | git_panel, github_permalink, terminal, diff_review, code_notes, nvim_api など git 操作全般（diff_review は作業ツリー差分の取得に `git diff HEAD` と未追跡ファイルの `--no-index` を使う。code_notes / nvim_api は `git rev-parse --show-toplevel` でリポジトリ root を解決するだけで、git 管理下でなければ cwd に倒す） |
 | `docker` | `docker_panel` のコンテナ / イメージ / ボリューム / ネットワーク操作全般（無い場合はパネルを開いた時にエラー通知して閉じる） |
 | `gh` | `git_panel` の GitHub PR 取得・認証（branches.lua の PR 表示、pr.lua の PRパネル: 一覧/詳細/diff/checkout/ブラウザ表示） |
 | `curl` | `git_panel/git.lua` の GitHub GraphQL API 呼び出し（PR情報取得）、`http_client` のリクエスト実行 |
